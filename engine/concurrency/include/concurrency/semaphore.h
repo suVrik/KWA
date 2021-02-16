@@ -10,13 +10,13 @@ public:
     Semaphore(size_t initial = 0);
 
     /** Decrement the internal counter or wait. */
-    void acquire();
+    void lock();
 
     /** Try to decrement the internal counter without waiting. Return true on success. */
-    bool try_acquire();
+    bool try_lock();
 
     /** Increment the internal counter and unblock waiting acquirer. */
-    void release();
+    void unlock();
 
 private:
     std::mutex m_mutex;

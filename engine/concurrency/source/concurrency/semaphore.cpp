@@ -6,7 +6,7 @@ Semaphore::Semaphore(size_t initial)
     : m_counter(initial) {
 }
 
-void Semaphore::acquire() {
+void Semaphore::lock() {
     std::unique_lock<std::mutex> lock(m_mutex);
     while (m_counter == 0) {
         m_condition_variable.wait(lock);
@@ -14,7 +14,7 @@ void Semaphore::acquire() {
     m_counter--;
 }
 
-bool Semaphore::try_acquire() {
+bool Semaphore::try_lock() {
     if (m_mutex.try_lock()) {
         if (m_counter > 0) {
             m_counter--;
@@ -26,7 +26,7 @@ bool Semaphore::try_acquire() {
     return false;
 }
 
-void Semaphore::release() {
+void Semaphore::unlock() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_counter++;
     m_condition_variable.notify_one();
