@@ -1,4 +1,5 @@
 #include "debug/debug_utils.h"
+#include "debug/resource.h"
 
 #include <cstdio>
 
@@ -74,10 +75,90 @@ const char* get_stacktrace(uint32_t hide_calls) {
     return stacktrace_buffer;
 }
 
+constexpr INT_PTR BREAK = 0;
+constexpr INT_PTR SKIP = 1;
+constexpr INT_PTR SKIP_FOREVER = 2;
+
+static char dialog_buffer[4096];
+
+static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    switch (message) {
+    case WM_INITDIALOG:
+        MessageBeep(MB_ICONERROR);
+        SetWindowTextA(GetDlgItem(hwnd, IDC_MESSAGE), dialog_buffer);
+        return TRUE;
+    case WM_COMMAND:
+        switch (wparam) {
+        case IDC_BREAK:
+            EndDialog(hwnd, BREAK);
+            return TRUE;
+        case IDC_SKIP:
+            EndDialog(hwnd, SKIP);
+            return TRUE;
+        case IDC_SKIP_FOREVER:
+            EndDialog(hwnd, SKIP_FOREVER);
+            return TRUE;
+        case IDC_COPY_MESSAGE:
+            if (IsClipboardFormatAvailable(CF_TEXT)) {
+                if (OpenClipboard(nullptr)) {
+                    if (EmptyClipboard()) {
+                        size_t length = strnlen(dialog_buffer, sizeof(dialog_buffer));
+                        // Extra byte for null terminator.
+                        HGLOBAL memory = GlobalAlloc(GHND, length + 1);
+                        if (memory != nullptr) {
+                            LPVOID text = GlobalLock(memory);
+                            if (text != nullptr) {
+                                memcpy_s(text, length, dialog_buffer, length);
+                                GlobalUnlock(memory);
+                                // `SetClipboardData` takes ownership of memory, so free is not needed.
+                                if (!SetClipboardData(CF_TEXT, memory)) {
+                                    GlobalFree(memory);
+                                }
+                            } else {
+                                GlobalFree(memory);
+                            }
+                        }
+                    }
+                    CloseClipboard();
+                }
+            }
+            return TRUE;
+        default:
+            return FALSE;
+        }
+    default:
+        return FALSE;
+    }
+}
+
+bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
+    // Hide `show_assert_window` calls in stacktrace too.
+    const char* stacktrace = DebugUtils::get_stacktrace(hide_calls + 1);
+
+    snprintf(dialog_buffer, sizeof(dialog_buffer), "%s\r\nStacktrace:\r\n%s", message, stacktrace);
+
+    switch (DialogBox(nullptr, MAKEINTRESOURCE(IDD_ASSERT), nullptr, dialog_callback)) {
+    case BREAK:
+        return true;
+    case SKIP_FOREVER:
+        if (skip != nullptr) {
+            *skip = true;
+        }
+        [[fallthrough]];
+    case SKIP:
+    default:
+        return false;
+    }
+}
+
 #else
 
 const char* get_stacktrace(uint32_t hide_calls) {
     return "";
+}
+
+bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
+    return false;
 }
 
 #endif
