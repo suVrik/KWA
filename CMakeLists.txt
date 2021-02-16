@@ -1,0 +1,14 @@
+cmake_minimum_required(VERSION 3.19)
+project(KURWA)
+
+set(CMAKE_CXX_STANDARD 17)
+set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT "unittest")
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "cmake")
+set(CMAKE_CONFIGURATION_TYPES "Debug;Release")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DKW_DEBUG")
+
+add_subdirectory("engine")
+add_subdirectory("tools")
+add_subdirectory("examples")
+add_subdirectory("unittest")
