@@ -1,6 +1,7 @@
 #include "debug/debug_utils.h"
 #include "debug/resource.h"
 
+#include <csignal>
 #include <cstdio>
 
 // Wingows.h must be included before DbgHelp.h
@@ -151,6 +152,15 @@ bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
     }
 }
 
+static void signal_handler(int signal) {
+    show_assert_window("SIGSEGV", nullptr, 1); // Hide `signal_handler` call.
+    __debugbreak();
+}
+
+void subscribe_to_segfault() {
+    signal(SIGSEGV, signal_handler);
+}
+
 #else
 
 const char* get_stacktrace(uint32_t hide_calls) {
@@ -159,6 +169,9 @@ const char* get_stacktrace(uint32_t hide_calls) {
 
 bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
     return false;
+}
+
+void subscribe_to_segfault() {
 }
 
 #endif
