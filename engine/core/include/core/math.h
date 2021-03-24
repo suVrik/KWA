@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 
 namespace kw {
 
@@ -30,6 +31,51 @@ constexpr float degrees(float radians) {
 
 constexpr float radians(float degrees) {
     return degrees / 180.f * PI;
+}
+
+template <typename T>
+constexpr T align_up(T value, T alignment) {
+    return (value + (alignment - 1)) & ~(alignment - 1);
+}
+
+template <typename T>
+constexpr T align_down(T value, T alignment) {
+    return value & ~(alignment - 1);
+}
+
+template <typename T>
+constexpr bool is_pow2(T value) {
+    return (value & (value - 1)) == 0;
+}
+
+constexpr uint32_t next_pow2(uint32_t value) {
+    value--;
+    value |= value >> 1;
+    value |= value >> 2;
+    value |= value >> 4;
+    value |= value >> 8;
+    value |= value >> 16;
+    value++;
+    return value;
+}
+
+constexpr uint32_t previous_pow2(uint32_t value) {
+    value |= value >> 1;
+    value |= value >> 2;
+    value |= value >> 4;
+    value |= value >> 8;
+    value |= value >> 16;
+    value = value ^ (value >> 1);
+    return value;
+}
+
+constexpr uint32_t count_bits_set(uint32_t value) {
+    uint32_t result = value - ((value >> 1) & 0x55555555);
+    result = ((result >> 2) & 0x33333333) + (result & 0x33333333);
+    result = ((result >> 4) + result) & 0x0F0F0F0F;
+    result = ((result >> 8) + result) & 0x00FF00FF;
+    result = ((result >> 16) + result) & 0x0000FFFF;
+    return result;
 }
 
 class float2 {
