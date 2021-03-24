@@ -11,6 +11,7 @@ target_include_directories(core PRIVATE "resource")
 target_include_directories(core PRIVATE "source")
 
 target_link_libraries(core PRIVATE debug_)
+target_link_libraries(core PRIVATE memory)
 
 # Force all executables that link against "core" to load its resources too.
 target_link_options(debug PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/core.dir/$<CONFIG>/resource.res")
