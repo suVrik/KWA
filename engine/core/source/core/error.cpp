@@ -69,10 +69,6 @@ static void error_handler_impl(const char* expression) {
 #endif
 
     DialogBox(nullptr, MAKEINTRESOURCE(IDD_ERROR), nullptr, dialog_callback);
-
-    __debugbreak();
-
-    abort();
 }
 
 void error_handler(const char* expression) {

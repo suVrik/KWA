@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdlib>
+
 namespace kw::error_details {
 
 [[noreturn]] void error_handler(const char* expression);
@@ -11,5 +13,7 @@ namespace kw::error_details {
 do {                                                                  \
     if (!(expression)) {                                              \
         kw::error_details::error_handler(#expression, ##__VA_ARGS__); \
+        __debugbreak();                                               \
+        std::abort();                                                 \
     }                                                                 \
 } while (false)

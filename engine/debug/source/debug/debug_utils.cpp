@@ -40,7 +40,8 @@ const char* get_stacktrace(uint32_t hide_calls) {
 
     hide_calls++; // Hide `get_stacktrace` call in the stacktrace too.
     while (StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr, SymFunctionTableAccess64, SymGetModuleBase64, nullptr)) {
-        if (hide_calls-- > 0) {
+        if (hide_calls > 0) {
+            hide_calls--;
             continue;
         }
 
