@@ -9,6 +9,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DKW_DEBUG")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNICODE -D_UNICODE")
 
+add_subdirectory("thirdparty")
 add_subdirectory("engine")
 add_subdirectory("tools")
 add_subdirectory("examples")
