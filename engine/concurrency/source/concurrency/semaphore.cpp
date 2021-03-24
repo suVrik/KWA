@@ -6,30 +6,18 @@ Semaphore::Semaphore(size_t initial)
     : m_counter(initial) {
 }
 
-void Semaphore::lock() {
+void Semaphore::lock(size_t count) {
     std::unique_lock<std::mutex> lock(m_mutex);
-    while (m_counter == 0) {
+    while (m_counter < count) {
         m_condition_variable.wait(lock);
     }
-    m_counter--;
+    m_counter -= count;
 }
 
-bool Semaphore::try_lock() {
-    if (m_mutex.try_lock()) {
-        if (m_counter > 0) {
-            m_counter--;
-            m_mutex.unlock();
-            return true;
-        }
-        m_mutex.unlock();
-    }
-    return false;
-}
-
-void Semaphore::unlock() {
+void Semaphore::unlock(size_t count) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_counter++;
-    m_condition_variable.notify_one();
+    m_counter += count;
+    m_condition_variable.notify_all();
 }
 
 } // namespace kw
