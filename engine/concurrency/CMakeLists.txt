@@ -7,3 +7,5 @@ set_target_properties(concurrency PROPERTIES FOLDER "engine")
 
 target_include_directories(concurrency PUBLIC "include")
 target_include_directories(concurrency PRIVATE "source")
+
+target_link_libraries(concurrency PRIVATE debug_)
