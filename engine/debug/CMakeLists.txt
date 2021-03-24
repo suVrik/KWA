@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.20)
 
 file(GLOB_RECURSE DEBUG_SOURCES "source/*.cpp" "source/*.h" "include/*.h")
 file(GLOB_RECURSE DEBUG_RESOURCES "resource/*.h" "resource/*.rc")
