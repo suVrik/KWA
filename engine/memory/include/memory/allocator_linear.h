@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 
 namespace kw {
@@ -22,12 +23,12 @@ public:
     void* allocate(size_t size, size_t alignment);
     void deallocate(void* memory);
 
-    /** In the end of ResetPoint's lifetime, all further allocated memory will be freed. */
+    /** In the end of ResetPoint's lifetime, all further allocated memory will be freed. Must not be used in parallel code. */
     ResetPoint reset();
 
 private:
     std::unique_ptr<char[]> m_begin;
-    char* m_current;
+    std::atomic<char*> m_current;
     char* m_end;
 };
 
@@ -65,3 +66,5 @@ public:
 };
 
 } // namespace kw
+
+#define KW_MEMORY_RESOURCE_RESET(memory_resource) auto reset_point = (memory_resource)->reset()

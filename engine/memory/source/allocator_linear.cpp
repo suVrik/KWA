@@ -23,16 +23,18 @@ MemoryResourceLinear::MemoryResourceLinear(size_t capacity)
 void* MemoryResourceLinear::allocate(size_t size, size_t alignment) {
     KW_ASSERT((alignment & (alignment - 1)) == 0, "Alignment must be power of two.");
     
-    char* result = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(m_current) + (alignment - 1)) & ~(alignment - 1));
-    
-    m_current = result + size;
-    KW_ASSERT(m_current <= m_end, "Linear allocator overflow. Consider increasing capacity.");
-
-    return result;
+    char* old_value = m_current.load(std::memory_order_relaxed);
+    while (true) {
+        char* result = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(old_value) + (alignment - 1)) & ~(alignment - 1));
+        if (m_current.compare_exchange_weak(old_value, result + size, std::memory_order_release, std::memory_order_relaxed)) {
+            KW_ASSERT(result + size <= m_end, "Linear allocator overflow. Consider increasing capacity.");
+            return result;
+        }
+    }
 }
 
 void MemoryResourceLinear::deallocate(void* memory) {
-    // No-op.
+    KW_ASSERT(memory >= m_begin.get() && memory < m_current, "Invalid deallocation.");
 }
 
 MemoryResourceLinear::ResetPoint MemoryResourceLinear::reset() {
