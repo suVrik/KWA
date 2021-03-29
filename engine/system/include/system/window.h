@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <core/string.h>
 
 struct SDL_Cursor;
 struct SDL_Window;
@@ -34,8 +34,8 @@ public:
     Window(const WindowDescriptor& descriptor);
     ~Window();
 
-    const char* get_title() const;
-    void set_title(const char* title);
+    StringLinear get_title(MemoryResourceLinear* memory_resource) const;
+    void set_title(const StringLinear& title);
 
     Cursor get_cursor() const;
     void set_cursor(Cursor cursor);

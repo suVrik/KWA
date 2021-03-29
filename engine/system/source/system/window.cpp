@@ -34,12 +34,12 @@ Window::~Window() {
     SDL_DestroyWindow(m_window);
 }
 
-const char* Window::get_title() const {
-    return SDL_GetWindowTitle(m_window);
+StringLinear Window::get_title(MemoryResourceLinear* memory_resource) const {
+    return StringLinear(SDL_GetWindowTitle(m_window), memory_resource);
 }
 
-void Window::set_title(const char* title) {
-    SDL_SetWindowTitle(m_window, title);
+void Window::set_title(const StringLinear& title) {
+    SDL_SetWindowTitle(m_window, title.c_str());
 }
 
 Cursor Window::get_cursor() const {

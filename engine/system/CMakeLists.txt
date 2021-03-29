@@ -10,6 +10,6 @@ set_target_properties(system PROPERTIES FOLDER "engine")
 target_include_directories(system PUBLIC "include")
 target_include_directories(system PRIVATE "source")
 
+target_link_libraries(system PUBLIC core)
 target_link_libraries(system PRIVATE debug_)
-target_link_libraries(system PRIVATE core)
 target_link_libraries(system PRIVATE SDL2::SDL2)
