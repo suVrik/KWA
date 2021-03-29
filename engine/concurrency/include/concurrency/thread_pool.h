@@ -10,7 +10,10 @@ public:
     ThreadPool(size_t count);
     ~ThreadPool();
 
-    void parallel_for(std::function<void(size_t)> callback, size_t iterations);
+    /** First callback argument goes for iteration, second goes for thread index. */
+    void parallel_for(std::function<void(size_t, size_t)> callback, size_t iterations);
+
+    size_t get_count() const;
 
 private:
     class PImpl;
