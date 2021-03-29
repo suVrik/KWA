@@ -10,8 +10,8 @@ target_include_directories(core PUBLIC "include")
 target_include_directories(core PRIVATE "resource")
 target_include_directories(core PRIVATE "source")
 
+target_link_libraries(core PUBLIC memory)
 target_link_libraries(core PRIVATE debug_)
-target_link_libraries(core PRIVATE memory)
 target_link_libraries(core PRIVATE Shlwapi.lib)
 
 # Force all executables that link against "core" to load its resources too.
