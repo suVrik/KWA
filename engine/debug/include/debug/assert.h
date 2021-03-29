@@ -20,5 +20,5 @@ do {                                                                            
     }                                                                                   \
 } while (false)
 #else
-#define KW_ASSERT(expression, ...)
+#define KW_ASSERT(expression, ...) ((void)0)
 #endif
