@@ -78,6 +78,9 @@ constexpr uint32_t count_bits_set(uint32_t value) {
     return result;
 }
 
+uint32_t log2(uint32_t value);
+uint64_t log2(uint64_t value);
+
 class float2 {
 public:
     explicit constexpr float2(float all = 0.f)
