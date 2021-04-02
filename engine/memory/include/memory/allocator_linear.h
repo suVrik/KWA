@@ -23,6 +23,11 @@ public:
     void* allocate(size_t size, size_t alignment);
     void deallocate(void* memory);
 
+    template <typename T>
+    T* allocate(size_t count = 1) {
+        return static_cast<T*>(allocate(sizeof(T) * count, alignof(T)));
+    }
+
     /** In the end of ResetPoint's lifetime, all further allocated memory will be freed. Must not be used in parallel code. */
     ResetPoint reset();
 
@@ -47,7 +52,7 @@ public:
     }
 
     T* allocate(size_t count) {
-        return static_cast<T*>(memory_resource->allocate(sizeof(T) * count, alignof(T)));
+        return memory_resource->allocate<T>(count);
     }
 
     void deallocate(T* memory, size_t count) {
