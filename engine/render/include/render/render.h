@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace kw {
 
 class MemoryResourceLinear;
@@ -17,6 +19,23 @@ struct RenderDescriptor {
     bool is_validation_enabled;
     bool is_debug_names_enabled;
 };
+
+struct BufferDescriptor {
+    const char* name;
+
+    const void* data;
+    size_t size;
+};
+
+enum class TextureType {
+    TEXTURE_2D,
+    TEXTURE_CUBE, // TextureDescriptor's `array_size` must be 6.
+    TEXTURE_3D,
+    TEXTURE_2D_ARRAY,
+    TEXTURE_CUBE_ARRAY, // TextureDescriptor's `array_size` must be a multiple of 6.
+};
+
+constexpr size_t TEXTURE_TYPE_COUNT = 5;
 
 enum class TextureFormat {
     UNKNOWN,
@@ -89,11 +108,48 @@ size_t get_pixel_size(TextureFormat format);
 
 } // namespace TextureFormatUtils
 
+struct TextureDescriptor {
+    const char* name;
+
+    const void* data;
+    size_t size;
+
+    TextureType type;
+    TextureFormat format;
+    uint32_t array_size; // 0 is interpreted as 1.
+    uint32_t mip_levels; // 0 is interpreted as 1.
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth; // 0 is interpreted as 1.
+
+    // size_t offsets[array_size][mip_levels];
+    const size_t* offsets;
+};
+
+// Rendering backends cast these to their own types, this is for type safety in user code.
+typedef struct VertexBuffer_T {} *VertexBuffer;
+typedef struct IndexBuffer_T {} *IndexBuffer;
+typedef struct UniformBuffer_T {} *UniformBuffer;
+typedef struct Texture_T {} *Texture;
+
 class Render {
 public:
     static Render* create_instance(const RenderDescriptor& descriptor);
 
     virtual ~Render() = default;
+
+    virtual VertexBuffer create_vertex_buffer(const BufferDescriptor& buffer_descriptor) = 0;
+    virtual void destroy_vertex_buffer(VertexBuffer vertex_buffer) = 0;
+
+    virtual IndexBuffer create_index_buffer(const BufferDescriptor& buffer_descriptor) = 0;
+    virtual void destroy_index_buffer(IndexBuffer index_buffer) = 0;
+
+    virtual UniformBuffer acquire_transient_buffer(const void* data, size_t size) = 0;
+
+    virtual Texture create_texture(const TextureDescriptor& texture_descriptor) = 0;
+    virtual void destroy_texture(Texture texture) = 0;
+
+    virtual void flush() = 0;
 
     virtual RenderApi get_api() const = 0;
 };
