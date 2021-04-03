@@ -34,69 +34,6 @@ static const char* SEMANTIC_STRINGS[] = {
 
 static_assert(std::size(SEMANTIC_STRINGS) == SEMANTIC_COUNT);
 
-static const VkFormat TEXTURE_FORMAT_MAPPING[] = {
-    VK_FORMAT_UNDEFINED,            // UNKNOWN
-    VK_FORMAT_R8_SINT,              // R8_SINT
-    VK_FORMAT_R8_SNORM,             // R8_SNORM
-    VK_FORMAT_R8_UINT,              // R8_UINT
-    VK_FORMAT_R8_UNORM,             // R8_UNORM
-    VK_FORMAT_R8G8_SINT,            // RG8_SINT
-    VK_FORMAT_R8G8_SNORM,           // RG8_SNORM
-    VK_FORMAT_R8G8_UINT,            // RG8_UINT
-    VK_FORMAT_R8G8_UNORM,           // RG8_UNORM
-    VK_FORMAT_R8G8B8A8_SINT,        // RGBA8_SINT
-    VK_FORMAT_R8G8B8A8_SNORM,       // RGBA8_SNORM
-    VK_FORMAT_R8G8B8A8_UINT,        // RGBA8_UINT
-    VK_FORMAT_R8G8B8A8_UNORM,       // RGBA8_UNORM
-    VK_FORMAT_R8G8B8A8_SRGB,        // RGBA8_UNORM_SRGB
-    VK_FORMAT_R16_SFLOAT,           // R16_FLOAT
-    VK_FORMAT_R16_SINT,             // R16_SINT
-    VK_FORMAT_R16_SNORM,            // R16_SNORM
-    VK_FORMAT_R16_UINT,             // R16_UINT
-    VK_FORMAT_R16_UNORM,            // R16_UNORM
-    VK_FORMAT_R16G16_SFLOAT,        // RG16_FLOAT
-    VK_FORMAT_R16G16_SINT,          // RG16_SINT
-    VK_FORMAT_R16G16_SNORM,         // RG16_SNORM
-    VK_FORMAT_R16G16_UINT,          // RG16_UINT
-    VK_FORMAT_R16G16_UNORM,         // RG16_UNORM
-    VK_FORMAT_R16G16B16A16_SFLOAT,  // RGBA16_FLOAT
-    VK_FORMAT_R16G16B16A16_SINT,    // RGBA16_SINT
-    VK_FORMAT_R16G16B16A16_SNORM,   // RGBA16_SNORM
-    VK_FORMAT_R16G16B16A16_UINT,    // RGBA16_UINT
-    VK_FORMAT_R16G16B16A16_UNORM,   // RGBA16_UNORM
-    VK_FORMAT_R32_SFLOAT,           // R32_FLOAT
-    VK_FORMAT_R32_SINT,             // R32_SINT
-    VK_FORMAT_R32_UINT,             // R32_UINT
-    VK_FORMAT_R32G32_SFLOAT,        // RG32_FLOAT
-    VK_FORMAT_R32G32_SINT,          // RG32_SINT
-    VK_FORMAT_R32G32_UINT,          // RG32_UINT
-    VK_FORMAT_R32G32B32A32_SFLOAT,  // RGBA32_FLOAT
-    VK_FORMAT_R32G32B32A32_SINT,    // RGBA32_SINT
-    VK_FORMAT_R32G32B32A32_UINT,    // RGBA32_UINT
-    VK_FORMAT_B8G8R8A8_UNORM,       // BGRA8_UNORM
-    VK_FORMAT_B8G8R8A8_SRGB,        // BGRA8_UNORM_SRGB
-    VK_FORMAT_D16_UNORM,            // D16_UNORM
-    VK_FORMAT_D24_UNORM_S8_UINT,    // D24_UNORM_S8_UINT
-    VK_FORMAT_D32_SFLOAT,           // D32_FLOAT
-    VK_FORMAT_D32_SFLOAT_S8_UINT,   // D32_FLOAT_S8X24_UINT
-    VK_FORMAT_BC1_RGBA_UNORM_BLOCK, // BC1_UNORM
-    VK_FORMAT_BC1_RGBA_SRGB_BLOCK,  // BC1_UNORM_SRGB
-    VK_FORMAT_BC2_UNORM_BLOCK,      // BC2_UNORM
-    VK_FORMAT_BC2_SRGB_BLOCK,       // BC2_UNORM_SRGB
-    VK_FORMAT_BC3_UNORM_BLOCK,      // BC3_UNORM
-    VK_FORMAT_BC3_SRGB_BLOCK,       // BC3_UNORM_SRGB
-    VK_FORMAT_BC4_SNORM_BLOCK,      // BC4_SNORM
-    VK_FORMAT_BC4_UNORM_BLOCK,      // BC4_UNORM
-    VK_FORMAT_BC5_SNORM_BLOCK,      // BC5_SNORM
-    VK_FORMAT_BC5_UNORM_BLOCK,      // BC5_UNORM
-    VK_FORMAT_BC6H_SFLOAT_BLOCK,    // BC6H_SF16
-    VK_FORMAT_BC6H_UFLOAT_BLOCK,    // BC6H_UF16
-    VK_FORMAT_BC7_UNORM_BLOCK,      // BC7_UNORM
-    VK_FORMAT_BC7_SRGB_BLOCK,       // BC7_UNORM_SRGB
-};
-
-static_assert(std::size(TEXTURE_FORMAT_MAPPING) == TEXTURE_FORMAT_COUNT);
-
 static const VkPrimitiveTopology PRIMITIVE_TOPOLOGY_MAPPING[] = {
     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,  // TRIANGLE_LIST
     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, // TRIANGLE_STRIP
@@ -1751,7 +1688,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, size_t 
         VkAttachmentDescription& attachment_description = attachment_descriptions[i];
 
         attachment_description.flags = 0;
-        attachment_description.format = TEXTURE_FORMAT_MAPPING[static_cast<size_t>(attachment_descriptor.format)];
+        attachment_description.format = TextureFormatUtils::convert_format_vulkan(attachment_descriptor.format);
         attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
 
         size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
@@ -2339,7 +2276,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
             VkVertexInputAttributeDescription vertex_input_attribute_description{};
             vertex_input_attribute_description.location = interface_variable->location;
             vertex_input_attribute_description.binding = static_cast<uint32_t>(i);
-            vertex_input_attribute_description.format = TEXTURE_FORMAT_MAPPING[static_cast<size_t>(attribute_descriptor.format)];
+            vertex_input_attribute_description.format = TextureFormatUtils::convert_format_vulkan(attribute_descriptor.format);
             vertex_input_attribute_description.offset = static_cast<uint32_t>(attribute_descriptor.offset);
             vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
         }
@@ -2375,7 +2312,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
             VkVertexInputAttributeDescription vertex_input_attribute_description{};
             vertex_input_attribute_description.location = interface_variable->location;
             vertex_input_attribute_description.binding = static_cast<uint32_t>(instance_binding_offset + i);
-            vertex_input_attribute_description.format = TEXTURE_FORMAT_MAPPING[static_cast<size_t>(attribute_descriptor.format)];
+            vertex_input_attribute_description.format = TextureFormatUtils::convert_format_vulkan(attribute_descriptor.format);
             vertex_input_attribute_description.offset = static_cast<uint32_t>(attribute_descriptor.offset);
             vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
         }
@@ -3420,7 +3357,7 @@ void FrameGraphVulkan::create_attachment_images(RecreateContext& recreate_contex
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.flags = 0;
         image_create_info.imageType = VK_IMAGE_TYPE_2D;
-        image_create_info.format = TEXTURE_FORMAT_MAPPING[static_cast<size_t>(attachment_descriptor.format)];
+        image_create_info.format = TextureFormatUtils::convert_format_vulkan(attachment_descriptor.format);
         image_create_info.extent.width = width;
         image_create_info.extent.height = height;
         image_create_info.extent.depth = 1;
@@ -3708,7 +3645,7 @@ void FrameGraphVulkan::create_attachment_image_views(RecreateContext& recreate_c
         image_view_create_info.flags = 0;
         image_view_create_info.image = attachment_data.image;
         image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        image_view_create_info.format = TEXTURE_FORMAT_MAPPING[static_cast<size_t>(attachment_descriptor.format)];
+        image_view_create_info.format = TextureFormatUtils::convert_format_vulkan(attachment_descriptor.format);
         image_view_create_info.subresourceRange = image_subresource_range;
 
         KW_ASSERT(attachment_data.image_view == VK_NULL_HANDLE);
