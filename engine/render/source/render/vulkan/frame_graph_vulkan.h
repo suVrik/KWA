@@ -207,6 +207,7 @@ private:
     VkSemaphore m_render_finished_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
     VkFence m_fences[SWAPCHAIN_IMAGE_COUNT]{};
 
+    size_t m_semaphore_index = 0;
     size_t m_frame_index = 0;
 };
 

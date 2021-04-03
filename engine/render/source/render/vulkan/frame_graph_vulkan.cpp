@@ -497,30 +497,33 @@ void FrameGraphVulkan::render() {
     if (m_swapchain == VK_NULL_HANDLE) {
         recreate_swapchain();
 
+        // Most likely the window is minimized.
         if (m_swapchain == VK_NULL_HANDLE) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return;
         }
     }
 
-    size_t wrapped_frame_index = m_frame_index % SWAPCHAIN_IMAGE_COUNT;
+    size_t semaphore_index = m_semaphore_index++ % SWAPCHAIN_IMAGE_COUNT;
     uint32_t swapchain_image_index;
 
     VK_ERROR(
-        vkWaitForFences(m_render->device, 1, &m_fences[wrapped_frame_index], VK_TRUE, UINT64_MAX),
+        vkWaitForFences(m_render->device, 1, &m_fences[semaphore_index], VK_TRUE, UINT64_MAX),
         "Failed to wait for a fence."
     );
 
-    VkResult acquire_result = vkAcquireNextImageKHR(m_render->device, m_swapchain, UINT64_MAX, m_image_acquired_semaphores[wrapped_frame_index], VK_NULL_HANDLE, &swapchain_image_index);
-    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR || acquire_result == VK_SUBOPTIMAL_KHR) {
+    VkResult acquire_result = vkAcquireNextImageKHR(m_render->device, m_swapchain, UINT64_MAX, m_image_acquired_semaphores[semaphore_index], VK_NULL_HANDLE, &swapchain_image_index);
+    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain();
+
+        // Semaphore wasn't signaled, so we'd need another acquire.
         return;
-    } else {
-        VK_ERROR(acquire_result, "Failed to acquire an image.");
+    } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
+        VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
     }
 
     VK_ERROR(
-        vkResetFences(m_render->device, 1, &m_fences[wrapped_frame_index]),
+        vkResetFences(m_render->device, 1, &m_fences[semaphore_index]),
         "Failed to reset a fence."
     );
 
@@ -528,13 +531,13 @@ void FrameGraphVulkan::render() {
     // Reset command pools.
     //
 
-    for (size_t thread_index = 0; thread_index < m_command_pool_data[wrapped_frame_index].size(); thread_index++) {
-        CommandPoolData& command_pool_data = m_command_pool_data[wrapped_frame_index][thread_index];
+    for (size_t thread_index = 0; thread_index < m_command_pool_data[semaphore_index].size(); thread_index++) {
+        CommandPoolData& command_pool_data = m_command_pool_data[semaphore_index][thread_index];
 
         KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
         VK_ERROR(
             vkResetCommandPool(m_render->device, command_pool_data.command_pool, 0),
-            "Failed to reset command pool %zu-%zu.", wrapped_frame_index, thread_index
+            "Failed to reset command pool %zu-%zu.", semaphore_index, thread_index
         );
     }
 
@@ -557,8 +560,8 @@ void FrameGraphVulkan::render() {
         KW_ASSERT(thread_index < command_buffer_indices.size());
         size_t command_buffer_index = command_buffer_indices[thread_index]++;
 
-        KW_ASSERT(thread_index < m_command_pool_data[wrapped_frame_index].size());
-        CommandPoolData& command_pool_data = m_command_pool_data[wrapped_frame_index][thread_index];
+        KW_ASSERT(thread_index < m_command_pool_data[semaphore_index].size());
+        CommandPoolData& command_pool_data = m_command_pool_data[semaphore_index][thread_index];
 
         // When one thread is performing too long, other threads may need to process more render passes than they were
         // expecting. Extra command buffers may be required to do that.
@@ -574,9 +577,9 @@ void FrameGraphVulkan::render() {
             VkCommandBuffer command_buffer;
             VK_ERROR(
                 vkAllocateCommandBuffers(m_render->device, &command_buffer_allocate_info, &command_buffer),
-                "Failed to allocate command buffer %zu-%zu-%zu.", wrapped_frame_index, thread_index, command_buffer_index
+                "Failed to allocate command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
             );
-            VK_NAME(m_render, command_buffer, "Command buffer %zu-%zu-%zu", wrapped_frame_index, thread_index, command_buffer_index);
+            VK_NAME(m_render, command_buffer, "Frame command buffer %zu-%zu-%zu", semaphore_index, thread_index, command_buffer_index);
 
             command_pool_data.command_buffers.push_back(command_buffer);
         }
@@ -593,7 +596,7 @@ void FrameGraphVulkan::render() {
 
         VK_ERROR(
             vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
-            "Failed to begin command buffer %zu-%zu-%zu.", wrapped_frame_index, thread_index, command_buffer_index
+            "Failed to begin command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
         );
 
         //
@@ -650,6 +653,8 @@ void FrameGraphVulkan::render() {
                     image_memory_barrier.dstAccessMask = initial_access_mask;
                     image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                     image_memory_barrier.newLayout = initial_layout;
+                    image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                     image_memory_barrier.image = attachment_image;
                     image_memory_barrier.subresourceRange = image_subresource_range;
                 }
@@ -737,30 +742,32 @@ void FrameGraphVulkan::render() {
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &m_image_acquired_semaphores[wrapped_frame_index];
+    submit_info.pWaitSemaphores = &m_image_acquired_semaphores[semaphore_index];
     submit_info.pWaitDstStageMask = &pipeline_stage_flags;
     submit_info.commandBufferCount = static_cast<uint32_t>(render_pass_command_buffers.size());
     submit_info.pCommandBuffers = render_pass_command_buffers.data();
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &m_render_finished_semaphores[wrapped_frame_index];
+    submit_info.pSignalSemaphores = &m_render_finished_semaphores[semaphore_index];
 
-    VK_ERROR(vkQueueSubmit(m_render->queue, 1, &submit_info, m_fences[wrapped_frame_index]), "Failed to submit.");
+    VK_ERROR(vkQueueSubmit(m_render->graphics_queue, 1, &submit_info, m_fences[semaphore_index]), "Failed to submit.");
 
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m_render_finished_semaphores[wrapped_frame_index];
+    present_info.pWaitSemaphores = &m_render_finished_semaphores[semaphore_index];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &m_swapchain;
     present_info.pImageIndices = &swapchain_image_index;
     present_info.pResults = nullptr;
 
-    VkResult present_result = vkQueuePresentKHR(m_render->queue, &present_info);
-    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR || acquire_result == VK_SUBOPTIMAL_KHR) {
+    VkResult present_result = vkQueuePresentKHR(m_render->graphics_queue, &present_info);
+    if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain();
+
+        // Avoid `m_frame_index` increment, which will cause attachment images hanging with undefined layout.
         return;
-    } else {
-        VK_ERROR(acquire_result, "Failed to present.");
+    } else if (present_result != VK_SUBOPTIMAL_KHR) {
+        VK_ERROR(present_result, "Failed to present.");
     }
 
     m_frame_index++;
@@ -1874,7 +1881,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, size_t 
         vkCreateRenderPass(m_render->device, &render_pass_create_info, &m_render->allocation_callbacks, &render_pass_data.render_pass),
         "Failed to create render pass \"%s\".", render_pass_descriptor.name
     );
-    VK_NAME(m_render, render_pass_data.render_pass, "Render Pass \"%s\"", render_pass_descriptor.name);
+    VK_NAME(m_render, render_pass_data.render_pass, "Render pass \"%s\"", render_pass_descriptor.name);
 }
 
 void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, size_t render_pass_index, size_t graphics_pipeline_index) {
@@ -2158,7 +2165,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
         );
         VK_NAME(
             m_render, graphics_pipeline_data.vertex_shader_module,
-            "Vertex Shader \"%s\"", graphics_pipeline_descriptor.name
+            "Vertex shader \"%s\"", graphics_pipeline_descriptor.name
         );
     }
 
@@ -2176,7 +2183,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
         );
         VK_NAME(
             m_render, graphics_pipeline_data.fragment_shader_module,
-            "Fragment Shader \"%s\"", graphics_pipeline_descriptor.name
+            "Fragment shader \"%s\"", graphics_pipeline_descriptor.name
         );
     }
 
@@ -2906,7 +2913,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
         );
         VK_NAME(
             m_render, graphics_pipeline_data.descriptor_set_layout,
-            "Descriptor Set Layout \"%s\"", graphics_pipeline_descriptor.name
+            "Descriptor set layout \"%s\"", graphics_pipeline_descriptor.name
         );
     }
 
@@ -3020,7 +3027,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     );
     VK_NAME(
         m_render, graphics_pipeline_data.pipeline_layout,
-        "Pipeline Layout \"%s\"", graphics_pipeline_descriptor.name
+        "Pipeline layout \"%s\"", graphics_pipeline_descriptor.name
     );
 
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info{};
@@ -3074,7 +3081,7 @@ void FrameGraphVulkan::create_command_pools(CreateContext& create_context) {
                 vkCreateCommandPool(m_render->device, &command_pool_create_info, &m_render->allocation_callbacks, &command_pool_data.command_pool),
                 "Failed to create a command pool."
             );
-            VK_NAME(m_render, command_pool_data.command_pool, "Command pool %zu-%zu", swapchain_image_index, thread_index);
+            VK_NAME(m_render, command_pool_data.command_pool, "Frame command pool %zu-%zu", swapchain_image_index, thread_index);
 
             KW_ASSERT(command_pool_data.command_buffers.empty());
             command_pool_data.command_buffers.resize(command_buffer_count);
@@ -3092,7 +3099,7 @@ void FrameGraphVulkan::create_command_pools(CreateContext& create_context) {
 
             for (size_t command_buffer_index = 0; command_buffer_index < command_pool_data.command_buffers.size(); command_buffer_index++) {
                 VkCommandBuffer command_buffer = command_pool_data.command_buffers[command_buffer_index];
-                VK_NAME(m_render, command_buffer, "Command buffer %zu-%zu-%zu", swapchain_image_index, thread_index, command_buffer_index);
+                VK_NAME(m_render, command_buffer, "Frame command buffer %zu-%zu-%zu", swapchain_image_index, thread_index, command_buffer_index);
             }
         }
     }
@@ -3114,7 +3121,7 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
         );
         VK_NAME(
             m_render, m_image_acquired_semaphores[swapchain_image_index],
-            "Image acquire semaphore %zu", swapchain_image_index
+            "Frame acquire semaphore %zu", swapchain_image_index
         );
 
         KW_ASSERT(m_render_finished_semaphores[swapchain_image_index] == VK_NULL_HANDLE);
@@ -3124,7 +3131,7 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
         );
         VK_NAME(
             m_render, m_render_finished_semaphores[swapchain_image_index],
-            "Render finished semaphore %zu", swapchain_image_index
+            "Frame finished semaphore %zu", swapchain_image_index
         );
 
         KW_ASSERT(m_fences[swapchain_image_index] == VK_NULL_HANDLE);
@@ -3134,7 +3141,7 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
         );
         VK_NAME(
             m_render, m_fences[swapchain_image_index],
-            "Fence %zu", swapchain_image_index
+            "Frame fence %zu", swapchain_image_index
         );
     }
 }
@@ -3376,7 +3383,7 @@ void FrameGraphVulkan::create_attachment_images(RecreateContext& recreate_contex
             vkCreateImage(m_render->device, &image_create_info, &m_render->allocation_callbacks, &attachment_data.image),
             "Failed to create attachment image \"%s\".", attachment_descriptor.name
         );
-        VK_NAME(m_render, attachment_data.image, "Image \"%s\"", attachment_descriptor.name);
+        VK_NAME(m_render, attachment_data.image, "Attachment \"%s\"", attachment_descriptor.name);
     }
 }
 
@@ -3653,7 +3660,7 @@ void FrameGraphVulkan::create_attachment_image_views(RecreateContext& recreate_c
             vkCreateImageView(m_render->device, &image_view_create_info, &m_render->allocation_callbacks, &attachment_data.image_view),
             "Failed to create attachment image view \"%s\".", attachment_descriptor.name
         );
-        VK_NAME(m_render, attachment_data.image_view, "Image View \"%s\"", attachment_descriptor.name);
+        VK_NAME(m_render, attachment_data.image_view, "Attachment view \"%s\"", attachment_descriptor.name);
     }
 }
 
