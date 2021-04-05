@@ -5,6 +5,8 @@
 #include <core/unordered_map.h>
 #include <core/vector.h>
 
+#include <memory/linear_memory_resource.h>
+
 #include <vulkan/vulkan.h>
 
 namespace kw {
@@ -41,10 +43,13 @@ private:
         const FrameGraphDescriptor& frame_graph_descriptor;
 
         // Mapping from attachment names to attachment indices.
-        UnorderedMapLinear<StringView, size_t> attachment_mapping;
+        UnorderedMap<StringView, size_t> attachment_mapping;
 
         // Attachment_count x render_pass_count matrix of access to a certain attachment on a certain render pass.
-        VectorLinear<AttachmentAccess> attachment_access_matrix;
+        Vector<AttachmentAccess> attachment_access_matrix;
+
+        // Allocate a piece of memory and reuse it for each graphics pipeline.
+        LinearMemoryResource graphics_pipeline_memory_resource;
     };
 
     struct AttachmentRecreateData {
@@ -62,11 +67,11 @@ private:
         uint32_t swapchain_height = 0;
 
         // To access attachments from largest to smallest use the `sorted_attachment_indices` mapping.
-        VectorLinear<VkMemoryRequirements> memory_requirements;
-        VectorLinear<size_t> sorted_attachment_indices;
+        Vector<VkMemoryRequirements> memory_requirements;
+        Vector<size_t> sorted_attachment_indices;
 
-        VectorLinear<AttachmentRecreateData> attachment_data;
-        VectorLinear<AllocationRecreateData> allocation_data;
+        Vector<AttachmentRecreateData> attachment_data;
+        Vector<AllocationRecreateData> allocation_data;
     };
 
     struct AttachmentData {
@@ -85,7 +90,7 @@ private:
     };
 
     struct GraphicsPipelineData {
-        GraphicsPipelineData();
+        GraphicsPipelineData(MemoryResource& memory_resource);
 
         VkShaderModule vertex_shader_module = VK_NULL_HANDLE;
         VkShaderModule fragment_shader_module = VK_NULL_HANDLE;
@@ -100,7 +105,7 @@ private:
     };
 
     struct RenderPassData {
-        RenderPassData();
+        RenderPassData(MemoryResource& memory_resource);
 
         VkRenderPass render_pass = VK_NULL_HANDLE;
 
@@ -133,7 +138,7 @@ private:
     };
 
     struct CommandPoolData {
-        CommandPoolData();
+        CommandPoolData(MemoryResource& memory_resource);
 
         VkCommandPool command_pool = VK_NULL_HANDLE;
 
@@ -183,7 +188,6 @@ private:
     RenderVulkan* m_render = nullptr;
     Window* m_window = nullptr;
     ThreadPool* m_thread_pool = nullptr;
-    MemoryResourceLinear* m_memory_resource = nullptr;
 
     VkFormat m_surface_format = VK_FORMAT_B8G8R8A8_UNORM;
     VkColorSpaceKHR m_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;

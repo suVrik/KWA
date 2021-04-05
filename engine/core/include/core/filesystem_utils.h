@@ -5,6 +5,6 @@
 
 namespace kw::FilesystemUtils {
 
-VectorLinear<std::byte> read_file(const StringLinear& relative_path);
+Vector<std::byte> read_file(MemoryResource& memory_resource, const String& relative_path);
 
 } // namespace kw::FilesystemUtils

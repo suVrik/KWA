@@ -4,8 +4,6 @@
 
 namespace kw {
 
-class MemoryResourceLinear;
-class Render;
 class RenderPass;
 class ThreadPool;
 class Window;
@@ -324,7 +322,6 @@ struct FrameGraphDescriptor {
     Render* render;
     Window* window;
     ThreadPool* thread_pool;
-    MemoryResourceLinear* memory_resource;
 
     bool is_aliasing_enabled;
     bool is_vsync_enabled;

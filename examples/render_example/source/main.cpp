@@ -18,7 +18,8 @@
 
 #include <concurrency/thread_pool.h>
 
-#include <memory/allocator_linear.h>
+#include <memory/linear_memory_resource.h>
+#include <memory/malloc_memory_resource.h>
 
 using namespace kw;
 
@@ -65,7 +66,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     Window window(window_descriptor);
 
-    MemoryResourceLinear memory_resource(0x4000000);
+    MallocMemoryResource& persistent_memory_resource = MallocMemoryResource::instance();
+    LinearMemoryResource transient_memory_resource(persistent_memory_resource, 0x4000000);
     
     ThreadPool thread_pool(6);
 
@@ -75,7 +77,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     RenderDescriptor render_descriptor{};
     render_descriptor.api = RenderApi::VULKAN;
-    render_descriptor.memory_resource = &memory_resource;
+    render_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    render_descriptor.transient_memory_resource = &transient_memory_resource;
     render_descriptor.is_validation_enabled = true;
     render_descriptor.is_debug_names_enabled = true;
 
@@ -444,7 +447,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     frame_graph_descriptor.render = render.get();
     frame_graph_descriptor.window = &window;
     frame_graph_descriptor.thread_pool = &thread_pool;
-    frame_graph_descriptor.memory_resource = &memory_resource;
     frame_graph_descriptor.is_aliasing_enabled = true;
     frame_graph_descriptor.is_vsync_enabled = true;
     frame_graph_descriptor.swapchain_attachment_name = "swapchain_attachment";
@@ -459,7 +461,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     bool is_running = true;
     while (is_running) {
-        KW_MEMORY_RESOURCE_RESET(&memory_resource);
+        transient_memory_resource.reset();
 
         Event event{};
         while (event_loop.poll_event(event)) {

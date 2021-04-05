@@ -4,8 +4,8 @@
 
 namespace kw::ClipboardUtils {
 
-StringLinear get_clipboard_text(MemoryResourceLinear* memory_resource);
+String get_clipboard_text(MemoryResource& memory_resource);
 
-void set_clipboard_text(const StringLinear& text);
+void set_clipboard_text(const String& text);
 
 } // namespace kw::ClipboardUtils

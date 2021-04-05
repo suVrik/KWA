@@ -34,8 +34,8 @@ public:
     Window(const WindowDescriptor& descriptor);
     ~Window();
 
-    StringLinear get_title(MemoryResourceLinear* memory_resource) const;
-    void set_title(const StringLinear& title);
+    String get_title(MemoryResource& memory_resource) const;
+    void set_title(const String& title);
 
     Cursor get_cursor() const;
     void set_cursor(Cursor cursor);

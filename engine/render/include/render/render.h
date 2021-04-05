@@ -4,7 +4,7 @@
 
 namespace kw {
 
-class MemoryResourceLinear;
+class MemoryResource;
 
 enum class RenderApi {
     VULKAN,
@@ -14,7 +14,11 @@ enum class RenderApi {
 struct RenderDescriptor {
     RenderApi api;
 
-    MemoryResourceLinear* memory_resource;
+    // For memory allocated and deallocated at different times.
+    MemoryResource* persistent_memory_resource;
+
+    // For memory allocated and deallocated in the same scope.
+    MemoryResource* transient_memory_resource;
 
     bool is_validation_enabled;
     bool is_debug_names_enabled;

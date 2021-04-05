@@ -11,8 +11,8 @@ namespace render_utilities_details {
 
 class Parser {
 public:
-    Parser(const StringLinear& relative_path)
-        : m_data(FilesystemUtils::read_file(relative_path))
+    Parser(MemoryResource& memory_resource, const String& relative_path)
+        : m_data(FilesystemUtils::read_file(memory_resource, relative_path))
         , m_end(m_data.data() + m_data.size())
         , m_position(m_data.data()) {
     }
@@ -32,7 +32,7 @@ public:
     }
 
 private:
-    VectorLinear<std::byte> m_data;
+    Vector<std::byte> m_data;
     const std::byte* m_end;
     const std::byte* m_position;
 };
@@ -410,10 +410,10 @@ const FormatDescriptor FORMAT_DESCRIPTORS[] = {
 
 } // namespace render_utilities_details
 
-TextureDescriptor load_dds(const StringLinear& relative_path) {
+TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
     using namespace render_utilities_details;
 
-    Parser parser(relative_path);
+    Parser parser(memory_resource, relative_path);
 
     const auto* magic = parser.read<uint32_t>();
     KW_ERROR(magic != nullptr, "Failed to read DDS_SIGNATURE from \"%s\".", relative_path.c_str());
@@ -505,7 +505,7 @@ TextureDescriptor load_dds(const StringLinear& relative_path) {
     uint32_t array_size = header10 != nullptr ? header10->arraySize : 1;
     uint32_t side_count = (header->dwCaps2 & DDSCAPS2_CUBEMAP) != 0 ? 6 : 1;
     uint32_t mip_levels = (header->dwFlags & DDSD_MIPMAPCOUNT) != 0 ? header->dwMipMapCount : 1;
-    size_t* offsets = relative_path.get_allocator().memory_resource->allocate<size_t>(array_size * side_count * mip_levels);
+    size_t* offsets = memory_resource.allocate<size_t>(array_size * side_count * mip_levels);
 
     TextureDescriptor texture_descriptor{};
     texture_descriptor.name = relative_path.c_str();

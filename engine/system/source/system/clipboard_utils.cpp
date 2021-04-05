@@ -4,14 +4,14 @@
 
 namespace kw::ClipboardUtils {
 
-StringLinear get_clipboard_text(MemoryResourceLinear* memory_resource) {
+String get_clipboard_text(MemoryResource& memory_resource) {
     char* clipboard_text = SDL_GetClipboardText();
-    StringLinear result(clipboard_text, memory_resource);
+    String result(clipboard_text, memory_resource);
     SDL_free(clipboard_text);
     return result;
 }
 
-void set_clipboard_text(const StringLinear& text) {
+void set_clipboard_text(const String& text) {
     SDL_SetClipboardText(text.c_str());
 }
 

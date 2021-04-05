@@ -1,16 +1,12 @@
 #pragma once
 
-#include <memory/allocator_linear.h>
-#include <memory/allocator_named.h>
+#include <memory/memory_resource.h>
 
 #include <vector>
 
 namespace kw {
 
-template <typename T, typename Allocator = AllocatorNamed<T>>
+template <typename T, typename Allocator = MemoryResourceAllocator<T>>
 using Vector = std::vector<T, Allocator>;
-
-template <typename T>
-using VectorLinear = Vector<T, AllocatorLinear<T>>;
 
 } // namespace kw

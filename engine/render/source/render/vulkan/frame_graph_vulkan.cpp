@@ -174,28 +174,34 @@ static const VkDynamicState DYNAMIC_STATES[] = {
     VK_DYNAMIC_STATE_STENCIL_REFERENCE,
 };
 
-FrameGraphVulkan::GraphicsPipelineData::GraphicsPipelineData()
-    : samplers({ AllocationSubsystem::RENDER, "Samplers" })
-    , attachment_indices({ AllocationSubsystem::RENDER, "Attachment indices" }) {
+FrameGraphVulkan::GraphicsPipelineData::GraphicsPipelineData(MemoryResource& memory_resource)
+    : samplers(memory_resource)
+    , attachment_indices(memory_resource) {
 }
 
-FrameGraphVulkan::RenderPassData::RenderPassData()
-    : graphics_pipeline_data({ AllocationSubsystem::RENDER, "Graphics pipeline data" })
-    , attachment_indices({ AllocationSubsystem::RENDER, "Attachment indices" }) {
+FrameGraphVulkan::RenderPassData::RenderPassData(MemoryResource& memory_resource)
+    : graphics_pipeline_data(memory_resource)
+    , attachment_indices(memory_resource) {
 }
 
-FrameGraphVulkan::CommandPoolData::CommandPoolData()
-    : command_buffers({ AllocationSubsystem::RENDER, "Command buffers" }) {
+FrameGraphVulkan::CommandPoolData::CommandPoolData(MemoryResource& memory_resource)
+    : command_buffers(memory_resource) {
 }
 
 static void* spv_calloc(void* context, size_t count, size_t size) {
-    void* result = static_cast<MemoryResourceLinear*>(context)->allocate(count * size, 1);
+    MemoryResource* memory_resource = static_cast<MemoryResource*>(context);
+    KW_ASSERT(memory_resource != nullptr);
+
+    void* result = memory_resource->allocate(count * size, 1);
     std::memset(result, 0, count * size);
     return result;
 }
 
 static void spv_free(void* context, void* memory) {
-    static_cast<MemoryResourceLinear*>(context)->deallocate(memory);
+    MemoryResource* memory_resource = static_cast<MemoryResource*>(context);
+    KW_ASSERT(memory_resource != nullptr);
+
+    memory_resource->deallocate(memory);
 }
 
 #ifdef KW_FRAME_GRAPH_LOG
@@ -384,14 +390,14 @@ DEFINE_ENUM_TO_STRING(FORMAT_STRING_MAPPING)
 
 #undef DEFINE_ENUM_TO_STRING
 
-static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryResourceLinear* memory_resource) {
+static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryResource& memory_resource) {
     uint32_t descriptor_binding_count;
     SPV_ERROR(
         spvReflectEnumerateDescriptorBindings(&shader_module, &descriptor_binding_count, nullptr),
         "Failed to enumerate descriptor bindings."
     );
 
-    VectorLinear<SpvReflectDescriptorBinding*> descriptor_bindings(descriptor_binding_count, memory_resource);
+    Vector<SpvReflectDescriptorBinding*> descriptor_bindings(descriptor_binding_count, memory_resource);
     SPV_ERROR(
         spvReflectEnumerateDescriptorBindings(&shader_module, &descriptor_binding_count, descriptor_bindings.data()),
         "Failed to enumerate descriptor bindings."
@@ -425,7 +431,7 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
         "Failed to enumerate input variables."
     );
 
-    VectorLinear<SpvReflectInterfaceVariable*> input_variables(input_variable_count, memory_resource);
+    Vector<SpvReflectInterfaceVariable*> input_variables(input_variable_count, memory_resource);
     SPV_ERROR(
         spvReflectEnumerateInputVariables(&shader_module, &input_variable_count, input_variables.data()),
         "Failed to enumerate input variables."
@@ -445,7 +451,7 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
         "Failed to enumerate output variables."
     );
 
-    VectorLinear<SpvReflectInterfaceVariable*> output_variables(output_variable_count, memory_resource);
+    Vector<SpvReflectInterfaceVariable*> output_variables(output_variable_count, memory_resource);
     SPV_ERROR(
         spvReflectEnumerateOutputVariables(&shader_module, &output_variable_count, output_variables.data()),
         "Failed to enumerate output variables."
@@ -466,16 +472,15 @@ FrameGraphVulkan::FrameGraphVulkan(const FrameGraphDescriptor& descriptor)
     : m_render(static_cast<RenderVulkan*>(descriptor.render))
     , m_window(descriptor.window)
     , m_thread_pool(descriptor.thread_pool)
-    , m_memory_resource(descriptor.memory_resource)
-    , m_attachment_data({ AllocationSubsystem::RENDER, "Attachment data" })
-    , m_attachment_descriptors({ AllocationSubsystem::RENDER, "Attachment descriptors" })
-    , m_allocations({ AllocationSubsystem::RENDER, "Allocation data" })
-    , m_render_pass_data({ AllocationSubsystem::RENDER, "Render pass data" })
-    , m_parallel_block_data({ AllocationSubsystem::RENDER, "Parallel block data" })
+    , m_attachment_data(m_render->persistent_memory_resource)
+    , m_attachment_descriptors(m_render->persistent_memory_resource)
+    , m_allocations(m_render->persistent_memory_resource)
+    , m_render_pass_data(m_render->persistent_memory_resource)
+    , m_parallel_block_data(m_render->persistent_memory_resource)
     , m_command_pool_data{
-        Vector<CommandPoolData>({ AllocationSubsystem::RENDER, "Command pool data" }),
-        Vector<CommandPoolData>({ AllocationSubsystem::RENDER, "Command pool data" }),
-        Vector<CommandPoolData>({ AllocationSubsystem::RENDER, "Command pool data" }),
+        Vector<CommandPoolData>(m_render->persistent_memory_resource),
+        Vector<CommandPoolData>(m_render->persistent_memory_resource),
+        Vector<CommandPoolData>(m_render->persistent_memory_resource),
     }
 {
     create_lifetime_resources(descriptor);
@@ -545,8 +550,8 @@ void FrameGraphVulkan::render() {
     // Execute render passes in parallel.
     //
 
-    VectorLinear<size_t> command_buffer_indices(m_thread_pool->get_count(), m_memory_resource);
-    VectorLinear<VkCommandBuffer> render_pass_command_buffers(m_render_pass_data.size(), m_memory_resource);
+    Vector<size_t> command_buffer_indices(m_thread_pool->get_count(), m_render->transient_memory_resource);
+    Vector<VkCommandBuffer> render_pass_command_buffers(m_render_pass_data.size(), m_render->transient_memory_resource);
 
     m_thread_pool->parallel_for([&](size_t render_pass_index, size_t thread_index) {
         RenderPassData& render_pass_data = m_render_pass_data[render_pass_index];
@@ -606,7 +611,7 @@ void FrameGraphVulkan::render() {
         if (render_pass_index == 0) {
             // For the very first `render` call attachment layouts must be set.
             if (m_frame_index == 0) {
-                VectorLinear<VkImageMemoryBarrier> image_memory_barriers(m_attachment_data.size(), m_memory_resource);
+                Vector<VkImageMemoryBarrier> image_memory_barriers(m_attachment_data.size(), m_render->transient_memory_resource);
                 for (size_t attachment_index = 0; attachment_index < m_attachment_data.size(); attachment_index++) {
                     const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
                     AttachmentData& attachment_data = m_attachment_data[attachment_index];
@@ -697,7 +702,7 @@ void FrameGraphVulkan::render() {
         render_area.extent.width = render_pass_data.framebuffer_width;
         render_area.extent.height = render_pass_data.framebuffer_height;
 
-        VectorLinear<VkClearValue> clear_values(render_pass_data.attachment_indices.size(), m_memory_resource);
+        Vector<VkClearValue> clear_values(render_pass_data.attachment_indices.size(), m_render->transient_memory_resource);
         for (size_t i = 0; i < render_pass_data.attachment_indices.size(); i++) {
             size_t attachment_index = render_pass_data.attachment_indices[i];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
@@ -783,8 +788,9 @@ void FrameGraphVulkan::recreate_swapchain() {
 void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& descriptor) {
     CreateContext create_context{
         descriptor,
-        UnorderedMapLinear<StringView, size_t>(m_memory_resource),
-        VectorLinear<AttachmentAccess>(m_memory_resource)
+        UnorderedMap<StringView, size_t>(m_render->transient_memory_resource),
+        Vector<AttachmentAccess>(m_render->transient_memory_resource),
+        LinearMemoryResource(m_render->transient_memory_resource, 4 * 1024 * 1024)
     };
 
     create_surface(create_context);
@@ -847,8 +853,7 @@ void FrameGraphVulkan::destroy_lifetime_resources() {
     m_render_pass_data.clear();
 
     for (AttachmentDescriptor& attachment_descriptor : m_attachment_descriptors) {
-        KW_MEMORY_PROFILER_DEALLOCATE(attachment_descriptor.name);
-        free(const_cast<char*>(attachment_descriptor.name));
+        m_render->persistent_memory_resource.deallocate(const_cast<char*>(attachment_descriptor.name));
     }
 
     vkDestroySurfaceKHR(m_render->instance, m_surface, nullptr);
@@ -863,7 +868,7 @@ void FrameGraphVulkan::create_surface(CreateContext& create_context) {
     );
 
     VkBool32 supported;
-    vkGetPhysicalDeviceSurfaceSupportKHR(m_render->physical_device, m_render->queue_family_index, m_surface, &supported);
+    vkGetPhysicalDeviceSurfaceSupportKHR(m_render->physical_device, m_render->graphics_queue_family_index, m_surface, &supported);
     KW_ERROR(
         supported == VK_TRUE,
         "Graphics queue doesn't support presentation."
@@ -878,7 +883,7 @@ void FrameGraphVulkan::compute_present_mode(CreateContext& create_context) {
             "Failed to query surface present mode count."
         );
 
-        VectorLinear<VkPresentModeKHR> present_modes(present_mode_count, m_memory_resource);
+        Vector<VkPresentModeKHR> present_modes(present_mode_count, m_render->transient_memory_resource);
         VK_ERROR(
             vkGetPhysicalDeviceSurfacePresentModesKHR(m_render->physical_device, m_surface, &present_mode_count, present_modes.data()),
             "Failed to query surface present modes."
@@ -946,8 +951,12 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
     //
 
     for (AttachmentDescriptor& attachment_descriptor : m_attachment_descriptors) {
-        attachment_descriptor.name = strdup(attachment_descriptor.name);
-        KW_MEMORY_PROFILER_ALLOCATE(attachment_descriptor.name, strlen(attachment_descriptor.name) + 1, AllocationSubsystem::RENDER, "Attachment name");
+        size_t length = std::strlen(attachment_descriptor.name);
+
+        char* copy = static_cast<char*>(m_render->persistent_memory_resource.allocate(length + 1, 1));
+        std::memcpy(copy, attachment_descriptor.name, length + 1);
+
+        attachment_descriptor.name = copy;
 
         if (attachment_descriptor.width == 0.f) {
             attachment_descriptor.width = 1.f;
@@ -1191,7 +1200,7 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
     }
 
     constexpr size_t ACCESS_BUFFER_LENGTH = 5;
-    StringLinear line_buffer(frame_graph_descriptor.render_pass_descriptor_count * ACCESS_BUFFER_LENGTH, ' ', m_memory_resource);
+    String line_buffer(frame_graph_descriptor.render_pass_descriptor_count * ACCESS_BUFFER_LENGTH, ' ', m_render->transient_memory_resource);
 
     Log::print("[Frame Graph] Attachment access matrix:");
 
@@ -1248,7 +1257,7 @@ void FrameGraphVulkan::compute_parallel_block_indices(CreateContext& create_cont
     m_render_pass_data.resize(frame_graph_descriptor.render_pass_descriptor_count);
 
     // Keep accesses to each attachment in current parallel block. Once they conflict, move attachment to a new parallel block.
-    VectorLinear<AttachmentAccess> previous_accesses(m_attachment_descriptors.size(), m_memory_resource);
+    Vector<AttachmentAccess> previous_accesses(m_attachment_descriptors.size(), m_render->transient_memory_resource);
     size_t parallel_block_index = 0;
 
     for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
@@ -1632,7 +1641,7 @@ void FrameGraphVulkan::create_render_passes(CreateContext& create_context) {
         render_pass_data.graphics_pipeline_data.resize(render_pass_descriptor.graphics_pipeline_descriptor_count);
 
         for (size_t graphics_pipeline_index = 0; graphics_pipeline_index < render_pass_descriptor.graphics_pipeline_descriptor_count; graphics_pipeline_index++) {
-            KW_MEMORY_RESOURCE_RESET(m_memory_resource);
+            create_context.graphics_pipeline_memory_resource.reset();
 
             create_graphics_pipeline(create_context, render_pass_index, graphics_pipeline_index);
         }
@@ -1661,7 +1670,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, size_t 
     // Compute attachment descriptions: load and store operations, initial and final layouts.
     //
 
-    VectorLinear<VkAttachmentDescription> attachment_descriptions(attachment_count, m_memory_resource);
+    Vector<VkAttachmentDescription> attachment_descriptions(attachment_count, m_render->transient_memory_resource);
 
     KW_ASSERT(render_pass_data.attachment_indices.empty());
     render_pass_data.attachment_indices.resize(attachment_count);
@@ -1817,7 +1826,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, size_t 
     // Set up attachment references.
     //
 
-    VectorLinear<VkAttachmentReference> color_attachment_references(render_pass_descriptor.color_attachment_name_count, m_memory_resource);
+    Vector<VkAttachmentReference> color_attachment_references(render_pass_descriptor.color_attachment_name_count, m_render->transient_memory_resource);
     for (size_t i = 0; i < color_attachment_references.size(); i++) {
         color_attachment_references[i].attachment = i;
         color_attachment_references[i].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1914,13 +1923,13 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     SpvAllocator spv_allocator{};
     spv_allocator.calloc = &spv_calloc;
     spv_allocator.free = &spv_free;
-    spv_allocator.context = m_memory_resource;
+    spv_allocator.context = &create_context.graphics_pipeline_memory_resource;
 
     {
-        StringLinear relative_path(graphics_pipeline_descriptor.vertex_shader_filename, m_memory_resource);
+        String relative_path(graphics_pipeline_descriptor.vertex_shader_filename, create_context.graphics_pipeline_memory_resource);
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        VectorLinear<std::byte> shader_data = FilesystemUtils::read_file(relative_path);
+        Vector<std::byte> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path);
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &vertex_shader_reflection, &spv_allocator),
@@ -1934,10 +1943,10 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     }
 
     if (graphics_pipeline_descriptor.fragment_shader_filename != nullptr) {
-        StringLinear relative_path(graphics_pipeline_descriptor.fragment_shader_filename, m_memory_resource);
+        String relative_path(graphics_pipeline_descriptor.fragment_shader_filename, create_context.graphics_pipeline_memory_resource);
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        VectorLinear<std::byte> shader_data = FilesystemUtils::read_file(relative_path);
+        Vector<std::byte> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path);
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &fragment_shader_reflection, &spv_allocator),
@@ -1957,12 +1966,12 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 #ifdef KW_FRAME_GRAPH_LOG
     Log::print("[Frame Graph]   * Original vertex shader:");
 
-    log_shader_reflection(vertex_shader_reflection, m_memory_resource);
+    log_shader_reflection(vertex_shader_reflection, create_context.graphics_pipeline_memory_resource);
 
     if (graphics_pipeline_descriptor.fragment_shader_filename != nullptr) {
         Log::print("[Frame Graph]     Original fragment shader:");
 
-        log_shader_reflection(fragment_shader_reflection, m_memory_resource);
+        log_shader_reflection(fragment_shader_reflection, create_context.graphics_pipeline_memory_resource);
     }
 #endif
 
@@ -1970,8 +1979,8 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     // Assign descriptor binding numbers.
     //
 
-    UnorderedMapLinear<StringView, uint32_t> shared_descriptor_mapping(m_memory_resource);
-    UnorderedMapLinear<StringView, uint32_t> exclusive_descriptor_mapping(m_memory_resource);
+    UnorderedMap<StringView, uint32_t> shared_descriptor_mapping(create_context.graphics_pipeline_memory_resource);
+    UnorderedMap<StringView, uint32_t> exclusive_descriptor_mapping(create_context.graphics_pipeline_memory_resource);
     uint32_t descriptor_binding_number = 0;
 
     for (size_t uniform_attachment_index = 0; uniform_attachment_index < graphics_pipeline_descriptor.uniform_attachment_descriptor_count; uniform_attachment_index++) {
@@ -2138,12 +2147,12 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 #ifdef KW_FRAME_GRAPH_LOG
     Log::print("[Frame Graph]     Patched vertex shader:");
 
-    log_shader_reflection(vertex_shader_reflection, m_memory_resource);
+    log_shader_reflection(vertex_shader_reflection, create_context.graphics_pipeline_memory_resource);
 
     if (graphics_pipeline_descriptor.fragment_shader_filename != nullptr) {
         Log::print("[Frame Graph]     Patched fragment shader:");
 
-        log_shader_reflection(fragment_shader_reflection, m_memory_resource);
+        log_shader_reflection(fragment_shader_reflection, create_context.graphics_pipeline_memory_resource);
     }
 #endif
 
@@ -2208,7 +2217,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     size_t instance_binding_offset = graphics_pipeline_descriptor.vertex_binding_descriptor_count;
     size_t vertex_attribute_count = 0;
 
-    VectorLinear<VkVertexInputBindingDescription> vertex_input_binding_descriptors(m_memory_resource);
+    Vector<VkVertexInputBindingDescription> vertex_input_binding_descriptors(create_context.graphics_pipeline_memory_resource);
     vertex_input_binding_descriptors.reserve(graphics_pipeline_descriptor.vertex_binding_descriptor_count + graphics_pipeline_descriptor.instance_binding_descriptor_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.vertex_binding_descriptor_count; i++) {
@@ -2250,7 +2259,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
         "Mismatching number of variables in vertex shader \"%s\".", graphics_pipeline_descriptor.vertex_shader_filename
     );
 
-    VectorLinear<VkVertexInputAttributeDescription> vertex_input_attribute_descriptions(m_memory_resource);
+    Vector<VkVertexInputAttributeDescription> vertex_input_attribute_descriptions(create_context.graphics_pipeline_memory_resource);
     vertex_input_attribute_descriptions.reserve(vertex_attribute_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.vertex_binding_descriptor_count; i++) {
@@ -2443,7 +2452,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     // Other attachments implicitly have `blendEnable` equal to `VK_FALSE`.
     //
 
-    VectorLinear<VkPipelineColorBlendAttachmentState> pipeline_color_blend_attachment_states(m_memory_resource);
+    Vector<VkPipelineColorBlendAttachmentState> pipeline_color_blend_attachment_states(create_context.graphics_pipeline_memory_resource);
     pipeline_color_blend_attachment_states.resize(render_pass_descriptor.color_attachment_name_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.attachment_blend_descriptor_count; i++) {
@@ -2484,7 +2493,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     // Create descriptor set layout.
     //
 
-    VectorLinear<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(m_memory_resource);
+    Vector<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(create_context.graphics_pipeline_memory_resource);
     descriptor_set_layout_bindings.reserve(
         graphics_pipeline_descriptor.uniform_attachment_descriptor_count +
         graphics_pipeline_descriptor.uniform_buffer_descriptor_count +
@@ -3150,10 +3159,10 @@ void FrameGraphVulkan::create_temporary_resources() {
     RecreateContext recreate_context{
         0U,
         0U,
-        VectorLinear<VkMemoryRequirements>(m_memory_resource),
-        VectorLinear<size_t>(m_memory_resource),
-        VectorLinear<AttachmentRecreateData>(m_memory_resource),
-        VectorLinear<AllocationRecreateData>(m_memory_resource),
+        Vector<VkMemoryRequirements>(m_render->transient_memory_resource),
+        Vector<size_t>(m_render->transient_memory_resource),
+        Vector<AttachmentRecreateData>(m_render->transient_memory_resource),
+        Vector<AllocationRecreateData>(m_render->transient_memory_resource),
     };
 
     if (create_swapchain(recreate_context)) {
@@ -3469,7 +3478,7 @@ void FrameGraphVulkan::compute_allocation_indices(RecreateContext& recreate_cont
 }
 
 void FrameGraphVulkan::compute_allocation_offsets(RecreateContext& recreate_context) {
-    VectorLinear<size_t> overlap_attachment_indices(m_memory_resource);
+    Vector<size_t> overlap_attachment_indices(m_render->transient_memory_resource);
     overlap_attachment_indices.reserve(m_attachment_data.size());
 
     for (size_t allocation_index = 0; allocation_index < m_allocations.size(); allocation_index++) {
@@ -3709,7 +3718,7 @@ void FrameGraphVulkan::create_framebuffers(RecreateContext& recreate_context) {
         //
 
         for (size_t framebuffer_index = 0; framebuffer_index < framebuffer_count; framebuffer_index++) {
-            VectorLinear<VkImageView> attachments(render_pass_data.attachment_indices.size(), m_memory_resource);
+            Vector<VkImageView> attachments(render_pass_data.attachment_indices.size(), m_render->transient_memory_resource);
 
             for (size_t i = 0; i < render_pass_data.attachment_indices.size(); i++) {
                 size_t attachment_index = render_pass_data.attachment_indices[i];

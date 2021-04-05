@@ -34,11 +34,11 @@ Window::~Window() {
     SDL_DestroyWindow(m_window);
 }
 
-StringLinear Window::get_title(MemoryResourceLinear* memory_resource) const {
-    return StringLinear(SDL_GetWindowTitle(m_window), memory_resource);
+String Window::get_title(MemoryResource& memory_resource) const {
+    return String(SDL_GetWindowTitle(m_window), memory_resource);
 }
 
-void Window::set_title(const StringLinear& title) {
+void Window::set_title(const String& title) {
     SDL_SetWindowTitle(m_window, title.c_str());
 }
 

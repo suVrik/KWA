@@ -910,10 +910,7 @@ FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& descriptor) 
     KW_ERROR(descriptor.render != nullptr, "Invalid render.");
     KW_ERROR(descriptor.window != nullptr, "Invalid window.");
     KW_ERROR(descriptor.thread_pool != nullptr, "Invalid thread pool.");
-    KW_ERROR(descriptor.memory_resource != nullptr, "Invalid memory resource.");
     KW_ERROR(descriptor.swapchain_attachment_name != nullptr, "Invalid swapchain name.");
-
-    KW_MEMORY_RESOURCE_RESET(descriptor.memory_resource);
 
     validate_color_attachments(descriptor);
 

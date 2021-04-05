@@ -6,6 +6,6 @@
 
 namespace kw::RenderUtils {
 
-TextureDescriptor load_dds(const StringLinear& relative_path);
+TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path);
 
 } // namespace kw::RenderUtils

@@ -13,21 +13,24 @@
 namespace kw {
 
 static void* vk_alloc(void* userdata, size_t size, size_t alignment, VkSystemAllocationScope allocation_scope) {
-    void* result = _aligned_malloc(size, alignment);
-    KW_MEMORY_PROFILER_ALLOCATE(result, size, AllocationSubsystem::RENDER, "Vulkan");
-    return result;
+    MemoryResource* memory_resource = static_cast<MemoryResource*>(userdata);
+    KW_ASSERT(memory_resource != nullptr);
+
+    return memory_resource->allocate(size, alignment);
 }
 
-static void* vk_realloc(void* userdata, void* original, size_t size, size_t alignment, VkSystemAllocationScope allocation_scope) {
-    KW_MEMORY_PROFILER_DEALLOCATE(original);
-    void* result = _aligned_realloc(original, size, alignment);
-    KW_MEMORY_PROFILER_ALLOCATE(result, size, AllocationSubsystem::RENDER, "Vulkan");
-    return result;
+static void* vk_realloc(void* userdata, void* memory, size_t size, size_t alignment, VkSystemAllocationScope allocation_scope) {
+    MemoryResource* memory_resource = static_cast<MemoryResource*>(userdata);
+    KW_ASSERT(memory_resource != nullptr);
+
+    return memory_resource->reallocate(memory, size, alignment);
 }
 
 static void vk_free(void* userdata, void* memory) {
-    KW_MEMORY_PROFILER_DEALLOCATE(memory);
-    _aligned_free(memory);
+    MemoryResource* memory_resource = static_cast<MemoryResource*>(userdata);
+    KW_ASSERT(memory_resource != nullptr);
+
+    memory_resource->deallocate(memory);
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* userdata) {
