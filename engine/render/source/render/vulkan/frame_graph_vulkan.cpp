@@ -1,5 +1,6 @@
 #include "render/vulkan/frame_graph_vulkan.h"
 #include "render/vulkan/render_vulkan.h"
+#include "render/vulkan/timeline_semaphore.h"
 #include "render/vulkan/vulkan_utils.h"
 
 #include <system/window.h>
@@ -15,7 +16,6 @@
 #include <SDL2/SDL_vulkan.h>
 
 #include <algorithm>
-#include <cinttypes>
 #include <numeric>
 #include <thread>
 
@@ -407,8 +407,8 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
 
     for (SpvReflectDescriptorBinding* descriptor_binding : descriptor_bindings) {
         Log::print("[Frame Graph]       * Name: \"%s\"", descriptor_binding->name);
-        Log::print("[Frame Graph]         Set: %" PRIu32, descriptor_binding->set);
-        Log::print("[Frame Graph]         Binding: %" PRIu32, descriptor_binding->binding);
+        Log::print("[Frame Graph]         Set: %u", descriptor_binding->set);
+        Log::print("[Frame Graph]         Binding: %u", descriptor_binding->binding);
         Log::print("[Frame Graph]         Descriptor type: %s", enum_to_string(descriptor_binding->descriptor_type));
 
         if (descriptor_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
@@ -420,7 +420,7 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
         if (descriptor_binding->array.dims_count > 0) {
             Log::print("[Frame Graph]         Array dimensions:");
             for (uint32_t dimension = 0; dimension < descriptor_binding->array.dims_count; dimension++) {
-                Log::print("[Frame Graph]         * %" PRIu32, descriptor_binding->array.dims[dimension]);
+                Log::print("[Frame Graph]         * %u", descriptor_binding->array.dims[dimension]);
             }
         }
     }
@@ -440,7 +440,7 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
     Log::print("[Frame Graph]       Input variables:");
 
     for (SpvReflectInterfaceVariable* input_variable : input_variables) {
-        Log::print("[Frame Graph]       * Location: %" PRIu32, input_variable->location);
+        Log::print("[Frame Graph]       * Location: %u", input_variable->location);
         Log::print("[Frame Graph]         Semantic: \"%s\"", input_variable->semantic);
         Log::print("[Frame Graph]         Format: %s", enum_to_string(input_variable->format));
     }
@@ -460,7 +460,7 @@ static void log_shader_reflection(SpvReflectShaderModule& shader_module, MemoryR
     Log::print("[Frame Graph]       Output variables:");
 
     for (SpvReflectInterfaceVariable* output_variable : output_variables) {
-        Log::print("[Frame Graph]       * Location: %" PRIu32, output_variable->location);
+        Log::print("[Frame Graph]       * Location: %u", output_variable->location);
         Log::print("[Frame Graph]         Semantic: \"%s\"", output_variable->semantic);
         Log::print("[Frame Graph]         Format: %s", enum_to_string(output_variable->format));
     }
@@ -474,7 +474,7 @@ FrameGraphVulkan::FrameGraphVulkan(const FrameGraphDescriptor& descriptor)
     , m_thread_pool(descriptor.thread_pool)
     , m_attachment_data(m_render->persistent_memory_resource)
     , m_attachment_descriptors(m_render->persistent_memory_resource)
-    , m_allocations(m_render->persistent_memory_resource)
+    , m_allocation_data(m_render->persistent_memory_resource)
     , m_render_pass_data(m_render->persistent_memory_resource)
     , m_parallel_block_data(m_render->persistent_memory_resource)
     , m_command_pool_data{
@@ -496,28 +496,45 @@ FrameGraphVulkan::~FrameGraphVulkan() {
 
 void FrameGraphVulkan::render() {
     //
-    // Wait until frame is available for render.
+    // Check whether there's a swapchain to render to.
     //
 
     if (m_swapchain == VK_NULL_HANDLE) {
         recreate_swapchain();
 
-        // Most likely the window is minimized.
         if (m_swapchain == VK_NULL_HANDLE) {
+            // Most likely the window is minimized.
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return;
         }
     }
 
+    //
+    // Wait until command buffers are available for new submission.
+    //
+
     size_t semaphore_index = m_semaphore_index++ % SWAPCHAIN_IMAGE_COUNT;
-    uint32_t swapchain_image_index;
+    uint64_t semaphore_value = m_render_finished_timeline_semaphores[semaphore_index]->value;
+
+    VkSemaphoreWaitInfo semaphore_wait_info{};
+    semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    semaphore_wait_info.flags = 0;
+    semaphore_wait_info.semaphoreCount = 1;
+    semaphore_wait_info.pSemaphores = &m_render_finished_timeline_semaphores[semaphore_index]->semaphore;
+    semaphore_wait_info.pValues = &semaphore_value;
 
     VK_ERROR(
-        vkWaitForFences(m_render->device, 1, &m_fences[semaphore_index], VK_TRUE, UINT64_MAX),
-        "Failed to wait for a fence."
+        m_render->wait_semaphores(m_render->device, &semaphore_wait_info, UINT64_MAX),
+        "Failed to wait for a frame semaphore %zu.", semaphore_index
     );
 
-    VkResult acquire_result = vkAcquireNextImageKHR(m_render->device, m_swapchain, UINT64_MAX, m_image_acquired_semaphores[semaphore_index], VK_NULL_HANDLE, &swapchain_image_index);
+    //
+    // Wait until swapchain image is available for render.
+    //
+
+    uint32_t swapchain_image_index;
+
+    VkResult acquire_result = vkAcquireNextImageKHR(m_render->device, m_swapchain, UINT64_MAX, m_image_acquired_binary_semaphores[semaphore_index], VK_NULL_HANDLE, &swapchain_image_index);
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain();
 
@@ -527,10 +544,12 @@ void FrameGraphVulkan::render() {
         VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
     }
 
-    VK_ERROR(
-        vkResetFences(m_render->device, 1, &m_fences[semaphore_index]),
-        "Failed to reset a fence."
-    );
+    //
+    // Increment timeline semaphore value, which provides a guarantee that no resources available right now
+    // will be destroyed until the frame execution on device is finished.
+    //
+
+    m_render_finished_timeline_semaphores[semaphore_index]->value++;
 
     //
     // Reset command pools.
@@ -542,7 +561,7 @@ void FrameGraphVulkan::render() {
         KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
         VK_ERROR(
             vkResetCommandPool(m_render->device, command_pool_data.command_pool, 0),
-            "Failed to reset command pool %zu-%zu.", semaphore_index, thread_index
+            "Failed to reset frame command pool %zu-%zu.", semaphore_index, thread_index
         );
     }
 
@@ -550,7 +569,10 @@ void FrameGraphVulkan::render() {
     // Execute render passes in parallel.
     //
 
+    // Current command buffer index for each render pass.
     Vector<size_t> command_buffer_indices(m_thread_pool->get_count(), m_render->transient_memory_resource);
+
+    // Assign command buffer to each render pass in parallel and then collect them into a single submit.
     Vector<VkCommandBuffer> render_pass_command_buffers(m_render_pass_data.size(), m_render->transient_memory_resource);
 
     m_thread_pool->parallel_for([&](size_t render_pass_index, size_t thread_index) {
@@ -582,7 +604,7 @@ void FrameGraphVulkan::render() {
             VkCommandBuffer command_buffer;
             VK_ERROR(
                 vkAllocateCommandBuffers(m_render->device, &command_buffer_allocate_info, &command_buffer),
-                "Failed to allocate command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
+                "Failed to allocate frame command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
             );
             VK_NAME(m_render, command_buffer, "Frame command buffer %zu-%zu-%zu", semaphore_index, thread_index, command_buffer_index);
 
@@ -601,7 +623,7 @@ void FrameGraphVulkan::render() {
 
         VK_ERROR(
             vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
-            "Failed to begin command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
+            "Failed to begin frame command buffer %zu-%zu-%zu.", semaphore_index, thread_index, command_buffer_index
         );
 
         //
@@ -735,37 +757,85 @@ void FrameGraphVulkan::render() {
     }, m_render_pass_data.size());
 
     //
-    // Submit and present.
+    // Before submitting render passes, submit all copy commands (new could be added in render passes),
+    // which may create an execution dependency between transfer and graphics queues.
     //
 
-    VkPipelineStageFlags pipeline_stage_flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    m_render->flush();
 
-    for (VkCommandBuffer command_buffer : render_pass_command_buffers) {
-        KW_ASSERT(command_buffer != VK_NULL_HANDLE);
-    }
+    //
+    // Submit.
+    //
+
+    const uint64_t wait_semaphore_values[] = {
+        0,
+        m_render->semaphore->value,
+    };
+
+    const uint64_t signal_semaphore_values[] = {
+        0,
+        m_render_finished_timeline_semaphores[semaphore_index]->value,
+    };
+
+    VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info{};
+    timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timeline_semaphore_submit_info.waitSemaphoreValueCount = static_cast<uint32_t>(std::size(wait_semaphore_values));
+    timeline_semaphore_submit_info.pWaitSemaphoreValues = wait_semaphore_values;
+    timeline_semaphore_submit_info.signalSemaphoreValueCount = static_cast<uint32_t>(std::size(signal_semaphore_values));
+    timeline_semaphore_submit_info.pSignalSemaphoreValues = signal_semaphore_values;
+
+    VkPipelineStageFlags wait_stage_masks[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+    };
+
+    const VkSemaphore wait_semaphores[] = {
+        m_image_acquired_binary_semaphores[semaphore_index],
+        m_render->semaphore->semaphore,
+    };
+
+    const VkSemaphore signal_semaphores[] = {
+        m_render_finished_binary_semaphores[semaphore_index],
+        m_render_finished_timeline_semaphores[semaphore_index]->semaphore,
+    };
 
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &m_image_acquired_semaphores[semaphore_index];
-    submit_info.pWaitDstStageMask = &pipeline_stage_flags;
+    submit_info.pNext = &timeline_semaphore_submit_info;
+    submit_info.waitSemaphoreCount = static_cast<uint32_t>(std::size(wait_semaphores));
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stage_masks;
     submit_info.commandBufferCount = static_cast<uint32_t>(render_pass_command_buffers.size());
     submit_info.pCommandBuffers = render_pass_command_buffers.data();
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &m_render_finished_semaphores[semaphore_index];
+    submit_info.signalSemaphoreCount = static_cast<uint32_t>(std::size(signal_semaphores));
+    submit_info.pSignalSemaphores = signal_semaphores;
 
-    VK_ERROR(vkQueueSubmit(m_render->graphics_queue, 1, &submit_info, m_fences[semaphore_index]), "Failed to submit.");
+    {
+        std::lock_guard<Spinlock> lock(*m_render->graphics_queue_spinlock);
+
+        VK_ERROR(vkQueueSubmit(m_render->graphics_queue, 1, &submit_info, VK_NULL_HANDLE), "Failed to submit.");
+    }
+
+    //
+    // Present.
+    //
 
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m_render_finished_semaphores[semaphore_index];
+    present_info.pWaitSemaphores = &m_render_finished_binary_semaphores[semaphore_index];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &m_swapchain;
     present_info.pImageIndices = &swapchain_image_index;
     present_info.pResults = nullptr;
 
-    VkResult present_result = vkQueuePresentKHR(m_render->graphics_queue, &present_info);
+    VkResult present_result;
+    {
+        std::lock_guard<Spinlock> lock(*m_render->graphics_queue_spinlock);
+
+        present_result = vkQueuePresentKHR(m_render->graphics_queue, &present_info);
+    }
+
     if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain();
 
@@ -802,6 +872,7 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
     compute_parallel_block_indices(create_context);
     compute_parallel_blocks(create_context);
     compute_attachment_ranges(create_context);
+    compute_attachment_usage_mask(create_context);
     compute_attachment_layouts(create_context);
 
     create_render_passes(create_context);
@@ -812,18 +883,17 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
 
 void FrameGraphVulkan::destroy_lifetime_resources() {
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        vkDestroyFence(m_render->device, m_fences[swapchain_image_index], &m_render->allocation_callbacks);
-        m_fences[swapchain_image_index] = VK_NULL_HANDLE;
+        m_render_finished_timeline_semaphores[swapchain_image_index].reset();
     }
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        vkDestroySemaphore(m_render->device, m_render_finished_semaphores[swapchain_image_index], &m_render->allocation_callbacks);
-        m_fences[swapchain_image_index] = VK_NULL_HANDLE;
+        vkDestroySemaphore(m_render->device, m_render_finished_binary_semaphores[swapchain_image_index], &m_render->allocation_callbacks);
+        m_render_finished_binary_semaphores[swapchain_image_index] = VK_NULL_HANDLE;
     }
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        vkDestroySemaphore(m_render->device, m_image_acquired_semaphores[swapchain_image_index], &m_render->allocation_callbacks);
-        m_fences[swapchain_image_index] = VK_NULL_HANDLE;
+        vkDestroySemaphore(m_render->device, m_image_acquired_binary_semaphores[swapchain_image_index], &m_render->allocation_callbacks);
+        m_image_acquired_binary_semaphores[swapchain_image_index] = VK_NULL_HANDLE;
     }
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
@@ -991,7 +1061,7 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
         if (attachment_descriptor.load_op == LoadOp::CLEAR) {
             if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
                 Log::print("[Frame Graph]   Clear depth: %.1f", attachment_descriptor.clear_depth);
-                Log::print("[Frame Graph]   Clear stencil: %" PRIu8, attachment_descriptor.clear_stencil);
+                Log::print("[Frame Graph]   Clear stencil: %u", attachment_descriptor.clear_stencil);
             } else {
                 Log::print(
                     "[Frame Graph]   Clear color: %.1f %.1f %.1f %.1f",
@@ -1135,10 +1205,10 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
     for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
         const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
         if (attachment_descriptor.load_op != LoadOp::LOAD) {
-            size_t min_read_render_pass_index = INVALID_VALUE;
-            size_t max_read_render_pass_index = INVALID_VALUE;
-            size_t min_write_render_pass_index = INVALID_VALUE;
-            size_t max_write_render_pass_index = INVALID_VALUE;
+            size_t min_read_render_pass_index = SIZE_MAX;
+            size_t max_read_render_pass_index = SIZE_MAX;
+            size_t min_write_render_pass_index = SIZE_MAX;
+            size_t max_write_render_pass_index = SIZE_MAX;
 
             for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
                 size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
@@ -1147,7 +1217,7 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
                 AttachmentAccess& attachment_access = create_context.attachment_access_matrix[access_index];
 
                 if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if (min_read_render_pass_index == INVALID_VALUE) {
+                    if (min_read_render_pass_index == SIZE_MAX) {
                         min_read_render_pass_index = render_pass_index;
                     }
 
@@ -1155,7 +1225,7 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
                 }
 
                 if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (min_write_render_pass_index == INVALID_VALUE) {
+                    if (min_write_render_pass_index == SIZE_MAX) {
                         min_write_render_pass_index = render_pass_index;
 
                         attachment_access &= ~AttachmentAccess::LOAD;
@@ -1168,18 +1238,18 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
             if (attachment_index == 0) {
                 // This restriction allows the last write render pass to transition the attachment image to present layout.
                 KW_ERROR(
-                    max_read_render_pass_index == INVALID_VALUE || (max_write_render_pass_index != INVALID_VALUE && min_read_render_pass_index > min_write_render_pass_index && max_read_render_pass_index < max_write_render_pass_index),
+                    max_read_render_pass_index == SIZE_MAX || (max_write_render_pass_index != SIZE_MAX && min_read_render_pass_index > min_write_render_pass_index && max_read_render_pass_index < max_write_render_pass_index),
                     "Swapchain image must not be read before the first write nor after the last write."
                 );
             }
 
-            if (max_write_render_pass_index != INVALID_VALUE) {
+            if (max_write_render_pass_index != SIZE_MAX) {
                 size_t access_index = max_write_render_pass_index * m_attachment_descriptors.size() + attachment_index;
                 KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
 
                 AttachmentAccess& attachment_access = create_context.attachment_access_matrix[access_index];
 
-                if (max_read_render_pass_index != INVALID_VALUE) {
+                if (max_read_render_pass_index != SIZE_MAX) {
                     if (min_read_render_pass_index > min_write_render_pass_index && max_read_render_pass_index < max_write_render_pass_index) {
                         // All read accesses are between write accesses, so the last write access is followed by a write access that doesn't load.
                         attachment_access &= ~AttachmentAccess::STORE;
@@ -1254,7 +1324,7 @@ void FrameGraphVulkan::compute_parallel_block_indices(CreateContext& create_cont
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
     KW_ASSERT(m_render_pass_data.empty());
-    m_render_pass_data.resize(frame_graph_descriptor.render_pass_descriptor_count);
+    m_render_pass_data.resize(frame_graph_descriptor.render_pass_descriptor_count, RenderPassData(m_render->persistent_memory_resource));
 
     // Keep accesses to each attachment in current parallel block. Once they conflict, move attachment to a new parallel block.
     Vector<AttachmentAccess> previous_accesses(m_attachment_descriptors.size(), m_render->transient_memory_resource);
@@ -1452,10 +1522,10 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
     Log::print("[Frame Graph] Parallel blocks:");
 
     for (const ParallelBlockData& parallel_block_data : m_parallel_block_data) {
-        Log::print("[Frame Graph] * Source stage mask: 0x%" PRIx32, parallel_block_data.source_stage_mask);
-        Log::print("[Frame Graph]   Destination stage mask: 0x%" PRIx32, parallel_block_data.destination_stage_mask);
-        Log::print("[Frame Graph]   Source access mask: 0x%" PRIx32, parallel_block_data.source_access_mask);
-        Log::print("[Frame Graph]   Destination access mask: 0x%" PRIx32, parallel_block_data.destination_access_mask);
+        Log::print("[Frame Graph] * Source stage mask: 0x%x", parallel_block_data.source_stage_mask);
+        Log::print("[Frame Graph]   Destination stage mask: 0x%x", parallel_block_data.destination_stage_mask);
+        Log::print("[Frame Graph]   Source access mask: 0x%x", parallel_block_data.source_access_mask);
+        Log::print("[Frame Graph]   Destination access mask: 0x%x", parallel_block_data.destination_access_mask);
     }
 #endif
 }
@@ -1488,14 +1558,14 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
                 }
             }
 
-            if (min_render_pass_index == INVALID_VALUE) {
+            if (min_render_pass_index == SIZE_MAX) {
                 // This is rather a weird scenario, this attachment is never written. Avoid aliasing such attachment
                 // because there's no render pass that would convert its layout from `VK_IMAGE_LAYOUT_UNDEFINED` to
                 // `VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL`.
                 attachment_data.min_parallel_block_index = 0;
                 attachment_data.max_parallel_block_index = m_render_pass_data.back().parallel_block_index;
             } else {
-                size_t previous_read_render_pass_index = INVALID_VALUE;
+                size_t previous_read_render_pass_index = SIZE_MAX;
 
                 for (size_t offset = frame_graph_descriptor.render_pass_descriptor_count; offset > 0; offset--) {
                     size_t render_pass_index = (min_render_pass_index + offset) % frame_graph_descriptor.render_pass_descriptor_count;
@@ -1509,7 +1579,7 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
                     }
                 }
 
-                if (previous_read_render_pass_index != INVALID_VALUE) {
+                if (previous_read_render_pass_index != SIZE_MAX) {
                     if (previous_read_render_pass_index > min_render_pass_index) {
                         // Previous read render pass was on previous frame.
                         // Compute non-looped range 000011110000 where min <= max.
@@ -1529,7 +1599,7 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
                 }
             }
 
-            if (min_render_pass_index != INVALID_VALUE) {
+            if (min_render_pass_index != SIZE_MAX) {
                 attachment_data.min_parallel_block_index = m_render_pass_data[min_render_pass_index].parallel_block_index;
                 attachment_data.max_parallel_block_index = m_render_pass_data[max_render_pass_index].parallel_block_index;
             }
@@ -1546,6 +1616,54 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
         Log::print("[Frame Graph] * Name: \"%s\"", attachment_descriptor.name);
         Log::print("[Frame Graph]   Min parallel block index: %zu", attachment_data.min_parallel_block_index);
         Log::print("[Frame Graph]   Max parallel block index: %zu", attachment_data.max_parallel_block_index);
+    }
+#endif
+}
+
+void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_context) {
+    const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
+
+    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
+        AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+        AttachmentData& attachment_data = m_attachment_data[attachment_index];
+
+        for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+
+            if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                    if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
+                        attachment_data.usage_mask |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                    }
+
+                    if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE) {
+                        attachment_data.usage_mask |= VK_IMAGE_USAGE_SAMPLED_BIT;
+                    }
+                } else {
+                    attachment_data.usage_mask |= VK_IMAGE_USAGE_SAMPLED_BIT;
+                }
+            } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                    attachment_data.usage_mask |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                } else {
+                    attachment_data.usage_mask |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+                }
+            }
+        }
+    }
+
+#ifdef KW_FRAME_GRAPH_LOG
+    Log::print("[Frame Graph] Attachment usage mask:");
+
+    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
+        const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+        const AttachmentData& attachment_data = m_attachment_data[attachment_index];
+
+        Log::print("[Frame Graph] * Name: \"%s\"", attachment_descriptor.name);
+        Log::print("[Frame Graph]   Usage mask: 0x%x", attachment_data.usage_mask);
     }
 #endif
 }
@@ -1610,7 +1728,7 @@ void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context)
         const AttachmentData& attachment_data = m_attachment_data[attachment_index];
 
         Log::print("[Frame Graph] * Name: \"%s\"", attachment_descriptor.name);
-        Log::print("[Frame Graph]   Initial access mask: 0x%" PRIx32, attachment_data.initial_access_mask);
+        Log::print("[Frame Graph]   Initial access mask: 0x%x", attachment_data.initial_access_mask);
         Log::print("[Frame Graph]   Initial layout: %s", enum_to_string(attachment_data.initial_layout));
     }
 #endif
@@ -1638,7 +1756,7 @@ void FrameGraphVulkan::create_render_passes(CreateContext& create_context) {
 #endif
 
         KW_ASSERT(render_pass_data.graphics_pipeline_data.empty());
-        render_pass_data.graphics_pipeline_data.resize(render_pass_descriptor.graphics_pipeline_descriptor_count);
+        render_pass_data.graphics_pipeline_data.resize(render_pass_descriptor.graphics_pipeline_descriptor_count, GraphicsPipelineData(m_render->persistent_memory_resource));
 
         for (size_t graphics_pipeline_index = 0; graphics_pipeline_index < render_pass_descriptor.graphics_pipeline_descriptor_count; graphics_pipeline_index++) {
             create_context.graphics_pipeline_memory_resource.reset();
@@ -1858,7 +1976,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, size_t 
 
     KW_ERROR(
         color_attachment_references.size() < limits.maxColorAttachments,
-        "Too many color attachments. Max %" PRIu32 ", got %zu.", limits.maxColorAttachments, color_attachment_references.size()
+        "Too many color attachments. Max %u, got %zu.", limits.maxColorAttachments, color_attachment_references.size()
     );
     
     VkSubpassDescription subpass_description{};
@@ -2225,7 +2343,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
         KW_ERROR(
             binding_descriptor.stride < limits.maxVertexInputBindingStride,
-            "Binding stride overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputBindingStride, binding_descriptor.stride
+            "Binding stride overflow. Max %u, got %zu.", limits.maxVertexInputBindingStride, binding_descriptor.stride
         );
 
         VkVertexInputBindingDescription vertex_binding_description{};
@@ -2242,7 +2360,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
         KW_ERROR(
             binding_descriptor.stride < limits.maxVertexInputBindingStride,
-            "Binding stride overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputBindingStride, binding_descriptor.stride
+            "Binding stride overflow. Max %u, got %zu.", limits.maxVertexInputBindingStride, binding_descriptor.stride
         );
 
         VkVertexInputBindingDescription vertex_binding_description{};
@@ -2286,7 +2404,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
             KW_ERROR(
                 attribute_descriptor.offset < limits.maxVertexInputAttributeOffset,
-                "Attribute offset overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputAttributeOffset, attribute_descriptor.offset
+                "Attribute offset overflow. Max %u, got %zu.", limits.maxVertexInputAttributeOffset, attribute_descriptor.offset
             );
 
             VkVertexInputAttributeDescription vertex_input_attribute_description{};
@@ -2322,7 +2440,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
             KW_ERROR(
                 attribute_descriptor.offset < limits.maxVertexInputAttributeOffset,
-                "Attribute offset overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputAttributeOffset, attribute_descriptor.offset
+                "Attribute offset overflow. Max %u, got %zu.", limits.maxVertexInputAttributeOffset, attribute_descriptor.offset
             );
 
             VkVertexInputAttributeDescription vertex_input_attribute_description{};
@@ -2336,28 +2454,28 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
     KW_ERROR(
         vertex_input_binding_descriptors.size() < limits.maxVertexInputBindings,
-        "Binding overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputBindings, vertex_input_binding_descriptors.size()
+        "Binding overflow. Max %u, got %zu.", limits.maxVertexInputBindings, vertex_input_binding_descriptors.size()
     );
 
     KW_ERROR(
         vertex_input_attribute_descriptions.size() < limits.maxVertexInputAttributes,
-        "Attribute overflow. Max %" PRIu32 ", got %zu.", limits.maxVertexInputAttributes, vertex_input_attribute_descriptions.size()
+        "Attribute overflow. Max %u, got %zu.", limits.maxVertexInputAttributes, vertex_input_attribute_descriptions.size()
     );
 
     KW_ERROR(
         vertex_shader_reflection.output_variable_count <= limits.maxVertexOutputComponents,
-        "Too many output variables in vertex shader. Max %" PRIu32 ", got %zu.", limits.maxVertexOutputComponents, vertex_shader_reflection.output_variable_count
+        "Too many output variables in vertex shader. Max %u, got %zu.", limits.maxVertexOutputComponents, vertex_shader_reflection.output_variable_count
     );
 
     if (graphics_pipeline_descriptor.fragment_shader_filename != nullptr) {
         KW_ERROR(
             fragment_shader_reflection.input_variable_count <= limits.maxFragmentInputComponents,
-            "Too many input variables in fragment shader. Max %" PRIu32 ", got %zu.", limits.maxFragmentInputComponents, fragment_shader_reflection.input_variable_count
+            "Too many input variables in fragment shader. Max %u, got %zu.", limits.maxFragmentInputComponents, fragment_shader_reflection.input_variable_count
         );
 
         KW_ERROR(
             fragment_shader_reflection.output_variable_count <= limits.maxFragmentOutputAttachments,
-            "Too many output attachments in fragment shader. Max %" PRIu32 ", got %zu.", limits.maxFragmentOutputAttachments, fragment_shader_reflection.output_variable_count
+            "Too many output attachments in fragment shader. Max %u, got %zu.", limits.maxFragmentOutputAttachments, fragment_shader_reflection.output_variable_count
         );
     }
 
@@ -2502,7 +2620,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     );
 
     KW_ASSERT(graphics_pipeline_data.attachment_indices.empty());
-    graphics_pipeline_data.attachment_indices.resize(graphics_pipeline_descriptor.uniform_attachment_descriptor_count, INVALID_VALUE);
+    graphics_pipeline_data.attachment_indices.resize(graphics_pipeline_descriptor.uniform_attachment_descriptor_count, SIZE_MAX);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_attachment_descriptor_count; i++) {
         const UniformAttachmentDescriptor& uniform_attachment_descriptor = graphics_pipeline_descriptor.uniform_attachment_descriptors[i];
@@ -2608,7 +2726,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
             descriptor_set_layout_binding.pImmutableSamplers = nullptr;
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
 
-            KW_ASSERT(graphics_pipeline_data.attachment_indices[i] == INVALID_VALUE);
+            KW_ASSERT(graphics_pipeline_data.attachment_indices[i] == SIZE_MAX);
             graphics_pipeline_data.attachment_indices[i] = attachment_index;
         }
     }
@@ -2932,7 +3050,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
     if (graphics_pipeline_descriptor.push_constants_name != nullptr) {
         KW_ERROR(
             graphics_pipeline_descriptor.push_constants_size <= limits.maxPushConstantsSize,
-            "Push constants overflow. Max %" PRIu32 ", got %zu.", limits.maxPushConstantsSize, graphics_pipeline_descriptor.push_constants_size
+            "Push constants overflow. Max %u, got %zu.", limits.maxPushConstantsSize, graphics_pipeline_descriptor.push_constants_size
         );
 
         {
@@ -2951,7 +3069,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
                     KW_ERROR(
                         graphics_pipeline_descriptor.push_constants_size == vertex_shader_reflection.push_constant_blocks[0].size,
-                        "Mismatching push constants size in \"%s\". Expected %zu, got %" PRIu32 ".", graphics_pipeline_descriptor.vertex_shader_filename,
+                        "Mismatching push constants size in \"%s\". Expected %zu, got %u.", graphics_pipeline_descriptor.vertex_shader_filename,
                         graphics_pipeline_descriptor.push_constants_size, vertex_shader_reflection.push_constant_blocks[0].size
                     );
 
@@ -2982,7 +3100,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, s
 
                     KW_ERROR(
                         graphics_pipeline_descriptor.push_constants_size == fragment_shader_reflection.push_constant_blocks[0].size,
-                        "Mismatching push constants size in \"%s\". Expected %zu, got %" PRIu32 ".", graphics_pipeline_descriptor.fragment_shader_filename,
+                        "Mismatching push constants size in \"%s\". Expected %zu, got %u.", graphics_pipeline_descriptor.fragment_shader_filename,
                         graphics_pipeline_descriptor.push_constants_size, fragment_shader_reflection.push_constant_blocks[0].size
                     );
 
@@ -3075,15 +3193,15 @@ void FrameGraphVulkan::create_command_pools(CreateContext& create_context) {
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
         KW_ASSERT(m_command_pool_data[swapchain_image_index].empty());
-        m_command_pool_data[swapchain_image_index].resize(thread_count);
+        m_command_pool_data[swapchain_image_index].resize(thread_count, CommandPoolData(m_render->persistent_memory_resource));
 
-        for (size_t thread_index = 0; thread_index < m_command_pool_data[swapchain_image_index].size(); thread_index++) {
+        for (size_t thread_index = 0; thread_index < thread_count; thread_index++) {
             CommandPoolData& command_pool_data = m_command_pool_data[swapchain_image_index][thread_index];
 
             VkCommandPoolCreateInfo command_pool_create_info{};
             command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            command_pool_create_info.queueFamilyIndex = m_render->queue_family_index;
+            command_pool_create_info.queueFamilyIndex = m_render->graphics_queue_family_index;
 
             KW_ASSERT(command_pool_data.command_pool == VK_NULL_HANDLE);
             VK_ERROR(
@@ -3123,59 +3241,46 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
     fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        KW_ASSERT(m_image_acquired_semaphores[swapchain_image_index] == VK_NULL_HANDLE);
+        KW_ASSERT(m_image_acquired_binary_semaphores[swapchain_image_index] == VK_NULL_HANDLE);
         VK_ERROR(
-            vkCreateSemaphore(m_render->device, &semaphore_create_info, &m_render->allocation_callbacks, &m_image_acquired_semaphores[swapchain_image_index]),
-            "Failed to create a semaphore."
+            vkCreateSemaphore(m_render->device, &semaphore_create_info, &m_render->allocation_callbacks, &m_image_acquired_binary_semaphores[swapchain_image_index]),
+            "Failed to create an image acquire binary semaphore."
         );
         VK_NAME(
-            m_render, m_image_acquired_semaphores[swapchain_image_index],
+            m_render, m_image_acquired_binary_semaphores[swapchain_image_index],
             "Frame acquire semaphore %zu", swapchain_image_index
         );
 
-        KW_ASSERT(m_render_finished_semaphores[swapchain_image_index] == VK_NULL_HANDLE);
+        KW_ASSERT(m_render_finished_binary_semaphores[swapchain_image_index] == VK_NULL_HANDLE);
         VK_ERROR(
-            vkCreateSemaphore(m_render->device, &semaphore_create_info, &m_render->allocation_callbacks, &m_render_finished_semaphores[swapchain_image_index]),
-            "Failed to create a semaphore."
+            vkCreateSemaphore(m_render->device, &semaphore_create_info, &m_render->allocation_callbacks, &m_render_finished_binary_semaphores[swapchain_image_index]),
+            "Failed to create a render finished binary semaphore."
         );
         VK_NAME(
-            m_render, m_render_finished_semaphores[swapchain_image_index],
+            m_render, m_render_finished_binary_semaphores[swapchain_image_index],
             "Frame finished semaphore %zu", swapchain_image_index
         );
 
-        KW_ASSERT(m_fences[swapchain_image_index] == VK_NULL_HANDLE);
-        VK_ERROR(
-            vkCreateFence(m_render->device, &fence_create_info, &m_render->allocation_callbacks, &m_fences[swapchain_image_index]),
-            "Failed to create a fence."
-        );
+        m_render_finished_timeline_semaphores[swapchain_image_index] = std::make_shared<TimelineSemaphore>(m_render);
         VK_NAME(
-            m_render, m_fences[swapchain_image_index],
-            "Frame fence %zu", swapchain_image_index
+            m_render, m_render_finished_timeline_semaphores[swapchain_image_index]->semaphore,
+            "Frame finished timeline semaphore %zu", swapchain_image_index
         );
+
+        // Render must wait for this frame to finish before destroying a resource that could be used in this frame.
+        m_render->add_resource_dependency(m_render_finished_timeline_semaphores[swapchain_image_index]);
     }
 }
 
 void FrameGraphVulkan::create_temporary_resources() {
-    RecreateContext recreate_context{
-        0U,
-        0U,
-        Vector<VkMemoryRequirements>(m_render->transient_memory_resource),
-        Vector<size_t>(m_render->transient_memory_resource),
-        Vector<AttachmentRecreateData>(m_render->transient_memory_resource),
-        Vector<AllocationRecreateData>(m_render->transient_memory_resource),
-    };
+    RecreateContext recreate_context{ 0, 0 };
 
     if (create_swapchain(recreate_context)) {
         create_swapchain_images(recreate_context);
         create_swapchain_image_views(recreate_context);
 
         create_attachment_images(recreate_context);
-        compute_memory_requirements(recreate_context);
-        compute_sorted_attachment_indices(recreate_context);
-        compute_allocation_indices(recreate_context);
-        compute_allocation_offsets(recreate_context);
         allocate_attachment_memory(recreate_context);
-        bind_attachment_image_memory(recreate_context);
         create_attachment_image_views(recreate_context);
 
         create_framebuffers(recreate_context);
@@ -3192,11 +3297,11 @@ void FrameGraphVulkan::destroy_temporary_resources() {
         }
     }
 
-    for (VkDeviceMemory& allocation : m_allocations) {
-        vkFreeMemory(m_render->device, allocation, &m_render->allocation_callbacks);
+    for (AllocationData& allocation_data : m_allocation_data) {
+        m_render->deallocate_device_texture_memory(allocation_data.data_index, allocation_data.data_offset);
     }
 
-    m_allocations.clear();
+    m_allocation_data.clear();
 
     for (AttachmentData& attachment_data : m_attachment_data) {
         vkDestroyImageView(m_render->device, attachment_data.image_view, &m_render->allocation_callbacks);
@@ -3230,17 +3335,17 @@ bool FrameGraphVulkan::create_swapchain(RecreateContext& recreate_context) {
     );
     KW_ERROR(
         capabilities.minImageCount <= SWAPCHAIN_IMAGE_COUNT && (capabilities.maxImageCount >= SWAPCHAIN_IMAGE_COUNT || capabilities.maxImageCount == 0),
-        "Incompatible surface (min %" PRIu32 ", max %" PRIu32 ").", capabilities.minImageCount, capabilities.maxImageCount
+        "Incompatible surface (min %u, max %u).", capabilities.minImageCount, capabilities.maxImageCount
     );
 
 #ifdef KW_FRAME_GRAPH_LOG
     Log::print("[Frame Graph] Swapchain capabilities:");
-    Log::print("[Frame Graph] * Min image count: %" PRIu32, capabilities.minImageCount);
-    Log::print("[Frame Graph]   Max image count: %" PRIu32, capabilities.maxImageCount);
-    Log::print("[Frame Graph]   Min image width: %" PRIu32, capabilities.minImageExtent.width);
-    Log::print("[Frame Graph]   Max image width: %" PRIu32, capabilities.maxImageExtent.width);
-    Log::print("[Frame Graph]   Min image height: %" PRIu32, capabilities.minImageExtent.height);
-    Log::print("[Frame Graph]   Max image height: %" PRIu32, capabilities.maxImageExtent.height);
+    Log::print("[Frame Graph] * Min image count: %u", capabilities.minImageCount);
+    Log::print("[Frame Graph]   Max image count: %u", capabilities.maxImageCount);
+    Log::print("[Frame Graph]   Min image width: %u", capabilities.minImageExtent.width);
+    Log::print("[Frame Graph]   Max image width: %u", capabilities.maxImageExtent.width);
+    Log::print("[Frame Graph]   Min image height: %u", capabilities.minImageExtent.height);
+    Log::print("[Frame Graph]   Max image height: %u", capabilities.maxImageExtent.height);
 #endif
 
     VkExtent2D extent;
@@ -3254,8 +3359,8 @@ bool FrameGraphVulkan::create_swapchain(RecreateContext& recreate_context) {
     }
 
 #ifdef KW_FRAME_GRAPH_LOG
-    Log::print("[Frame Graph] Swapchain width: %" PRIu32, extent.width);
-    Log::print("[Frame Graph] Swapchain height: %" PRIu32, extent.height);
+    Log::print("[Frame Graph] Swapchain width: %u", extent.width);
+    Log::print("[Frame Graph] Swapchain height: %u", extent.height);
 #endif
 
     recreate_context.swapchain_width = extent.width;
@@ -3299,7 +3404,7 @@ void FrameGraphVulkan::create_swapchain_images(RecreateContext& recreate_context
         vkGetSwapchainImagesKHR(m_render->device, m_swapchain, &image_count, nullptr),
         "Failed to get swapchain image count."
     );
-    KW_ERROR(image_count == SWAPCHAIN_IMAGE_COUNT, "Invalid swapchain image count %" PRIu32 ".", image_count);
+    KW_ERROR(image_count == SWAPCHAIN_IMAGE_COUNT, "Invalid swapchain image count %u.", image_count);
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
         KW_ASSERT(m_swapchain_images[swapchain_image_index] == VK_NULL_HANDLE);
@@ -3362,13 +3467,6 @@ void FrameGraphVulkan::create_attachment_images(RecreateContext& recreate_contex
         KW_ERROR(width <= limits.maxImageDimension2D, "Attachment image is too big.");
         KW_ERROR(height <= limits.maxImageDimension2D, "Attachment image is too big.");
 
-        VkImageUsageFlags usage;
-        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-            usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        } else {
-            usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        }
-
         VkImageCreateInfo image_create_info{};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.flags = 0;
@@ -3381,7 +3479,7 @@ void FrameGraphVulkan::create_attachment_images(RecreateContext& recreate_contex
         image_create_info.arrayLayers = 1;
         image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
         image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        image_create_info.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
+        image_create_info.usage = attachment_data.usage_mask;
         image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         image_create_info.queueFamilyIndexCount = 0;
         image_create_info.pQueueFamilyIndices = nullptr;
@@ -3396,109 +3494,69 @@ void FrameGraphVulkan::create_attachment_images(RecreateContext& recreate_contex
     }
 }
 
-void FrameGraphVulkan::compute_memory_requirements(RecreateContext& recreate_context) {
-    KW_ASSERT(recreate_context.memory_requirements.empty());
-    recreate_context.memory_requirements.resize(m_attachment_data.size());
+void FrameGraphVulkan::allocate_attachment_memory(RecreateContext& recreate_context) {
+    //
+    // Query attachment memory requirements.
+    //
+
+    Vector<VkMemoryRequirements> memory_requirements(m_attachment_data.size(), m_render->transient_memory_resource);
 
     // Ignore the first attachment, because it's a swapchain attachment.
-    for (size_t i = 1; i < recreate_context.memory_requirements.size(); i++) {
-        vkGetImageMemoryRequirements(m_render->device, m_attachment_data[i].image, &recreate_context.memory_requirements[i]);
+    for (size_t i = 1; i < memory_requirements.size(); i++) {
+        vkGetImageMemoryRequirements(m_render->device, m_attachment_data[i].image, &memory_requirements[i]);
     }
-}
 
-void FrameGraphVulkan::compute_sorted_attachment_indices(RecreateContext& recreate_context) {
-    KW_ASSERT(recreate_context.sorted_attachment_indices.empty());
-    recreate_context.sorted_attachment_indices.resize(recreate_context.memory_requirements.size());
+    //
+    // Compute sorted attachment mapping.
+    //
 
-    std::iota(recreate_context.sorted_attachment_indices.begin(), recreate_context.sorted_attachment_indices.end(), 0);
+    Vector<size_t> sorted_attachment_indices(memory_requirements.size(), m_render->transient_memory_resource);
 
-    std::sort(recreate_context.sorted_attachment_indices.begin(), recreate_context.sorted_attachment_indices.end(), [&](size_t a, size_t b) {
-        return recreate_context.memory_requirements[a].size > recreate_context.memory_requirements[b].size;
+    std::iota(sorted_attachment_indices.begin(), sorted_attachment_indices.end(), 0);
+
+    std::sort(sorted_attachment_indices.begin(), sorted_attachment_indices.end(), [&](size_t a, size_t b) {
+        return memory_requirements[a].size > memory_requirements[b].size;
     });
 
-#ifdef KW_FRAME_GRAPH_LOG
-    Log::print("[Frame Graph] Sorted attachment memory requirements:");
+    //
+    // Allocate memory for attachments or alias other attachments.
+    //
 
-    for (size_t i = 0; i < recreate_context.sorted_attachment_indices.size(); i++) {
-        size_t attachment_index = recreate_context.sorted_attachment_indices[i];
+    struct AliasData {
+        size_t attachment_index;
+
+        VkDeviceMemory memory;
+
+        size_t alias_index;
+        size_t alias_offset;
+        size_t alias_size_left;
+    };
+
+    KW_ASSERT(m_allocation_data.empty());
+    m_allocation_data.reserve(m_attachment_data.size());
+
+    Vector<AliasData> alias_data(m_render->transient_memory_resource);
+    alias_data.reserve(sorted_attachment_indices.size());
+
+    for (size_t i = 0; i < sorted_attachment_indices.size(); i++) {
+        // Ignore the swapchain attachment.
+        size_t attachment_index = sorted_attachment_indices[i];
         if (attachment_index != 0) {
-            Log::print("[Frame Graph] * Name: \"%s\"", m_attachment_descriptors[attachment_index].name);
-            Log::print("[Frame Graph]   Size: %" PRIu64, recreate_context.memory_requirements[attachment_index].size);
-            Log::print("[Frame Graph]   Alignment: %" PRIu64, recreate_context.memory_requirements[attachment_index].alignment);
-            Log::print("[Frame Graph]   Memory type bits: %" PRIu32, recreate_context.memory_requirements[attachment_index].memoryTypeBits);
-        }
-    }
-#endif
-}
+            VkDeviceSize size = next_pow2(memory_requirements[attachment_index].size);
+            VkDeviceSize alignment = memory_requirements[attachment_index].alignment;
 
-void FrameGraphVulkan::compute_allocation_indices(RecreateContext& recreate_context) {
-    const VkPhysicalDeviceMemoryProperties& memory_properties = m_render->physical_device_memory_properties;
+            VkDeviceMemory memory = VK_NULL_HANDLE;
+            VkDeviceSize offset = 0;
 
-    KW_ASSERT(recreate_context.attachment_data.empty());
-    recreate_context.attachment_data.resize(m_attachment_data.size());
+            for (size_t j = 0; j < alias_data.size(); j++) {
+                VkDeviceSize alignemnt_offset = align_up(alias_data[j].alias_offset, alignment) - alias_data[j].alias_offset;
+                if (alias_data[j].alias_size_left >= size + alignemnt_offset) {
+                    bool overlap = false;
 
-    // There's usually a very few different allocations.
-    KW_ASSERT(recreate_context.allocation_data.empty());
-    recreate_context.allocation_data.reserve(4);
+                    size_t alias_index = j;
+                    while (!overlap && alias_index != SIZE_MAX) {
+                        size_t another_attachment_index = alias_data[alias_index].attachment_index;
 
-    // Ignore the first attachment, because it's a swapchain attachment.
-    for (size_t attachment_index = 1; attachment_index < m_attachment_data.size(); attachment_index++) {
-        if (recreate_context.attachment_data[attachment_index].allocation_index == INVALID_VALUE) {
-            size_t allocation_index = recreate_context.allocation_data.size();
-            uint32_t memory_type_bits = 0xFFFFFFFFU;
-
-            for (size_t another_attachment_index = attachment_index; another_attachment_index < m_attachment_data.size(); another_attachment_index++) {
-                if (recreate_context.attachment_data[another_attachment_index].allocation_index == INVALID_VALUE) {
-                    if ((memory_type_bits & recreate_context.memory_requirements[another_attachment_index].memoryTypeBits) != 0) {
-                        recreate_context.attachment_data[another_attachment_index].allocation_index = allocation_index;
-                        memory_type_bits &= recreate_context.memory_requirements[another_attachment_index].memoryTypeBits;
-                    }
-                }
-            }
-
-            AllocationRecreateData allocation_recreate_data{};
-
-            for (uint32_t memory_type_index = 0; memory_type_index < memory_properties.memoryTypeCount; memory_type_index++) {
-                uint32_t memory_type_bit = 1 << memory_type_index;
-                if ((memory_type_bits & memory_type_bit) == memory_type_bit) {
-                    VkMemoryPropertyFlags property_flags = memory_properties.memoryTypes[memory_type_index].propertyFlags;
-                    if ((property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-                        allocation_recreate_data.memory_type_index = memory_type_index;
-                        break;
-                    }
-                }
-            }
-
-            recreate_context.allocation_data.push_back(allocation_recreate_data);
-        }
-    }
-
-    KW_ASSERT(m_allocations.empty());
-    m_allocations.resize(recreate_context.allocation_data.size());
-}
-
-void FrameGraphVulkan::compute_allocation_offsets(RecreateContext& recreate_context) {
-    Vector<size_t> overlap_attachment_indices(m_render->transient_memory_resource);
-    overlap_attachment_indices.reserve(m_attachment_data.size());
-
-    for (size_t allocation_index = 0; allocation_index < m_allocations.size(); allocation_index++) {
-        // Iterate over attachments in descending order because this allows to place smaller attachments into
-        // sub-allocations created earlier by larger attachments.
-        for (size_t i = 0; i < m_attachment_data.size(); i++) {
-            size_t attachment_index = recreate_context.sorted_attachment_indices[i];
-            KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-            // The swapchain attachment with `attachment_index` equal to 0 won't ever pass the following check.
-            if (recreate_context.attachment_data[attachment_index].allocation_index == allocation_index) {
-                overlap_attachment_indices.clear();
-
-                // To iterate over previous attachments we must iterate in decreasing order again.
-                for (size_t j = 0; j < i; j++) {
-                    size_t another_attachment_index = recreate_context.sorted_attachment_indices[j];
-                    KW_ASSERT(another_attachment_index < m_attachment_descriptors.size());
-
-                    // The swapchain attachment with `another_attachment_index` equal to 0 won't ever pass the following check.
-                    if (recreate_context.attachment_data[another_attachment_index].allocation_index == allocation_index) {
                         size_t a = m_attachment_data[attachment_index].min_parallel_block_index;
                         size_t b = m_attachment_data[attachment_index].max_parallel_block_index;
                         size_t c = m_attachment_data[another_attachment_index].min_parallel_block_index;
@@ -3509,12 +3567,12 @@ void FrameGraphVulkan::compute_allocation_offsets(RecreateContext& recreate_cont
                             if (c <= d) {
                                 // Another attachment range is non-looped.
                                 if (a <= d && b >= c) {
-                                    overlap_attachment_indices.push_back(another_attachment_index);
+                                    overlap = true;
                                 }
                             } else {
                                 // Another attachment range is looped.
                                 if (a <= d || b >= c) {
-                                    overlap_attachment_indices.push_back(another_attachment_index);
+                                    overlap = true;
                                 }
                             }
                         } else {
@@ -3522,112 +3580,54 @@ void FrameGraphVulkan::compute_allocation_offsets(RecreateContext& recreate_cont
                             if (c <= d) {
                                 // Another attachment range is non-looped.
                                 if (c <= b || d >= a) {
-                                    overlap_attachment_indices.push_back(another_attachment_index);
+                                    overlap = true;
                                 }
                             } else {
                                 // Another attachment range is looped. Both looped ranges always overlap.
-                                overlap_attachment_indices.push_back(another_attachment_index);
+                                overlap = true;
                             }
                         }
-                    }
-                }
 
-                std::sort(overlap_attachment_indices.begin(), overlap_attachment_indices.end(), [&](size_t a, size_t b) {
-                    return recreate_context.attachment_data[a].allocation_offset < recreate_context.attachment_data[b].allocation_offset;
-                });
-
-                size_t offset = 0;
-                size_t size = recreate_context.memory_requirements[attachment_index].size;
-                size_t alignment = recreate_context.memory_requirements[attachment_index].alignment;
-
-                for (size_t another_attachment_index : overlap_attachment_indices) {
-                    size_t another_offset = recreate_context.attachment_data[another_attachment_index].allocation_offset;
-                    size_t another_size = recreate_context.memory_requirements[another_attachment_index].size;
-
-                    // Compute current attachment's allocation offset only once. Keep computing offset though.
-                    if (recreate_context.attachment_data[attachment_index].allocation_offset == INVALID_VALUE) {
-                        size_t aligned_offset = align_up(offset, alignment);
-                        if (aligned_offset + size <= another_offset) {
-                            recreate_context.attachment_data[attachment_index].allocation_offset = aligned_offset;
-                        }
+                        alias_index = alias_data[alias_index].alias_index;
                     }
 
-                    offset = another_offset + another_size;
-                }
+                    if (!overlap) {
+                        memory = alias_data[j].memory;
+                        offset = alias_data[j].alias_offset + alignemnt_offset;
 
-                // Compute current attachment's allocation offset only once.
-                if (recreate_context.attachment_data[attachment_index].allocation_offset == INVALID_VALUE) {
-                    size_t aligned_offset = align_up(offset, alignment);
-                    recreate_context.attachment_data[attachment_index].allocation_offset = aligned_offset;
-                    offset = aligned_offset + recreate_context.memory_requirements[attachment_index].size;
-                }
+                        alias_data[j].alias_size_left -= size + alignemnt_offset;
+                        alias_data[j].alias_offset += size + alignemnt_offset;
 
-                recreate_context.allocation_data[allocation_index].size = std::max(recreate_context.allocation_data[allocation_index].size, offset);
+                        alias_data.push_back(AliasData{ attachment_index, memory, alias_data[j].attachment_index, offset, size });
+
+                        break;
+                    }
+                }
             }
+
+            if (memory == VK_NULL_HANDLE) {
+                RenderVulkan::DeviceAllocation device_allocation = m_render->allocate_device_texture_memory(size, alignment);
+                KW_ASSERT(device_allocation.memory != VK_NULL_HANDLE);
+
+                m_allocation_data.push_back(AllocationData{ device_allocation.data_index, device_allocation.data_offset });
+
+                memory = device_allocation.memory;
+                offset = device_allocation.data_offset;
+
+                alias_data.push_back(AliasData{ attachment_index, memory, SIZE_MAX, offset, size });
+            }
+
+            AttachmentData& attachment_data = m_attachment_data[attachment_index];
+            KW_ASSERT(attachment_data.image != VK_NULL_HANDLE);
+
+            const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+            KW_ASSERT(attachment_descriptor.name != nullptr);
+
+            VK_ERROR(
+                vkBindImageMemory(m_render->device, attachment_data.image, memory, offset),
+                "Failed to bind attachment image \"%s\" to memory.", attachment_descriptor.name
+            );
         }
-    }
-
-#ifdef KW_FRAME_GRAPH_LOG
-    Log::print("[Frame Graph] Attachment recreate data:");
-
-    // Ignore the first attachment, because it's a swapchain attachment.
-    for (size_t attachment_index = 1; attachment_index < m_attachment_data.size(); attachment_index++) {
-        const AttachmentRecreateData& attachment_data = recreate_context.attachment_data[attachment_index];
-
-        Log::print("[Frame Graph] * Name: \"%s\"", m_attachment_descriptors[attachment_index].name);
-        Log::print("[Frame Graph]   Allocation index: %zu", attachment_data.allocation_index);
-        Log::print("[Frame Graph]   Allocation offset: %zu", attachment_data.allocation_offset);
-    }
-
-    Log::print("[Frame Graph] Allocation recreate data:");
-
-    for (size_t allocation_index = 0; allocation_index < recreate_context.allocation_data.size(); allocation_index++) {
-        const AllocationRecreateData& allocation_data = recreate_context.allocation_data[allocation_index];
-
-        Log::print("[Frame Graph] * Size: %zu", allocation_data.size);
-        Log::print("[Frame Graph]   Memory type index: %" PRIu32, allocation_data.memory_type_index);
-    }
-#endif
-}
-
-void FrameGraphVulkan::allocate_attachment_memory(RecreateContext& recreate_context) {
-    for (size_t allocation_index = 0; allocation_index < m_allocations.size(); allocation_index++) {
-        AllocationRecreateData& allocation_recreate_data = recreate_context.allocation_data[allocation_index];
-        VkDeviceMemory& allocation = m_allocations[allocation_index];
-
-        VkMemoryAllocateInfo memory_allocate_info{};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = allocation_recreate_data.size;
-        memory_allocate_info.memoryTypeIndex = allocation_recreate_data.memory_type_index;
-
-        KW_ASSERT(allocation == VK_NULL_HANDLE);
-        VK_ERROR(
-            vkAllocateMemory(m_render->device, &memory_allocate_info, &m_render->allocation_callbacks, &allocation),
-            "Failed to allocate attachment memory %zu.", allocation_index
-        );
-        VK_NAME(m_render, allocation, "Allocation %zu", allocation_index);
-    }
-}
-
-void FrameGraphVulkan::bind_attachment_image_memory(RecreateContext& recreate_context) {
-    // Ignore the first attachment, because it's a swapchain attachment.
-    for (size_t i = 1; i < m_attachment_data.size(); i++) {
-        const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[i];
-        KW_ASSERT(attachment_descriptor.name != nullptr);
-
-        AttachmentData& attachment_data = m_attachment_data[i];
-        KW_ASSERT(attachment_data.image != VK_NULL_HANDLE);
-
-        AttachmentRecreateData& attachment_recreate_data = recreate_context.attachment_data[i];
-        KW_ASSERT(attachment_recreate_data.allocation_index < m_allocations.size());
-
-        VkDeviceMemory allocation = m_allocations[attachment_recreate_data.allocation_index];
-        KW_ASSERT(allocation != VK_NULL_HANDLE);
-
-        VK_ERROR(
-            vkBindImageMemory(m_render->device, attachment_data.image, allocation, attachment_recreate_data.allocation_offset),
-            "Failed to bind attachment image \"%s\" to memory.", attachment_descriptor.name
-        );
     }
 }
 

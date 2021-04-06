@@ -9,7 +9,11 @@ namespace kw {
 class LinearMemoryResource : public MemoryResource {
 public:
     LinearMemoryResource(MemoryResource& memory_resource, size_t capacity);
+    LinearMemoryResource(const LinearMemoryResource& other) = delete;
+    LinearMemoryResource(LinearMemoryResource&& other) = delete;
     ~LinearMemoryResource() override;
+    LinearMemoryResource& operator=(const LinearMemoryResource& original) = delete;
+    LinearMemoryResource& operator=(LinearMemoryResource&& original) = delete;
 
     void* allocate(size_t size, size_t alignment) override;
     void* reallocate(void* memory, size_t size, size_t alignment) override;

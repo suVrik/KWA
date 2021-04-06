@@ -22,6 +22,18 @@ struct RenderDescriptor {
 
     bool is_validation_enabled;
     bool is_debug_names_enabled;
+
+    // When overflows, automatically performs flush and waits for transfer to finish.
+    size_t staging_buffer_size;
+
+    // When overflows, new transient data overwrites old transient data, which may cause visual bugs.
+    size_t transient_buffer_size;
+
+    size_t buffer_allocation_size;
+    size_t buffer_block_size;
+
+    size_t texture_allocation_size;
+    size_t texture_block_size;
 };
 
 struct BufferDescriptor {
@@ -152,8 +164,6 @@ public:
 
     virtual Texture create_texture(const TextureDescriptor& texture_descriptor) = 0;
     virtual void destroy_texture(Texture texture) = 0;
-
-    virtual void flush() = 0;
 
     virtual RenderApi get_api() const = 0;
 };

@@ -10,6 +10,7 @@
 
 #include <render/frame_graph.h>
 #include <render/render.h>
+#include <render/render_utils.h>
 
 #include <system/event_loop.h>
 #include <system/window.h>
@@ -81,6 +82,12 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     render_descriptor.transient_memory_resource = &transient_memory_resource;
     render_descriptor.is_validation_enabled = true;
     render_descriptor.is_debug_names_enabled = true;
+    render_descriptor.staging_buffer_size = 128 * 1024 * 1024;
+    render_descriptor.transient_buffer_size = 8 * 1024 * 1024;
+    render_descriptor.buffer_allocation_size = 16 * 1024 * 1024;
+    render_descriptor.buffer_block_size = 4 * 1024;
+    render_descriptor.texture_allocation_size = 256 * 1024 * 1024;
+    render_descriptor.texture_block_size = 64 * 1024;
 
     std::unique_ptr<Render> render(Render::create_instance(render_descriptor));
 

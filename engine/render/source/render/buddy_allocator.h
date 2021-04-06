@@ -1,32 +1,37 @@
 #include "render/render.h"
 
-#include <memory>
-
 namespace kw {
 
-class BuddyAllocator {
+class RenderBuddyAllocator {
 public:
-    /** Returned by allocate when couldn't find suitable block. */
     static constexpr size_t INVALID_ALLOCATION = SIZE_MAX;
 
-    /** For example largest_node_pow2 = 28, smallest_node_pow2 = 13 means the buddy allocator manages 256mb
-        and the smallest possible allocation is 8kb. Allocator overhead for such case is only 64kb. */
-    BuddyAllocator(size_t largest_node_pow2, size_t smallest_node_pow2);
+    RenderBuddyAllocator(MemoryResource& memory_resource, size_t root_size_log2, size_t leaf_size_log2);
+    RenderBuddyAllocator(const RenderBuddyAllocator& other) = delete;
+    RenderBuddyAllocator(RenderBuddyAllocator&& other);
+    ~RenderBuddyAllocator();
+    RenderBuddyAllocator& operator=(const RenderBuddyAllocator& other) = delete;
+    RenderBuddyAllocator& operator=(RenderBuddyAllocator&& other) = delete;
 
-    size_t allocate(size_t size);
+    size_t allocate(size_t size, size_t alignment);
     void deallocate(size_t offset);
 
-    /** Check whether all allocator memory is available. */
-    bool is_empty() const;
-
 private:
-    static constexpr uint16_t BUSY_BIT = 1 << 15;
+    static constexpr uint32_t END = 0x07FFFFFF;
+    static constexpr uint32_t BUSY = 0x07FFFFFE;
 
-    size_t m_min_size;
-    size_t m_max_depth;
+    struct Leaf {
+        uint32_t next : 27;
+        uint32_t depth : 5;
+    };
 
-    std::unique_ptr<uint16_t[]> m_heads;
-    std::unique_ptr<uint16_t[]> m_data;
+    MemoryResource& m_memory_resource;
+
+    uint32_t m_leaf_size_log2;
+    uint32_t m_max_depth;
+
+    uint32_t* m_heads;
+    Leaf* m_leafs;
 };
 
 } // namespace kw

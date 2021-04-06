@@ -7,7 +7,11 @@ namespace kw {
 class BuddyMemoryResource : public MemoryResource {
 public:
     BuddyMemoryResource(MemoryResource& memory_resource, size_t root_size_log2, size_t leaf_size_log2);
+    BuddyMemoryResource(const BuddyMemoryResource& other) = delete;
+    BuddyMemoryResource(BuddyMemoryResource&& other) = delete;
     ~BuddyMemoryResource() override;
+    BuddyMemoryResource& operator=(const BuddyMemoryResource& other) = delete;
+    BuddyMemoryResource& operator=(BuddyMemoryResource&& other) = delete;
 
     void* allocate(size_t size, size_t alignment) override;
     void* reallocate(void* memory, size_t size, size_t alignment) override;

@@ -2,6 +2,7 @@
 #include "render/vulkan/render_vulkan.h"
 
 #include <core/error.h>
+#include <core/math.h>
 
 #include <array>
 
@@ -213,7 +214,18 @@ size_t get_pixel_size(TextureFormat format) {
 } // namespace TextureFormatUtils
 
 Render* Render::create_instance(const RenderDescriptor& descriptor) {
-    KW_ASSERT(descriptor.memory_resource != nullptr);
+    KW_ERROR(descriptor.persistent_memory_resource != nullptr, "Invalid persistent memory resource.");
+    KW_ERROR(descriptor.transient_memory_resource != nullptr, "Invalid transient memory resource.");
+    KW_ERROR(descriptor.buffer_allocation_size >= descriptor.buffer_block_size, "Vertex/index allocation must be larger than block.");
+    KW_ERROR(descriptor.buffer_block_size > 0, "Vertex/index block must not be empty.");
+    KW_ERROR(is_pow2(descriptor.buffer_allocation_size), "Vertex/index allocation must be power of 2.");
+    KW_ERROR(is_pow2(descriptor.buffer_block_size), "Vertex/index block must be power of 2.");
+    KW_ERROR(descriptor.texture_allocation_size >= descriptor.texture_block_size, "Texture allocation must be larger than block.");
+    KW_ERROR(descriptor.texture_block_size > 0, "Texture block must not be empty.");
+    KW_ERROR(is_pow2(descriptor.texture_allocation_size), "Texture allocation must be power of 2.");
+    KW_ERROR(is_pow2(descriptor.texture_block_size), "Texture block must be power of 2.");
+    KW_ERROR(descriptor.staging_buffer_size > 0, "Staging buffer must not be empty.");
+    KW_ERROR(descriptor.transient_buffer_size > 0, "Transient buffer must not be empty.");
 
     switch (descriptor.api) {
     case RenderApi::VULKAN:

@@ -13,7 +13,7 @@ public:
     virtual void deallocate(void* memory) = 0;
 
     template <typename T>
-    T* allocate(size_t count) {
+    T* allocate(size_t count = 1) {
         return static_cast<T*>(allocate(sizeof(T) * count, alignof(T)));
     }
 };
@@ -41,11 +41,11 @@ public:
     }
 
     bool operator==(const MemoryResourceAllocator& other) const {
-        return memory_resource == other.memory_resource;
+        return &memory_resource == &other.memory_resource;
     }
 
     bool operator!=(const MemoryResourceAllocator& other) const {
-        return memory_resource != other.memory_resource;
+        return &memory_resource != &other.memory_resource;
     }
 
     MemoryResource& memory_resource;

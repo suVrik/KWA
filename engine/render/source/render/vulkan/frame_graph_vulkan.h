@@ -9,9 +9,12 @@
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
+
 namespace kw {
 
 class RenderVulkan;
+class TimelineSemaphore;
 
 enum class AttachmentAccess : uint8_t {
     NONE            = 0b00000000,
@@ -36,7 +39,6 @@ public:
     void recreate_swapchain() override;
 
 private:
-    static constexpr size_t INVALID_VALUE = SIZE_MAX;
     static constexpr size_t SWAPCHAIN_IMAGE_COUNT = 3;
 
     struct CreateContext {
@@ -52,26 +54,9 @@ private:
         LinearMemoryResource graphics_pipeline_memory_resource;
     };
 
-    struct AttachmentRecreateData {
-        size_t allocation_index = INVALID_VALUE;
-        size_t allocation_offset = INVALID_VALUE;
-    };
-
-    struct AllocationRecreateData {
-        size_t size = 0;
-        uint32_t memory_type_index = 0;
-    };
-
     struct RecreateContext {
-        uint32_t swapchain_width = 0;
-        uint32_t swapchain_height = 0;
-
-        // To access attachments from largest to smallest use the `sorted_attachment_indices` mapping.
-        Vector<VkMemoryRequirements> memory_requirements;
-        Vector<size_t> sorted_attachment_indices;
-
-        Vector<AttachmentRecreateData> attachment_data;
-        Vector<AllocationRecreateData> allocation_data;
+        uint32_t swapchain_width;
+        uint32_t swapchain_height;
     };
 
     struct AttachmentData {
@@ -83,10 +68,18 @@ private:
         size_t min_parallel_block_index = 0;
         size_t max_parallel_block_index = 0;
 
+        // Defines whether attachment is used as color attachment, depth stencil attachment or sampled.
+        VkImageUsageFlags usage_mask = 0;
+
         // Layout transition from `VK_IMAGE_LAYOUT_UNDEFINED` to specified image layout is performed manually
         // before the first render pass once after the attachment is created.
         VkAccessFlags initial_access_mask = 0;
         VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    };
+
+    struct AllocationData {
+        size_t data_index;
+        size_t data_offset;
     };
 
     struct GraphicsPipelineData {
@@ -158,6 +151,7 @@ private:
     void compute_parallel_block_indices(CreateContext& create_context);
     void compute_parallel_blocks(CreateContext& create_context);
     void compute_attachment_ranges(CreateContext& create_context);
+    void compute_attachment_usage_mask(CreateContext& create_context);
     void compute_attachment_layouts(CreateContext& create_context);
 
     void create_render_passes(CreateContext& create_context);
@@ -175,12 +169,7 @@ private:
     void create_swapchain_image_views(RecreateContext& recreate_context);
 
     void create_attachment_images(RecreateContext& recreate_context);
-    void compute_memory_requirements(RecreateContext& recreate_context);
-    void compute_sorted_attachment_indices(RecreateContext& recreate_context);
-    void compute_allocation_indices(RecreateContext& recreate_context);
-    void compute_allocation_offsets(RecreateContext& recreate_context);
     void allocate_attachment_memory(RecreateContext& recreate_context);
-    void bind_attachment_image_memory(RecreateContext& recreate_context);
     void create_attachment_image_views(RecreateContext& recreate_context);
 
     void create_framebuffers(RecreateContext& recreate_context);
@@ -200,16 +189,21 @@ private:
 
     Vector<AttachmentData> m_attachment_data;
     Vector<AttachmentDescriptor> m_attachment_descriptors;
-    Vector<VkDeviceMemory> m_allocations;
+    Vector<AllocationData> m_allocation_data;
 
     Vector<RenderPassData> m_render_pass_data;
     Vector<ParallelBlockData> m_parallel_block_data;
 
+    // Each frame in flight requires `thread_count` command pools.
     Vector<CommandPoolData> m_command_pool_data[SWAPCHAIN_IMAGE_COUNT];
 
-    VkSemaphore m_image_acquired_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
-    VkSemaphore m_render_finished_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
-    VkFence m_fences[SWAPCHAIN_IMAGE_COUNT]{};
+    // `vkAcquireNextImageKHR` and `vkQueuePresentKHR` don't support timeline semaphores,
+    // so we're forced to deal with a bunch of binary semaphores.
+    VkSemaphore m_image_acquired_binary_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
+    VkSemaphore m_render_finished_binary_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
+
+    // This semaphore is signaled when frame rendering is finished along with `m_render_finished_binary_semaphores`.
+    std::shared_ptr<TimelineSemaphore> m_render_finished_timeline_semaphores[SWAPCHAIN_IMAGE_COUNT]{};
 
     size_t m_semaphore_index = 0;
     size_t m_frame_index = 0;
