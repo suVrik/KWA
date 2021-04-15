@@ -34,17 +34,6 @@
 #define SPV_REFLECT_ASSERT(COND)
 #endif
 
-// Temporary enums until these make it into SPIR-V/Vulkan
-// clang-format off
-enum {
-  SpvReflectOpDecorateId                      = 332,
-  SpvReflectOpDecorateStringGOOGLE            = 5632,
-  SpvReflectOpMemberDecorateStringGOOGLE      = 5633,
-  SpvReflectDecorationHlslCounterBufferGOOGLE = 5634,
-  SpvReflectDecorationHlslSemanticGOOGLE      = 5635
-};
-// clang-format on
-
 // clang-format off
 enum {
   SPIRV_STARTING_WORD_INDEX       = 5,
@@ -1325,9 +1314,9 @@ static SpvReflectResult ParseDecorations(Parser* p_parser)
 
     if (((uint32_t)p_node->op != (uint32_t)SpvOpDecorate) &&
         ((uint32_t)p_node->op != (uint32_t)SpvOpMemberDecorate) &&
-        ((uint32_t)p_node->op != (uint32_t)SpvReflectOpDecorateId) &&
-        ((uint32_t)p_node->op != (uint32_t)SpvReflectOpDecorateStringGOOGLE) &&
-        ((uint32_t)p_node->op != (uint32_t)SpvReflectOpMemberDecorateStringGOOGLE))
+        ((uint32_t)p_node->op != (uint32_t)SpvOpDecorateId) &&
+        ((uint32_t)p_node->op != (uint32_t)SpvOpDecorateStringGOOGLE) &&
+        ((uint32_t)p_node->op != (uint32_t)SpvOpMemberDecorateStringGOOGLE))
     {
      continue;
     }
@@ -1365,8 +1354,8 @@ static SpvReflectResult ParseDecorations(Parser* p_parser)
       case SpvDecorationDescriptorSet:
       case SpvDecorationOffset:
       case SpvDecorationInputAttachmentIndex:
-      case SpvReflectDecorationHlslCounterBufferGOOGLE:
-      case SpvReflectDecorationHlslSemanticGOOGLE: {
+      case SpvDecorationHlslCounterBufferGOOGLE:
+      case SpvDecorationHlslSemanticGOOGLE: {
         skip = false;
       }
       break;    
@@ -1483,14 +1472,14 @@ static SpvReflectResult ParseDecorations(Parser* p_parser)
       }
       break;
 
-      case SpvReflectDecorationHlslCounterBufferGOOGLE: {
+      case SpvDecorationHlslCounterBufferGOOGLE: {
         uint32_t word_offset = p_node->word_offset + member_offset+ 3;
         CHECKED_READU32(p_parser, word_offset, p_target_decorations->uav_counter_buffer.value);
         p_target_decorations->uav_counter_buffer.word_offset = word_offset;
       }
       break;
 
-      case SpvReflectDecorationHlslSemanticGOOGLE: {
+      case SpvDecorationHlslSemanticGOOGLE: {
         uint32_t word_offset = p_node->word_offset + member_offset + 3;
         p_target_decorations->semantic.value = (const char*)(p_parser->spirv_code + word_offset);
         p_target_decorations->semantic.word_offset = word_offset;
@@ -3806,6 +3795,92 @@ void spvReflectDestroyShaderModule(
   SafeFree(p_module->_internal->spirv_code);
   // Free internal
   SafeFree(p_module->_internal);
+}
+
+SpvReflectResult spvReflectRemoveGoogleExtensions(const SpvReflectShaderModule* p_module)
+{
+  if (IsNull(p_module) || IsNull(p_module->_internal->spirv_code)) {
+    return SPV_REFLECT_RESULT_ERROR_NULL_POINTER;
+  }
+
+  uint32_t spirv_word_count = (uint32_t)(p_module->_internal->spirv_size / SPIRV_WORD_SIZE);
+  uint32_t spirv_word_index = SPIRV_STARTING_WORD_INDEX;
+
+  uint32_t spirv_new_word_count = spirv_word_count;
+  uint32_t spirv_new_word_index = spirv_word_index;
+
+  while (spirv_word_index < spirv_word_count) {
+    uint32_t word = p_module->_internal->spirv_code[spirv_word_index];
+
+    uint32_t node_word_count = (word >> 16) & 0xFFFF;
+    if (node_word_count == 0) {
+      return SPV_REFLECT_RESULT_ERROR_SPIRV_INVALID_INSTRUCTION;
+    }
+    if (spirv_word_index + node_word_count > spirv_word_count) {
+      return SPV_REFLECT_RESULT_ERROR_SPIRV_UNEXPECTED_EOF;
+    }
+
+    bool skip = false;
+
+    SpvOp op = (SpvOp)(word & 0xFFFF);
+    switch (op) {
+      case SpvOpExtension: {
+        const char* extension_name = (const char*)&p_module->_internal->spirv_code[spirv_word_index + 1];
+        size_t extension_name_length = (size_t)(node_word_count - 1) * SPIRV_WORD_SIZE;
+
+        if (strncmp(extension_name, "SPV_GOOGLE_decorate_string", extension_name_length) == 0 ||
+            strncmp(extension_name, "SPV_GOOGLE_hlsl_functionality1", extension_name_length) == 0 ||
+            strncmp(extension_name, "SPV_GOOGLE_user_type", extension_name_length) == 0)
+        {
+          skip = true;
+        }
+      }
+      break;
+
+      case SpvOpDecorate:
+      case SpvOpMemberDecorate:
+      case SpvOpDecorateId: {
+        uint32_t member_offset = 0;
+        if (op == SpvOpMemberDecorate) {
+          member_offset = 1;
+        }
+
+        if (spirv_word_index + member_offset + 2 >= spirv_word_count) {
+          return SPV_REFLECT_RESULT_ERROR_SPIRV_UNEXPECTED_EOF;
+        }
+
+        uint32_t decoration = p_module->_internal->spirv_code[spirv_word_index + member_offset + 2];
+        if (decoration == SpvDecorationHlslCounterBufferGOOGLE ||
+            decoration == SpvDecorationHlslSemanticGOOGLE ||
+            decoration == SpvDecorationUserTypeGOOGLE)
+        {
+          skip = true;
+        }
+      }
+      break;
+
+      case SpvOpDecorateStringGOOGLE:
+      case SpvOpMemberDecorateStringGOOGLE: {
+        skip = true;
+      }
+      break;
+    }
+
+    if (skip) {
+      spirv_new_word_count -= node_word_count;
+    } else {
+      for (uint32_t i = 0; i < node_word_count; i++) {
+        p_module->_internal->spirv_code[spirv_new_word_index + i] = p_module->_internal->spirv_code[spirv_word_index + i];
+      }
+      spirv_new_word_index += node_word_count;
+    }
+
+    spirv_word_index += node_word_count;
+  }
+
+  p_module->_internal->spirv_size = (size_t)spirv_new_word_count * SPIRV_WORD_SIZE;
+
+  return SPV_REFLECT_RESULT_SUCCESS;
 }
 
 uint32_t spvReflectGetCodeSize(const SpvReflectShaderModule* p_module)

@@ -496,6 +496,15 @@ void spvReflectDestroyShaderModule(
 );
 
 
+/*! @fn spvReflectRemoveGoogleExtensions
+
+ @param  p_module  Pointer to an instance of SpvReflectShaderModule.
+ @return           SPV_REFLECT_RESULT_SUCCESS on success.
+
+*/
+SpvReflectResult spvReflectRemoveGoogleExtensions(const SpvReflectShaderModule* p_module);
+
+
 /*! @fn spvReflectGetCodeSize
 
  @param  p_module  Pointer to an instance of SpvReflectShaderModule.
