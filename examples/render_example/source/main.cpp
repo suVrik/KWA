@@ -44,6 +44,11 @@ struct GeometryData {
     float4x4 model_view_projection;
 };
 
+struct GeometrySkinnedData {
+    float4x4 joint_data[32];
+    float4x4 model_view_projection;
+};
+
 struct PointLightData {
     float4x4 model_view_projection;
     float4 intensity;
@@ -51,6 +56,86 @@ struct PointLightData {
 
 struct TonemappingData {
     float4x4 view_projection;
+};
+
+class ShadowPass : public RenderPass {
+public:
+    void render(RenderPassContext& context) override {
+        // TODO: ShadowPass
+    }
+};
+
+class GeometryPass : public RenderPass {
+public:
+    void render(RenderPassContext& context) override {
+        // TODO: GeometryPass
+    }
+};
+
+class LightingPass : public RenderPass {
+public:
+    void render(RenderPassContext& context) override {
+        // TODO: LightingPass
+    }
+};
+
+class TonemappingPass : public RenderPass {
+public:
+    TonemappingPass(Render& render)
+        : m_render(render)
+    {
+        const float4 vertex_data[] = {
+            float4(-1.f,  1.f, 0.f, 1.f),
+            float4( 1.f,  1.f, 0.f, 1.f),
+            float4( 1.f, -1.f, 0.f, 1.f),
+            float4(-1.f, -1.f, 0.f, 1.f),
+        };
+
+        BufferDescriptor vertex_buffer_descriptor{};
+        vertex_buffer_descriptor.name = "Quad vertex buffer";
+        vertex_buffer_descriptor.data = vertex_data;
+        vertex_buffer_descriptor.size = sizeof(vertex_data);
+
+        const uint16_t index_data[] = {
+            3, 1, 0,
+            3, 2, 1,
+        };
+
+        BufferDescriptor index_buffer_descriptor{};
+        index_buffer_descriptor.name = "Quad index buffer";
+        index_buffer_descriptor.data = index_data;
+        index_buffer_descriptor.size = sizeof(index_data);
+        index_buffer_descriptor.index_size = IndexSize::UINT16;
+
+        m_vertex_buffer = render.create_vertex_buffer(vertex_buffer_descriptor);
+        m_index_buffer = render.create_index_buffer(index_buffer_descriptor);
+    }
+
+    ~TonemappingPass() {
+        m_render.destroy_index_buffer(m_index_buffer);
+        m_render.destroy_vertex_buffer(m_vertex_buffer);
+    }
+
+    void render(RenderPassContext& context) override {
+        DrawCallDescriptor draw_call_descriptor{};
+        draw_call_descriptor.graphics_pipeline_index = 0;
+        draw_call_descriptor.vertex_buffers = &m_vertex_buffer;
+        draw_call_descriptor.vertex_buffer_count = 1;
+        draw_call_descriptor.index_buffer = m_index_buffer;
+        draw_call_descriptor.index_count = 6;
+        draw_call_descriptor.push_constants = &m_tonemapping_data;
+        draw_call_descriptor.push_constants_size = sizeof(m_tonemapping_data);
+
+        context.draw(draw_call_descriptor);
+    }
+
+private:
+    Render& m_render;
+
+    VertexBuffer m_vertex_buffer;
+    IndexBuffer m_index_buffer;
+
+    TonemappingData m_tonemapping_data;
 };
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*lpCmdLine*/, int /*nCmdShow*/) {
@@ -190,13 +275,16 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     instance_binding_descriptor.attribute_descriptor_count = std::size(instance_attribute_descriptors);
     instance_binding_descriptor.stride = sizeof(InstanceData);
 
-    UniformDescriptor joint_data_uniform_buffer_descriptor{};
+    UniformBufferDescriptor joint_data_uniform_buffer_descriptor{};
     joint_data_uniform_buffer_descriptor.variable_name = "GeometryData";
     joint_data_uniform_buffer_descriptor.visibility = ShaderVisibility::VERTEX;
+    joint_data_uniform_buffer_descriptor.size = sizeof(GeometrySkinnedData);
 
     //
     // Shadow pass
     //
+
+    ShadowPass shadow_pass;
 
     GraphicsPipelineDescriptor shadow_pass_pipeline_states[2]{};
 
@@ -230,7 +318,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     shadow_pass_pipeline_states[1].uniform_buffer_descriptor_count = 1;
 
     render_passes[0].name = "shadow_pass";
-    render_passes[0].render_pass = nullptr;
+    render_passes[0].render_pass = &shadow_pass;
     render_passes[0].graphics_pipeline_descriptors = shadow_pass_pipeline_states;
     render_passes[0].graphics_pipeline_descriptor_count = std::size(shadow_pass_pipeline_states);
     render_passes[0].depth_stencil_attachment_name = "shadow_attachment";
@@ -239,7 +327,9 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     // Geometry pass
     //
 
-    UniformDescriptor geometry_texture_descriptors[3]{};
+    GeometryPass geometry_pass;
+
+    UniformTextureDescriptor geometry_texture_descriptors[3]{};
     geometry_texture_descriptors[0].variable_name = "albedo_ao_map";
     geometry_texture_descriptors[0].visibility = ShaderVisibility::FRAGMENT;
     geometry_texture_descriptors[1].variable_name = "normal_roughness_map";
@@ -247,7 +337,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     geometry_texture_descriptors[2].variable_name = "emission_metalness_map";
     geometry_texture_descriptors[2].visibility = ShaderVisibility::FRAGMENT;
 
-    SamplerDescriptor basic_sampler_descriptor{};
+    UniformSamplerDescriptor basic_sampler_descriptor{};
     basic_sampler_descriptor.variable_name = "basic_sampler";
     basic_sampler_descriptor.visibility = ShaderVisibility::FRAGMENT;
     basic_sampler_descriptor.max_lod = 15.f;
@@ -268,10 +358,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     geometry_pass_pipeline_state[0].stencil_write_mask = 0xFF;
     geometry_pass_pipeline_state[0].front_stencil_op_state.pass_op = StencilOp::REPLACE;
     geometry_pass_pipeline_state[0].front_stencil_op_state.compare_op = CompareOp::ALWAYS;
-    geometry_pass_pipeline_state[0].texture_descriptors = geometry_texture_descriptors;
-    geometry_pass_pipeline_state[0].texture_descriptor_count = std::size(geometry_texture_descriptors);
-    geometry_pass_pipeline_state[0].sampler_descriptors = &basic_sampler_descriptor;
-    geometry_pass_pipeline_state[0].sampler_descriptor_count = 1;
+    geometry_pass_pipeline_state[0].uniform_texture_descriptors = geometry_texture_descriptors;
+    geometry_pass_pipeline_state[0].uniform_texture_descriptor_count = std::size(geometry_texture_descriptors);
+    geometry_pass_pipeline_state[0].uniform_sampler_descriptors = &basic_sampler_descriptor;
+    geometry_pass_pipeline_state[0].uniform_sampler_descriptor_count = 1;
     geometry_pass_pipeline_state[0].push_constants_name = "geometry_data";
     geometry_pass_pipeline_state[0].push_constants_visibility = ShaderVisibility::VERTEX;
     geometry_pass_pipeline_state[0].push_constants_size = sizeof(GeometryData);
@@ -290,10 +380,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     geometry_pass_pipeline_state[1].front_stencil_op_state.compare_op = CompareOp::ALWAYS;
     geometry_pass_pipeline_state[1].uniform_buffer_descriptors = &joint_data_uniform_buffer_descriptor;
     geometry_pass_pipeline_state[1].uniform_buffer_descriptor_count = 1;
-    geometry_pass_pipeline_state[1].texture_descriptors = geometry_texture_descriptors;
-    geometry_pass_pipeline_state[1].texture_descriptor_count = std::size(geometry_texture_descriptors);
-    geometry_pass_pipeline_state[1].sampler_descriptors = &basic_sampler_descriptor;
-    geometry_pass_pipeline_state[1].sampler_descriptor_count = 1;
+    geometry_pass_pipeline_state[1].uniform_texture_descriptors = geometry_texture_descriptors;
+    geometry_pass_pipeline_state[1].uniform_texture_descriptor_count = std::size(geometry_texture_descriptors);
+    geometry_pass_pipeline_state[1].uniform_sampler_descriptors = &basic_sampler_descriptor;
+    geometry_pass_pipeline_state[1].uniform_sampler_descriptor_count = 1;
 
     const char* const geometry_pass_color_attachments[] = {
         "albedo_ao_attachment",
@@ -302,7 +392,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     };
 
     render_passes[1].name = "geometry_pass";
-    render_passes[1].render_pass = nullptr;
+    render_passes[1].render_pass = &geometry_pass;
     render_passes[1].graphics_pipeline_descriptors = geometry_pass_pipeline_state;
     render_passes[1].graphics_pipeline_descriptor_count = std::size(geometry_pass_pipeline_state);
     render_passes[1].color_attachment_names = geometry_pass_color_attachments;
@@ -312,6 +402,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     //
     // Lighting pass
     //
+
+    LightingPass lighting_pass;
 
     AttributeDescriptor float4_attribute_descriptor{};
     float4_attribute_descriptor.semantic = Semantic::POSITION;
@@ -350,7 +442,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     lighting_uniform_attachment_descriptors[4].attachment_name = "depth_attachment";
     lighting_uniform_attachment_descriptors[4].visibility = ShaderVisibility::FRAGMENT;
 
-    SamplerDescriptor lighting_sampler_descriptors[2]{};
+    UniformSamplerDescriptor lighting_sampler_descriptors[2]{};
     lighting_sampler_descriptors[0].variable_name = "basic_sampler";
     lighting_sampler_descriptors[0].visibility = ShaderVisibility::FRAGMENT;
     lighting_sampler_descriptors[0].max_lod = 15.f;
@@ -376,8 +468,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     lighting_pass_pipeline_states[0].attachment_blend_descriptor_count = 1;
     lighting_pass_pipeline_states[0].uniform_attachment_descriptors = lighting_uniform_attachment_descriptors;
     lighting_pass_pipeline_states[0].uniform_attachment_descriptor_count = std::size(lighting_uniform_attachment_descriptors);
-    lighting_pass_pipeline_states[0].sampler_descriptors = lighting_sampler_descriptors;
-    lighting_pass_pipeline_states[0].sampler_descriptor_count = std::size(lighting_sampler_descriptors);
+    lighting_pass_pipeline_states[0].uniform_sampler_descriptors = lighting_sampler_descriptors;
+    lighting_pass_pipeline_states[0].uniform_sampler_descriptor_count = std::size(lighting_sampler_descriptors);
     lighting_pass_pipeline_states[0].push_constants_name = "point_light_data";
     lighting_pass_pipeline_states[0].push_constants_size = sizeof(PointLightData);
 
@@ -396,8 +488,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     lighting_pass_pipeline_states[1].attachment_blend_descriptor_count = 1;
     lighting_pass_pipeline_states[1].uniform_attachment_descriptors = lighting_uniform_attachment_descriptors;
     lighting_pass_pipeline_states[1].uniform_attachment_descriptor_count = std::size(lighting_uniform_attachment_descriptors);
-    lighting_pass_pipeline_states[1].sampler_descriptors = lighting_sampler_descriptors;
-    lighting_pass_pipeline_states[1].sampler_descriptor_count = std::size(lighting_sampler_descriptors);
+    lighting_pass_pipeline_states[1].uniform_sampler_descriptors = lighting_sampler_descriptors;
+    lighting_pass_pipeline_states[1].uniform_sampler_descriptor_count = std::size(lighting_sampler_descriptors);
     lighting_pass_pipeline_states[1].push_constants_name = "point_light_data";
     lighting_pass_pipeline_states[1].push_constants_size = sizeof(PointLightData);
 
@@ -406,7 +498,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     };
 
     render_passes[2].name = "lighting_pass";
-    render_passes[2].render_pass = nullptr;
+    render_passes[2].render_pass = &lighting_pass;
     render_passes[2].graphics_pipeline_descriptors = lighting_pass_pipeline_states;
     render_passes[2].graphics_pipeline_descriptor_count = std::size(lighting_pass_pipeline_states);
     render_passes[2].color_attachment_names = lighting_pass_color_attachments;
@@ -416,6 +508,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     //
     // Tonemapping pass
     //
+
+    TonemappingPass tonemapping_pass(*render);
 
     UniformAttachmentDescriptor tonemapping_uniform_attachment_descriptor{};
     tonemapping_uniform_attachment_descriptor.variable_name = "lighting_map";
@@ -430,8 +524,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     tonemapping_pass_pipeline_state.vertex_binding_descriptor_count = 1;
     tonemapping_pass_pipeline_state.uniform_attachment_descriptors = &tonemapping_uniform_attachment_descriptor;
     tonemapping_pass_pipeline_state.uniform_attachment_descriptor_count = 1;
-    tonemapping_pass_pipeline_state.sampler_descriptors = &basic_sampler_descriptor;
-    tonemapping_pass_pipeline_state.sampler_descriptor_count = 1;
+    tonemapping_pass_pipeline_state.uniform_sampler_descriptors = &basic_sampler_descriptor;
+    tonemapping_pass_pipeline_state.uniform_sampler_descriptor_count = 1;
     tonemapping_pass_pipeline_state.push_constants_name = "tonemapping_data";
     tonemapping_pass_pipeline_state.push_constants_size = sizeof(TonemappingData);
 
@@ -440,7 +534,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     };
 
     render_passes[3].name = "tonemapping_pass";
-    render_passes[3].render_pass = nullptr;
+    render_passes[3].render_pass = &tonemapping_pass;
     render_passes[3].graphics_pipeline_descriptors = &tonemapping_pass_pipeline_state;
     render_passes[3].graphics_pipeline_descriptor_count = 1;
     render_passes[3].color_attachment_names = tonemapping_pass_color_attachments;
@@ -456,6 +550,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     frame_graph_descriptor.thread_pool = &thread_pool;
     frame_graph_descriptor.is_aliasing_enabled = true;
     frame_graph_descriptor.is_vsync_enabled = true;
+    frame_graph_descriptor.descriptor_set_count_per_descriptor_pool = 1024;
+    frame_graph_descriptor.uniform_texture_count_per_descriptor_pool = 8192;
+    frame_graph_descriptor.uniform_sampler_count_per_descriptor_pool = 2048;
+    frame_graph_descriptor.uniform_buffer_count_per_descriptor_pool = 1024;
     frame_graph_descriptor.swapchain_attachment_name = "swapchain_attachment";
     frame_graph_descriptor.color_attachment_descriptors = color_attachment_descriptors;
     frame_graph_descriptor.color_attachment_descriptor_count = std::size(color_attachment_descriptors);

@@ -8,10 +8,11 @@
 
 namespace kw {
 
-RenderBuddyAllocator::RenderBuddyAllocator(MemoryResource& memory_resource, size_t root_size_log2, size_t leaf_size_log2)
+RenderBuddyAllocator::RenderBuddyAllocator(MemoryResource& memory_resource, uint64_t root_size_log2, uint64_t leaf_size_log2)
     : m_memory_resource(memory_resource)
-    , m_leaf_size_log2(static_cast<uint32_t>(leaf_size_log2))
-    , m_max_depth(static_cast<uint32_t>(root_size_log2 - leaf_size_log2)) {
+    , m_leaf_size_log2(leaf_size_log2)
+    , m_max_depth(root_size_log2 - leaf_size_log2)
+{
     KW_ASSERT(root_size_log2 >= leaf_size_log2, "Root size must be not less than leaf size.");
     KW_ASSERT(root_size_log2 - leaf_size_log2 < 27, "Binary tree height must be less than 27.");
     KW_ASSERT(leaf_size_log2 > 0, "Leaf size must be greater than 0.");
@@ -47,12 +48,12 @@ RenderBuddyAllocator::~RenderBuddyAllocator() {
     m_memory_resource.deallocate(m_heads);
 }
 
-size_t RenderBuddyAllocator::allocate(size_t size, size_t alignment) {
+uint64_t RenderBuddyAllocator::allocate(uint64_t size, uint64_t alignment) {
     KW_ASSERT(alignment > 0 && (alignment & (alignment - 1)) == 0, "Alignment must be power of two.");
     KW_ASSERT(size > 0, "Size must be greater than zero.");
 
     uint32_t depth = 0;
-    size_t allocation_size = 1ull << m_leaf_size_log2;
+    uint64_t allocation_size = 1ull << m_leaf_size_log2;
 
     // Search for the smallest available node.
     while (depth < m_max_depth && (allocation_size < size || m_heads[depth] == END)) {
@@ -93,10 +94,10 @@ size_t RenderBuddyAllocator::allocate(size_t size, size_t alignment) {
     m_leafs[local_offset].depth = depth;
 
     // Return absolute offset.
-    return static_cast<size_t>(local_offset) << m_leaf_size_log2;
+    return static_cast<uint64_t>(local_offset) << m_leaf_size_log2;
 }
 
-void RenderBuddyAllocator::deallocate(size_t offset) {
+void RenderBuddyAllocator::deallocate(uint64_t offset) {
     if (offset != INVALID_ALLOCATION) {
         KW_ASSERT(((offset >> m_leaf_size_log2) << m_leaf_size_log2) == offset);
 

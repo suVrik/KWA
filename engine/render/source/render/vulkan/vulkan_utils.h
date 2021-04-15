@@ -22,7 +22,7 @@ do {                                                              \
    KW_ERROR(result == SPV_REFLECT_RESULT_SUCCESS, ##__VA_ARGS__); \
 } while (false)
 
-#define VK_NAME(render, handle, format, ...) render->set_debug_name(handle, format, ##__VA_ARGS__)
+#define VK_NAME(render, handle, format, ...) (render).set_debug_name((handle), (format), ##__VA_ARGS__)
 
 namespace kw::TextureFormatUtils {
 

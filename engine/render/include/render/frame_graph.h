@@ -4,9 +4,70 @@
 
 namespace kw {
 
-class RenderPass;
 class ThreadPool;
 class Window;
+
+struct ScissorsRect {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+};
+
+struct DrawCallDescriptor {
+    // It is encouraged to submit subsequent draw calls with the same graphics pipeline.
+    uint32_t graphics_pipeline_index;
+
+    const VertexBuffer* vertex_buffers;
+    size_t vertex_buffer_count; // Must match graphics pipeline.
+
+    const VertexBuffer* instance_buffers;
+    size_t instance_buffer_count; // Must match graphics pipeline.
+
+    IndexBuffer index_buffer;
+
+    uint32_t index_count;
+    uint32_t instance_count; // 0 is interpreted as 1.
+    uint32_t index_offset; // In indices.
+    uint32_t vertex_offset; // In vertices.
+    uint32_t instance_offset; // In instances.
+
+    // If not overridden, framebuffer size is used.
+    bool override_scissors;
+    ScissorsRect scissors;
+
+    uint8_t stencil_reference;
+
+    // When some attachments have `count` greater than 1, you can specify which of those attachments to use. Keep this
+    // `nullptr` and `0` accordingly to use only first attachments. Otherwise count must match flattened graphics pipeline.
+    const uint32_t* uniform_attachment_indices;
+    size_t uniform_attachment_index_count;
+
+    const Texture* uniform_textures;
+    size_t uniform_texture_count; // Must match flattened graphics pipeline.
+
+    const UniformBuffer* uniform_buffers;
+    size_t uniform_buffer_count; // Must match flattened graphics pipeline.
+
+    const void* push_constants;
+    size_t push_constants_size; // Must match graphics pipeline.
+};
+
+class RenderPassContext {
+public:
+    virtual void draw(const DrawCallDescriptor& descriptor) = 0;
+
+    // Attachment index may be different than 0 for render passes with attachments that have count greater than 1.
+    virtual uint32_t get_attachemnt_index() const = 0;
+};
+
+class RenderPass {
+public:
+    virtual ~RenderPass() = default;
+
+    // This method must be overridden by the user.
+    virtual void render(RenderPassContext& context) = 0;
+};
 
 enum class Semantic {
     POSITION,
@@ -23,16 +84,16 @@ constexpr size_t SEMANTIC_COUNT = 8;
 
 struct AttributeDescriptor {
     Semantic semantic;
-    size_t semantic_index;
+    uint32_t semantic_index;
     TextureFormat format;
-    size_t offset;
+    uint64_t offset;
 };
 
 struct BindingDescriptor {
     const AttributeDescriptor* attribute_descriptors;
     size_t attribute_descriptor_count;
 
-    size_t stride;
+    uint64_t stride;
 };
 
 enum class PrimitiveTopology {
@@ -150,13 +211,18 @@ struct UniformAttachmentDescriptor {
     const char* variable_name;
     const char* attachment_name;
     ShaderVisibility visibility;
-    // `count` is defined by attachment's count.
+
+    // Must be less or equal than `count` specified in attachment descriptor. 0 is interpreted as 1.
+    uint32_t count;
 };
 
-struct UniformDescriptor {
+struct UniformTextureDescriptor {
     const char* variable_name;
     ShaderVisibility visibility;
-    size_t count; // 0 is interpreted as 1.
+
+    TextureType texture_type;
+
+    uint32_t count; // 0 is interpreted as 1.
 };
 
 enum class Filter {
@@ -186,7 +252,7 @@ enum class BorderColor {
 
 constexpr size_t BORDER_COLOR_COUNT = 6;
 
-struct SamplerDescriptor {
+struct UniformSamplerDescriptor {
     const char* variable_name;
     ShaderVisibility visibility;
 
@@ -210,6 +276,15 @@ struct SamplerDescriptor {
     float max_lod;
 
     BorderColor border_color;
+};
+
+struct UniformBufferDescriptor {
+    const char* variable_name;
+    ShaderVisibility visibility;
+
+    uint64_t size;
+
+    uint32_t count; // 0 is interpreted as 1.
 };
 
 struct GraphicsPipelineDescriptor {
@@ -250,14 +325,14 @@ struct GraphicsPipelineDescriptor {
     const UniformAttachmentDescriptor* uniform_attachment_descriptors;
     size_t uniform_attachment_descriptor_count;
 
-    const UniformDescriptor* uniform_buffer_descriptors;
+    const UniformTextureDescriptor* uniform_texture_descriptors;
+    size_t uniform_texture_descriptor_count;
+
+    const UniformSamplerDescriptor* uniform_sampler_descriptors;
+    size_t uniform_sampler_descriptor_count;
+
+    const UniformBufferDescriptor* uniform_buffer_descriptors;
     size_t uniform_buffer_descriptor_count;
-
-    const UniformDescriptor* texture_descriptors;
-    size_t texture_descriptor_count;
-
-    const SamplerDescriptor* sampler_descriptors;
-    size_t sampler_descriptor_count;
 
     const char* push_constants_name;
     ShaderVisibility push_constants_visibility;
@@ -305,7 +380,7 @@ struct AttachmentDescriptor {
     float width; // 0 is interpreted as 1.
     float height; // 0 is interpreted as 1.
 
-    size_t count; // 0 is interpreted as 1.
+    uint32_t count; // 0 is interpreted as 1.
 
     // Operation that is performed on first write access to the attachment.
     LoadOp load_op;
@@ -326,6 +401,11 @@ struct FrameGraphDescriptor {
     bool is_aliasing_enabled;
     bool is_vsync_enabled;
 
+    uint32_t descriptor_set_count_per_descriptor_pool;
+    uint32_t uniform_texture_count_per_descriptor_pool;
+    uint32_t uniform_sampler_count_per_descriptor_pool;
+    uint32_t uniform_buffer_count_per_descriptor_pool;
+
     // `format` is decided automatically, `load_op` is `DONT_CARE`.
     const char* swapchain_attachment_name;
 
@@ -343,13 +423,13 @@ struct FrameGraphDescriptor {
 
 class FrameGraph {
 public:
-    static FrameGraph* create_instance(const FrameGraphDescriptor& descriptor);
+    static FrameGraph* create_instance(const FrameGraphDescriptor& frame_graph_descriptor);
 
     virtual ~FrameGraph() = default;
 
     virtual void render() = 0;
 
-    /** Must be called when window size changes. */
+    // Must be called when window size changes.
     virtual void recreate_swapchain() = 0;
 };
 

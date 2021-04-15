@@ -14,7 +14,8 @@ public:
     Parser(MemoryResource& memory_resource, const String& relative_path)
         : m_data(FilesystemUtils::read_file(memory_resource, relative_path))
         , m_end(m_data.data() + m_data.size())
-        , m_position(m_data.data()) {
+        , m_position(m_data.data())
+    {
     }
 
     const uint8_t* read(size_t size) {

@@ -1,6 +1,4 @@
-#define SHADOW_MAP_COUNT 3
-
-Texture2D shadow_map[SHADOW_MAP_COUNT];
+Texture2D shadow_map;
 Texture2D albedo_ao_map;
 Texture2D normal_roughness_map;
 Texture2D emission_metalness_map;

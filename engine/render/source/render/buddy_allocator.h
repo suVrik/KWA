@@ -4,17 +4,17 @@ namespace kw {
 
 class RenderBuddyAllocator {
 public:
-    static constexpr size_t INVALID_ALLOCATION = SIZE_MAX;
+    static constexpr uint64_t INVALID_ALLOCATION = UINT64_MAX;
 
-    RenderBuddyAllocator(MemoryResource& memory_resource, size_t root_size_log2, size_t leaf_size_log2);
+    RenderBuddyAllocator(MemoryResource& memory_resource, uint64_t root_size_log2, uint64_t leaf_size_log2);
     RenderBuddyAllocator(const RenderBuddyAllocator& other) = delete;
     RenderBuddyAllocator(RenderBuddyAllocator&& other);
     ~RenderBuddyAllocator();
     RenderBuddyAllocator& operator=(const RenderBuddyAllocator& other) = delete;
     RenderBuddyAllocator& operator=(RenderBuddyAllocator&& other) = delete;
 
-    size_t allocate(size_t size, size_t alignment);
-    void deallocate(size_t offset);
+    uint64_t allocate(uint64_t size, uint64_t alignment);
+    void deallocate(uint64_t offset);
 
 private:
     static constexpr uint32_t END = 0x07FFFFFF;
@@ -27,8 +27,8 @@ private:
 
     MemoryResource& m_memory_resource;
 
-    uint32_t m_leaf_size_log2;
-    uint32_t m_max_depth;
+    uint64_t m_leaf_size_log2;
+    uint64_t m_max_depth;
 
     uint32_t* m_heads;
     Leaf* m_leafs;

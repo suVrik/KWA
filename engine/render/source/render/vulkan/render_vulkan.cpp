@@ -106,8 +106,8 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , graphics_queue_spinlock(create_graphics_queue_spinlock())
     , compute_queue_spinlock(create_compute_queue_spinlock())
     , transfer_queue_spinlock(create_transfer_queue_spinlock())
-    , wait_semaphores(create_wait_semaphores())
     , semaphore(std::make_shared<TimelineSemaphore>(this))
+    , m_wait_semaphores(create_wait_semaphores())
     , m_debug_messenger(create_debug_messsenger(descriptor))
     , m_set_object_name(create_set_object_name(descriptor))
     , m_staging_buffer(create_staging_buffer(descriptor))
@@ -118,7 +118,10 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , m_buffer_device_data(persistent_memory_resource)
     , m_buffer_allocation_size(descriptor.buffer_allocation_size)
     , m_buffer_block_size(descriptor.buffer_block_size)
-    , m_buffer_memory_index(compute_buffer_memory_index())
+    , m_buffer_memory_indices{
+        compute_buffer_memory_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+        compute_buffer_memory_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+    }
     , m_transient_buffer(create_transient_buffer(descriptor))
     , m_transient_memory(allocate_transient_memory())
     , m_transient_buffer_size(descriptor.transient_buffer_size)
@@ -126,26 +129,34 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , m_texture_device_data(persistent_memory_resource)
     , m_texture_allocation_size(descriptor.texture_allocation_size)
     , m_texture_block_size(descriptor.texture_block_size)
-    , m_texture_memory_index(compute_texture_memory_index())
+    , m_texture_memory_indices{
+        compute_texture_memory_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+        compute_texture_memory_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+    }
     , m_resource_dependencies(persistent_memory_resource)
     , m_buffer_destroy_commands(MemoryResourceAllocator<BufferDestroyCommand>(persistent_memory_resource))
     , m_texture_destroy_commands(MemoryResourceAllocator<TextureDestroyCommand>(persistent_memory_resource))
     , m_buffer_copy_commands(persistent_memory_resource)
     , m_texture_copy_commands(persistent_memory_resource)
     , m_submit_data(MemoryResourceAllocator<SubmitData>(persistent_memory_resource))
-    , m_command_pool(create_command_pool())
+    , m_intermediate_semaphore(std::make_unique<TimelineSemaphore>(this))
+    , m_graphics_command_pool(create_graphics_command_pool())
+    , m_compute_command_pool(create_compute_command_pool())
+    , m_transfer_command_pool(create_transfer_command_pool())
 {
-    VK_NAME(this, graphics_queue, "Graphics queue");
+    VK_NAME(*this, graphics_queue, "Graphics queue");
 
     if (compute_queue != graphics_queue) {
-        VK_NAME(this, compute_queue, "Async compute queue");
+        VK_NAME(*this, compute_queue, "Async compute queue");
     }
      
     if (transfer_queue != graphics_queue) {
-        VK_NAME(this, transfer_queue, "Transfer queue");
+        VK_NAME(*this, transfer_queue, "Transfer queue");
     }
 
-    VK_NAME(this, semaphore->semaphore, "Transfer semaphore");
+    VK_NAME(*this, semaphore->semaphore, "Transfer semaphore");
+
+    VK_NAME(*this, m_intermediate_semaphore->semaphore, "Intermediate semaphore");
 
     m_buffer_device_data.reserve(4);
     m_texture_device_data.reserve(4);
@@ -161,11 +172,32 @@ RenderVulkan::~RenderVulkan() {
 
     while (!m_submit_data.empty()) {
         SubmitData& submit_data = m_submit_data.front();
-        vkFreeCommandBuffers(device, m_command_pool, 1, &submit_data.command_buffer);
+        
+        if (submit_data.graphics_command_buffer != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &submit_data.graphics_command_buffer);
+        }
+
+        if (submit_data.compute_command_buffer != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(device, m_compute_command_pool, 1, &submit_data.compute_command_buffer);
+        }
+        
+        KW_ASSERT(submit_data.transfer_command_buffer != VK_NULL_HANDLE);
+        vkFreeCommandBuffers(device, m_transfer_command_pool, 1, &submit_data.transfer_command_buffer);
+
         m_submit_data.pop();
     }
 
-    vkDestroyCommandPool(device, m_command_pool, &allocation_callbacks);
+    m_intermediate_semaphore.reset();
+
+    if (m_transfer_command_pool != m_graphics_command_pool) {
+        vkDestroyCommandPool(device, m_transfer_command_pool, &allocation_callbacks);
+    }
+
+    if (m_compute_command_pool != m_graphics_command_pool) {
+        vkDestroyCommandPool(device, m_compute_command_pool, &allocation_callbacks);
+    }
+
+    vkDestroyCommandPool(device, m_graphics_command_pool, &allocation_callbacks);
 
     while (!m_texture_destroy_commands.empty()) {
         TextureDestroyCommand& texture_destroy_command = m_texture_destroy_commands.front();
@@ -234,8 +266,16 @@ void RenderVulkan::destroy_index_buffer(IndexBuffer index_buffer) {
     destroy_buffer_vulkan(const_cast<BufferVulkan*>(reinterpret_cast<const BufferVulkan*>(index_buffer)));
 }
 
-UniformBuffer RenderVulkan::acquire_transient_buffer(const void* data, size_t size) {
-    return reinterpret_cast<UniformBuffer>(acquire_transient_buffer_vulkan(data, size));
+VertexBuffer RenderVulkan::acquire_transient_vertex_buffer(const void* data, size_t size) {
+    return reinterpret_cast<VertexBuffer>(acquire_transient_buffer_vulkan(data, size, BufferFlagsVulkan::NONE));
+}
+
+IndexBuffer RenderVulkan::acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) {
+    return reinterpret_cast<IndexBuffer>(acquire_transient_buffer_vulkan(data, size, index_size == IndexSize::UINT16 ? BufferFlagsVulkan::INDEX16 : BufferFlagsVulkan::INDEX32));
+}
+
+UniformBuffer RenderVulkan::acquire_transient_uniform_buffer(const void* data, size_t size) {
+    return reinterpret_cast<UniformBuffer>(acquire_transient_buffer_vulkan(data, size, BufferFlagsVulkan::NONE));
 }
 
 Texture RenderVulkan::create_texture(const TextureDescriptor& texture_descriptor) {
@@ -285,13 +325,12 @@ void RenderVulkan::add_resource_dependency(std::shared_ptr<TimelineSemaphore> ti
     m_resource_dependencies.push_back(timeline_semaphore);
 }
 
-
-RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_buffer_memory(size_t size, size_t alignment) {
+RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_buffer_memory(uint64_t size, uint64_t alignment) {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
 
     KW_ERROR(
         alignment <= m_buffer_block_size,
-        "Invalid buffer alignment. Requested %zu, allowed %zu.", alignment, m_buffer_block_size
+        "Invalid buffer alignment. Requested %llu, allowed %llu.", alignment, m_buffer_block_size
     );
 
     //
@@ -299,56 +338,58 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_buffer_memory(size_
     //
 
     for (size_t device_data_index = 0; device_data_index < m_buffer_device_data.size(); device_data_index++) {
-        size_t offset = m_buffer_device_data[device_data_index].allocator.allocate(size, alignment);
+        uint64_t offset = m_buffer_device_data[device_data_index].allocator.allocate(size, alignment);
         if (offset != RenderBuddyAllocator::INVALID_ALLOCATION) {
-            return { m_buffer_device_data[device_data_index].memory, device_data_index, offset };
+            return { m_buffer_device_data[device_data_index].memory, static_cast<uint64_t>(device_data_index), offset };
         }
     }
 
     //
-    // Create new allocation to sub-allocate from.
+    // Create new allocation to sub-allocate from. First try device local, but when out of device memory, try host visible.
     //
 
-    for (size_t allocation_size = m_buffer_allocation_size; allocation_size >= m_buffer_block_size && allocation_size >= size; allocation_size /= 2) {
-        VkMemoryAllocateInfo memory_allocate_info{};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = allocation_size;
-        memory_allocate_info.memoryTypeIndex = m_buffer_memory_index;
+    for (uint32_t buffer_memory_index : m_buffer_memory_indices) {
+        for (uint64_t allocation_size = m_buffer_allocation_size; allocation_size >= m_buffer_block_size && allocation_size >= size; allocation_size /= 2) {
+            VkMemoryAllocateInfo memory_allocate_info{};
+            memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            memory_allocate_info.allocationSize = allocation_size;
+            memory_allocate_info.memoryTypeIndex = buffer_memory_index;
 
-        VkDeviceMemory memory;
-        VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
-        if (result == VK_SUCCESS) {
-            size_t device_data_index = m_buffer_device_data.size();
-            m_buffer_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_buffer_block_size)) });
+            VkDeviceMemory memory;
+            VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
+            if (result == VK_SUCCESS) {
+                size_t device_data_index = m_buffer_device_data.size();
+                m_buffer_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_buffer_block_size)), buffer_memory_index });
 
-            size_t offset = m_buffer_device_data.back().allocator.allocate(size, alignment);
-            KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
+                uint64_t offset = m_buffer_device_data.back().allocator.allocate(size, alignment);
+                KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
 
-            VK_NAME(this, memory, "Buffer device memory %zu", device_data_index);
+                VK_NAME(*this, memory, "Buffer device memory %zu", device_data_index);
 
-            return { memory, device_data_index, offset };
+                return { memory, static_cast<uint64_t>(device_data_index), offset };
+            }
+
+            KW_ERROR(
+                result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                "Failed to allocate device buffer."
+            );
         }
-
-        KW_ERROR(
-            result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
-            "Failed to allocate device buffer."
-        );
     }
 
     KW_ERROR(
         false,
-        "Not enough video memory to allocate %zu bytes for a device buffer.", size
+        "Not enough video memory to allocate %llu bytes for a device buffer.", size
     );
 }
 
-void RenderVulkan::deallocate_device_buffer_memory(size_t data_index, size_t data_offset) {
+void RenderVulkan::deallocate_device_buffer_memory(uint64_t data_index, uint64_t data_offset) {
     std::lock_guard<std::mutex> lock(m_buffer_mutex);
 
     KW_ASSERT(data_index < m_buffer_device_data.size());
     m_buffer_device_data[data_index].allocator.deallocate(data_offset);
 }
 
-RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(size_t size, size_t alignment) {
+RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(uint64_t size, uint64_t alignment) {
     KW_ASSERT(size > 0);
     KW_ASSERT(alignment > 0 && is_pow2(alignment));
 
@@ -356,7 +397,7 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(size
 
     KW_ERROR(
         alignment <= m_texture_block_size && m_texture_block_size % alignment == 0,
-        "Invalid texture alignment. Requested %zu, allowed %zu.", alignment, m_texture_block_size
+        "Invalid texture alignment. Requested %llu, allowed %llu.", alignment, m_texture_block_size
     );
 
     //
@@ -364,49 +405,51 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(size
     //
 
     for (size_t device_data_index = 0; device_data_index < m_texture_device_data.size(); device_data_index++) {
-        size_t offset = m_texture_device_data[device_data_index].allocator.allocate(size, alignment);
+        uint64_t offset = m_texture_device_data[device_data_index].allocator.allocate(size, alignment);
         if (offset != RenderBuddyAllocator::INVALID_ALLOCATION) {
-            return { m_texture_device_data[device_data_index].memory, device_data_index, offset };
+            return { m_texture_device_data[device_data_index].memory, static_cast<uint64_t>(device_data_index), offset };
         }
     }
 
     //
-    // Create new allocation to sub-allocate from.
+    // Create new allocation to sub-allocate from. First try device local, but when out of device memory, try host visible.
     //
 
-    for (size_t allocation_size = m_texture_allocation_size; allocation_size >= m_texture_block_size && allocation_size >= size; allocation_size /= 2) {
-        VkMemoryAllocateInfo memory_allocate_info{};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = allocation_size;
-        memory_allocate_info.memoryTypeIndex = m_texture_memory_index;
+    for (uint32_t texture_memory_index : m_texture_memory_indices) {
+        for (uint64_t allocation_size = m_texture_allocation_size; allocation_size >= m_texture_block_size && allocation_size >= size; allocation_size /= 2) {
+            VkMemoryAllocateInfo memory_allocate_info{};
+            memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            memory_allocate_info.allocationSize = allocation_size;
+            memory_allocate_info.memoryTypeIndex = texture_memory_index;
 
-        VkDeviceMemory memory;
-        VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
-        if (result == VK_SUCCESS) {
-            size_t device_data_index = m_texture_device_data.size();
-            m_texture_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)) });
+            VkDeviceMemory memory;
+            VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
+            if (result == VK_SUCCESS) {
+                size_t device_data_index = m_texture_device_data.size();
+                m_texture_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)), texture_memory_index });
 
-            size_t offset = m_texture_device_data.back().allocator.allocate(size, alignment);
-            KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
+                uint64_t offset = m_texture_device_data.back().allocator.allocate(size, alignment);
+                KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
 
-            VK_NAME(this, memory, "Texture device memory %zu", device_data_index);
+                VK_NAME(*this, memory, "Texture device memory %zu", device_data_index);
 
-            return { memory, device_data_index, offset };
+                return { memory, static_cast<uint64_t>(device_data_index), offset };
+            }
+
+            KW_ERROR(
+                result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                "Failed to allocate texture device buffer."
+            );
         }
-
-        KW_ERROR(
-            result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
-            "Failed to allocate texture device buffer."
-        );
     }
 
     KW_ERROR(
         false,
-        "Not enough video memory to allocate %zu bytes for texture device buffer.", size
+        "Not enough video memory to allocate %llu bytes for texture device buffer.", size
     );
 }
 
-void RenderVulkan::deallocate_device_texture_memory(size_t data_index, size_t data_offset) {
+void RenderVulkan::deallocate_device_texture_memory(uint64_t data_index, uint64_t data_offset) {
     std::lock_guard<std::mutex> lock(m_texture_mutex);
 
     KW_ASSERT(data_index < m_texture_device_data.size());
@@ -737,11 +780,11 @@ PFN_vkSetDebugUtilsObjectNameEXT RenderVulkan::create_set_object_name(const Rend
     return nullptr;
 }
 
-VkCommandPool RenderVulkan::create_command_pool() {
+VkCommandPool RenderVulkan::create_graphics_command_pool() {
     VkCommandPoolCreateInfo command_pool_create_info{};
     command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    command_pool_create_info.queueFamilyIndex = transfer_queue_family_index;
+    command_pool_create_info.queueFamilyIndex = graphics_queue_family_index;
 
     VkCommandPool command_pool;
 
@@ -750,9 +793,53 @@ VkCommandPool RenderVulkan::create_command_pool() {
         "Failed to create command pool."
     );
 
-    VK_NAME(this, command_pool, "Transfer command pool");
+    VK_NAME(*this, command_pool, "Graphics command pool");
 
     return command_pool;
+}
+
+VkCommandPool RenderVulkan::create_compute_command_pool() {
+    if (compute_queue_family_index != graphics_queue_family_index) {
+        VkCommandPoolCreateInfo command_pool_create_info{};
+        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        command_pool_create_info.queueFamilyIndex = compute_queue_family_index;
+
+        VkCommandPool command_pool;
+
+        VK_ERROR(
+            vkCreateCommandPool(device, &command_pool_create_info, &allocation_callbacks, &command_pool),
+            "Failed to create command pool."
+        );
+
+        VK_NAME(*this, command_pool, "Compute command pool");
+
+        return command_pool;
+    }
+
+    return m_graphics_command_pool;
+}
+
+VkCommandPool RenderVulkan::create_transfer_command_pool() {
+    if (transfer_queue_family_index != graphics_queue_family_index) {
+        VkCommandPoolCreateInfo command_pool_create_info{};
+        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        command_pool_create_info.queueFamilyIndex = transfer_queue_family_index;
+
+        VkCommandPool command_pool;
+
+        VK_ERROR(
+            vkCreateCommandPool(device, &command_pool_create_info, &allocation_callbacks, &command_pool),
+            "Failed to create command pool."
+        );
+
+        VK_NAME(*this, command_pool, "Transfer command pool");
+
+        return command_pool;
+    }
+
+    return m_graphics_command_pool;
 }
 
 VkBuffer RenderVulkan::create_staging_buffer(const RenderDescriptor& render_descriptor) {
@@ -772,7 +859,7 @@ VkBuffer RenderVulkan::create_staging_buffer(const RenderDescriptor& render_desc
         "Failed to create staging buffer."
     );
 
-    VK_NAME(this, buffer, "Staging buffer");
+    VK_NAME(*this, buffer, "Staging buffer");
 
     return buffer;
 }
@@ -804,10 +891,10 @@ VkDeviceMemory RenderVulkan::allocate_staging_memory() {
 
     VK_ERROR(
         vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory),
-        "Failed to allocate %zu bytes for staging buffer.", memory_requirements.size
+        "Failed to allocate %llu bytes for staging buffer.", memory_requirements.size
     );
 
-    VK_NAME(this, memory, "Staging memory");
+    VK_NAME(*this, memory, "Staging memory");
 
     VK_ERROR(
         vkBindBufferMemory(device, m_staging_buffer, memory, 0),
@@ -817,22 +904,22 @@ VkDeviceMemory RenderVulkan::allocate_staging_memory() {
     return memory;
 }
 
-size_t RenderVulkan::allocate_from_staging_memory(size_t size, size_t alignment) {
+uint64_t RenderVulkan::allocate_from_staging_memory(uint64_t size, uint64_t alignment) {
     KW_ASSERT(size > 0);
     KW_ASSERT(alignment > 0 && is_pow2(alignment));
 
     KW_ERROR(
         alignment + size - 1 <= m_staging_buffer_size / 2,
-        "Staging allocation is too big. Requested %zu, allowed %zu.", alignment + size - 1, m_staging_buffer_size / 2
+        "Staging allocation is too big. Requested %llu, allowed %llu.", alignment + size - 1, m_staging_buffer_size / 2
     );
 
-    size_t staging_data_end = m_staging_data_end.load(std::memory_order_relaxed);
+    uint64_t staging_data_end = m_staging_data_end.load(std::memory_order_relaxed);
     while (true) {
         // Acquire because we don't want to mess with the flush data if another thread recently did it for us.
-        size_t staging_data_begin = m_staging_data_begin.load(std::memory_order_acquire);
+        uint64_t staging_data_begin = m_staging_data_begin.load(std::memory_order_acquire);
         
-        size_t aligned_staging_data_end = align_up(staging_data_end, alignment);
-        size_t new_staging_data_end = aligned_staging_data_end + size;
+        uint64_t aligned_staging_data_end = align_up(staging_data_end, alignment);
+        uint64_t new_staging_data_end = aligned_staging_data_end + size;
 
         if ((staging_data_end >= staging_data_begin && new_staging_data_end <= m_staging_buffer_size) ||
             (staging_data_end < staging_data_begin && new_staging_data_end < staging_data_begin)) {
@@ -869,11 +956,20 @@ size_t RenderVulkan::allocate_from_staging_memory(size_t size, size_t alignment)
                     // When this semaphore is signaled, staging data from `staging_data_begin` to
                     // `submit_data.staging_data_end` becomes available for allocation.
                     VK_ERROR(
-                        wait_semaphores(device, &semaphore_wait_info, UINT64_MAX),
+                        m_wait_semaphores(device, &semaphore_wait_info, UINT64_MAX),
                         "Failed to wait for a transfer semaphore."
                     );
 
-                    vkFreeCommandBuffers(device, m_command_pool, 1, &submit_data.command_buffer);
+                    if (submit_data.graphics_command_buffer != VK_NULL_HANDLE) {
+                        vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &submit_data.graphics_command_buffer);
+                    }
+
+                    if (submit_data.compute_command_buffer != VK_NULL_HANDLE) {
+                        vkFreeCommandBuffers(device, m_compute_command_pool, 1, &submit_data.compute_command_buffer);
+                    }
+
+                    KW_ASSERT(submit_data.transfer_command_buffer != VK_NULL_HANDLE);
+                    vkFreeCommandBuffers(device, m_transfer_command_pool, 1, &submit_data.transfer_command_buffer);
 
                     KW_ASSERT(
                         (submit_data.staging_data_end >= staging_data_begin && submit_data.staging_data_end <= staging_data_end) ||
@@ -894,7 +990,7 @@ size_t RenderVulkan::allocate_from_staging_memory(size_t size, size_t alignment)
     }
 }
 
-uint32_t RenderVulkan::compute_buffer_memory_index() {
+uint32_t RenderVulkan::compute_buffer_memory_index(VkMemoryPropertyFlags properties) {
     VkBufferCreateInfo buffer_create_info{};
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.flags = 0;
@@ -909,14 +1005,14 @@ uint32_t RenderVulkan::compute_buffer_memory_index() {
         vkCreateBuffer(device, &buffer_create_info, &allocation_callbacks, &buffer),
         "Failed to create a dummy buffer to query memory type mask."
     );
-    VK_NAME(this, buffer, "Dummy buffer");
+    VK_NAME(*this, buffer, "Dummy buffer");
 
     VkMemoryRequirements memory_requirements;
     vkGetBufferMemoryRequirements(device, buffer, &memory_requirements);
 
     vkDestroyBuffer(device, buffer, &allocation_callbacks);
 
-    uint32_t buffer_memory_index = find_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    uint32_t buffer_memory_index = find_memory_type(memory_requirements.memoryTypeBits, properties);
     KW_ERROR(buffer_memory_index != UINT32_MAX, "Failed to find memory type for buffer allocation.");
 
     return buffer_memory_index;
@@ -934,7 +1030,7 @@ BufferVulkan* RenderVulkan::create_buffer_vulkan(const BufferDescriptor& buffer_
     VkBufferCreateInfo buffer_create_info{};
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.flags = 0;
-    buffer_create_info.size = buffer_descriptor.size;
+    buffer_create_info.size = static_cast<VkDeviceSize>(buffer_descriptor.size);
     buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage;
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     buffer_create_info.queueFamilyIndexCount = 0;
@@ -947,9 +1043,9 @@ BufferVulkan* RenderVulkan::create_buffer_vulkan(const BufferDescriptor& buffer_
     );
 
     if ((usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) == VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-        VK_NAME(this, device_buffer, "Vertex buffer \"%s\"", buffer_descriptor.name);
+        VK_NAME(*this, device_buffer, "Vertex buffer \"%s\"", buffer_descriptor.name);
     } else {
-        VK_NAME(this, device_buffer, "Index buffer \"%s\"", buffer_descriptor.name);
+        VK_NAME(*this, device_buffer, "Index buffer \"%s\"", buffer_descriptor.name);
     }
 
     VkMemoryRequirements memory_requirements;
@@ -968,44 +1064,82 @@ BufferVulkan* RenderVulkan::create_buffer_vulkan(const BufferDescriptor& buffer_
     );
 
     //
-    // Find staging memory range to store the buffer data and upload the buffer data to this range.
+    // If device allocation is host visible, we can simply memcpy our buffer there. Otherwise staging buffer is required.
     //
 
-    size_t staging_buffer_offset = allocate_from_staging_memory(buffer_descriptor.size, 1);
+    if ((m_buffer_device_data[device_allocation.data_index].memory_type_index & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        void* data;
+        VK_ERROR(
+            vkMapMemory(device, device_allocation.memory, device_allocation.data_offset, buffer_descriptor.size, 0, &data),
+            "Failed to map buffer \"%s\" to staging memory.", buffer_descriptor.name
+        );
 
-    void* data;
-    VK_ERROR(
-        vkMapMemory(device, m_staging_memory, staging_buffer_offset, buffer_descriptor.size, 0, &data),
-        "Failed to map buffer \"%s\" to staging memory.", buffer_descriptor.name
-    );
+        std::memcpy(data, buffer_descriptor.data, buffer_descriptor.size);
 
-    std::memcpy(data, buffer_descriptor.data, buffer_descriptor.size);
+        vkUnmapMemory(device, m_staging_memory);
 
-    vkUnmapMemory(device, m_staging_memory);
+        BufferVulkan* result = persistent_memory_resource.allocate<BufferVulkan>();
+        result->buffer = device_buffer;
+        result->buffer_flags = buffer_descriptor.index_size == IndexSize::UINT16 ? BufferFlagsVulkan::INDEX16 : BufferFlagsVulkan::INDEX32;
+        result->transfer_semaphore_value = 0; // Don't wait for transfer queue.
+        result->device_data_index = device_allocation.data_index;
+        result->device_data_offset = device_allocation.data_offset;
+        return result;
+    } else {
+        //
+        // Find staging memory range to store the buffer data and upload the buffer data to this range.
+        //
 
-    //
-    // Enqueue copy command and return.
-    //
+        uint64_t staging_buffer_offset = allocate_from_staging_memory(static_cast<uint64_t>(buffer_descriptor.size), 1);
 
-    BufferCopyCommand buffer_copy_command{};
-    buffer_copy_command.buffer = device_buffer;
-    buffer_copy_command.staging_buffer_offset = staging_buffer_offset;
-    buffer_copy_command.staging_buffer_size = buffer_descriptor.size;
+        void* data;
+        VK_ERROR(
+            vkMapMemory(device, m_staging_memory, staging_buffer_offset, buffer_descriptor.size, 0, &data),
+            "Failed to map buffer \"%s\" to staging memory.", buffer_descriptor.name
+        );
 
-    {
-        std::lock_guard<std::mutex> lock(m_buffer_copy_command_mutex);
+        std::memcpy(data, buffer_descriptor.data, buffer_descriptor.size);
 
-        m_buffer_copy_commands.push_back(buffer_copy_command);
+        vkUnmapMemory(device, m_staging_memory);
+
+        //
+        // Enqueue copy command and return.
+        //
+
+        BufferCopyCommand buffer_copy_command{};
+        buffer_copy_command.buffer = device_buffer;
+        buffer_copy_command.staging_buffer_offset = staging_buffer_offset;
+        buffer_copy_command.staging_buffer_size = buffer_descriptor.size;
+
+        // If this resource is used in a draw call or dispatch, the following submit must wait for this semaphore value.
+        uint64_t semaphore_value;
+
+        {
+            std::lock_guard<std::mutex> lock(m_buffer_copy_command_mutex);
+
+            m_buffer_copy_commands.push_back(buffer_copy_command);
+
+            // The fact that we locked `m_buffer_copy_command_mutex` means there's no `submit_copy_commands` in parallel
+            // and therefore semaphore value will be increased only after new buffer copy command is processed.
+            semaphore_value = semaphore->value + 1;
+        }
+
+        BufferVulkan* result = persistent_memory_resource.allocate<BufferVulkan>();
+        result->buffer = device_buffer;
+        result->buffer_flags = buffer_descriptor.index_size == IndexSize::UINT16 ? BufferFlagsVulkan::INDEX16 : BufferFlagsVulkan::INDEX32;
+        result->transfer_semaphore_value = semaphore_value;
+        result->device_data_index = device_allocation.data_index;
+        result->device_data_offset = device_allocation.data_offset;
+        return result;
     }
-
-    BufferVulkan* result = persistent_memory_resource.allocate<BufferVulkan>();
-    result->buffer = device_buffer;
-    result->device_data_index = device_allocation.data_index;
-    result->device_data_offset = device_allocation.data_offset;
-    return result;
 }
 
 void RenderVulkan::destroy_buffer_vulkan(BufferVulkan* buffer) {
+    KW_ASSERT(
+        (buffer->buffer_flags & BufferFlagsVulkan::TRANSIENT) == BufferFlagsVulkan::NONE,
+        "Transient buffers must not be destroyed manually."
+    );
+
     std::lock_guard<std::mutex> lock(m_buffer_destroy_command_mutex);
     m_buffer_destroy_commands.push(BufferDestroyCommand{ get_destroy_command_dependencies(), buffer });
 }
@@ -1015,7 +1149,7 @@ VkBuffer RenderVulkan::create_transient_buffer(const RenderDescriptor& render_de
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.flags = 0;
     buffer_create_info.size = render_descriptor.transient_buffer_size;
-    buffer_create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     buffer_create_info.queueFamilyIndexCount = 0;
     buffer_create_info.pQueueFamilyIndices = 0;
@@ -1027,7 +1161,7 @@ VkBuffer RenderVulkan::create_transient_buffer(const RenderDescriptor& render_de
         "Failed to create transient buffer."
     );
 
-    VK_NAME(this, transient_buffer, "Transient buffer");
+    VK_NAME(*this, transient_buffer, "Transient buffer");
 
     return transient_buffer;
 }
@@ -1056,7 +1190,7 @@ VkDeviceMemory RenderVulkan::allocate_transient_memory() {
 
             VkDeviceMemory device_memory;
             if (vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &device_memory) == VK_SUCCESS) {
-                VK_NAME(this, device_memory, "Transient memory");
+                VK_NAME(*this, device_memory, "Transient memory");
 
                 VK_ERROR(
                     vkBindBufferMemory(device, m_transient_buffer, device_memory, 0),
@@ -1068,20 +1202,20 @@ VkDeviceMemory RenderVulkan::allocate_transient_memory() {
         }
     }
 
-    KW_ERROR(false, "Failed to allocate %zu bytes for transient buffer.", memory_requirements.size);
+    KW_ERROR(false, "Failed to allocate %llu bytes for transient buffer.", memory_requirements.size);
 }
 
-size_t RenderVulkan::allocate_from_transient_memory(size_t size, size_t alignment) {
+uint64_t RenderVulkan::allocate_from_transient_memory(uint64_t size, uint64_t alignment) {
     KW_ASSERT(
         size + alignment - 1 <= m_transient_buffer_size,
-        "Transient allocation is too big. Requested %zu, allowed %zu.", size + alignment - 1, m_transient_buffer_size
+        "Transient allocation is too big. Requested %llu, allowed %llu.", size + alignment - 1, m_transient_buffer_size
     );
 
-    size_t transient_data_end = m_transient_data_end.load(std::memory_order_relaxed);
+    uint64_t transient_data_end = m_transient_data_end.load(std::memory_order_relaxed);
 
     while (true) {
-        size_t aligned_transient_data_end = align_up(transient_data_end, alignment);
-        size_t new_transient_data_end = aligned_transient_data_end + size;
+        uint64_t aligned_transient_data_end = align_up(transient_data_end, alignment);
+        uint64_t new_transient_data_end = aligned_transient_data_end + size;
 
         if (new_transient_data_end <= m_transient_buffer_size) {
             if (m_transient_data_end.compare_exchange_weak(transient_data_end, new_transient_data_end, std::memory_order_release, std::memory_order_relaxed)) {
@@ -1095,15 +1229,15 @@ size_t RenderVulkan::allocate_from_transient_memory(size_t size, size_t alignmen
     }
 }
 
-size_t RenderVulkan::acquire_transient_buffer_vulkan(const void* data, size_t size) {
+BufferVulkan* RenderVulkan::acquire_transient_buffer_vulkan(const void* data, size_t size, BufferFlagsVulkan flags) {
     KW_ASSERT(data != nullptr, "Invalid buffer data.");
     KW_ASSERT(size > 0, "Invalid buffer data size.");
 
-    size_t transient_buffer_offset = allocate_from_transient_memory(size, 1);
+    uint64_t transient_buffer_offset = allocate_from_transient_memory(static_cast<uint64_t>(size), 1);
 
     void* mapped_data;
     VK_ERROR(
-        vkMapMemory(device, m_transient_memory, transient_buffer_offset, size, 0, &mapped_data),
+        vkMapMemory(device, m_transient_memory, transient_buffer_offset, static_cast<VkDeviceSize>(size), 0, &mapped_data),
         "Failed to map transient buffer to staging memory."
     );
 
@@ -1111,10 +1245,16 @@ size_t RenderVulkan::acquire_transient_buffer_vulkan(const void* data, size_t si
 
     vkUnmapMemory(device, m_transient_memory);
 
-    return transient_buffer_offset;
+    BufferVulkan* result = transient_memory_resource.allocate<BufferVulkan>();
+    result->buffer = m_transient_buffer;
+    result->buffer_flags = flags | BufferFlagsVulkan::TRANSIENT;
+    result->transfer_semaphore_value = 0; // Don't wait for transfer queue.
+    result->device_data_index = UINT16_MAX;
+    result->device_data_offset = transient_buffer_offset;
+    return result;
 }
 
-uint32_t RenderVulkan::compute_texture_memory_index() {
+uint32_t RenderVulkan::compute_texture_memory_index(VkMemoryPropertyFlags properties) {
     uint32_t memory_type_mask = UINT32_MAX;
 
     for (size_t i = 1; i < TEXTURE_FORMAT_COUNT; i++) {
@@ -1143,7 +1283,7 @@ uint32_t RenderVulkan::compute_texture_memory_index() {
             vkCreateImage(device, &image_create_info, &allocation_callbacks, &image),
             "Failed to create dummy image to query memory type mask."
         );
-        VK_NAME(this, image, "Dummy image %zu", i);
+        VK_NAME(*this, image, "Dummy image %zu", i);
 
         VkMemoryRequirements memory_requirements;
         vkGetImageMemoryRequirements(device, image, &memory_requirements);
@@ -1264,7 +1404,7 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
         vkCreateImage(device, &image_create_info, &allocation_callbacks, &image),
         "Failed to create an image \"%s\".", texture_descriptor.name
     );
-    VK_NAME(this, image, "Texture \"%s\"", texture_descriptor.name);
+    VK_NAME(*this, image, "Texture \"%s\"", texture_descriptor.name);
 
     //
     // Find device memory range to store the texture and bind the texture to this range.
@@ -1314,17 +1454,17 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
         vkCreateImageView(device, &image_view_create_info, &allocation_callbacks, &image_view),
         "Failed to create image view \"%s\".", texture_descriptor.name
     );
-    VK_NAME(this, image_view, "Texture view \"%s\"", texture_descriptor.name);
+    VK_NAME(*this, image_view, "Texture view \"%s\"", texture_descriptor.name);
 
     //
     // Find staging memory range to store the texture data and upload the texture data to this range.
     //
 
-    size_t staging_buffer_offset = allocate_from_staging_memory(texture_descriptor.size, 16);
+    uint64_t staging_buffer_offset = allocate_from_staging_memory(static_cast<uint64_t>(texture_descriptor.size), 16);
 
     void* data;
     VK_ERROR(
-        vkMapMemory(device, m_staging_memory, staging_buffer_offset, texture_descriptor.size, 0, &data),
+        vkMapMemory(device, m_staging_memory, staging_buffer_offset, static_cast<VkDeviceSize>(texture_descriptor.size), 0, &data),
         "Failed to map texture \"%s\" to staging memory.", texture_descriptor.name
     );
 
@@ -1341,7 +1481,7 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
 
     TextureCopyCommand texture_copy_command{};
     texture_copy_command.staging_buffer_offset = staging_buffer_offset;
-    texture_copy_command.staging_buffer_size = texture_descriptor.size;
+    texture_copy_command.staging_buffer_size = static_cast<uint64_t>(texture_descriptor.size);
     texture_copy_command.image = image;
     texture_copy_command.aspect_mask = aspect_mask;
     texture_copy_command.array_size = image_create_info.arrayLayers;
@@ -1351,15 +1491,23 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
     texture_copy_command.depth = image_create_info.extent.depth;
     texture_copy_command.offsets = offsets;
 
+    // If this resource is used in a draw call or dispatch, the following submit must wait for this semaphore value.
+    uint64_t semaphore_value;
+
     {
         std::lock_guard<std::mutex> lock(m_texture_copy_command_mutex);
 
         m_texture_copy_commands.push_back(texture_copy_command);
+
+        // The fact that we locked `m_texture_copy_command_mutex` means there's no `submit_copy_commands` in parallel
+        // and therefore semaphore value will be increased only after new texture copy command is processed.
+        semaphore_value = semaphore->value + 1;
     }
 
     TextureVulkan* result = persistent_memory_resource.allocate<TextureVulkan>();
     result->image = image;
     result->image_view = image_view;
+    result->transfer_semaphore_value = semaphore_value;
     result->device_data_index = device_allocation.data_index;
     result->device_data_offset = device_allocation.data_offset;
     return result;
@@ -1380,7 +1528,7 @@ Vector<RenderVulkan::DestroyCommandDependency> RenderVulkan::get_destroy_command
     // until the first flush. Otherwise resource will stay in a creation queue after destruction and cause invalid
     // memory access. That could be avoided by checking in destroy whether the resource is in a creation queue
     // and removing it from there. However the "create, destroy, flush" case is kind of irrational, so postponing
-    // seems like a good compromise.
+    // destroy seems like a good compromise.
     result.push_back(DestroyCommandDependency{ semaphore, semaphore->value + 1 });
 
     for (size_t i = 0; i < m_resource_dependencies.size(); ) {
@@ -1409,8 +1557,17 @@ void RenderVulkan::process_completed_submits() {
         semaphore_wait_info.pSemaphores = &semaphore->semaphore;
         semaphore_wait_info.pValues = &submit_data.semaphore_value;
 
-        if (wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
-            vkFreeCommandBuffers(device, m_command_pool, 1, &submit_data.command_buffer);
+        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+            if (submit_data.graphics_command_buffer != VK_NULL_HANDLE) {
+                vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &submit_data.graphics_command_buffer);
+            }
+
+            if (submit_data.compute_command_buffer != VK_NULL_HANDLE) {
+                vkFreeCommandBuffers(device, m_compute_command_pool, 1, &submit_data.compute_command_buffer);
+            }
+
+            KW_ASSERT(submit_data.transfer_command_buffer != VK_NULL_HANDLE);
+            vkFreeCommandBuffers(device, m_transfer_command_pool, 1, &submit_data.transfer_command_buffer);
 
             KW_ASSERT(
                 (submit_data.staging_data_end >= m_staging_data_begin && submit_data.staging_data_end <= m_staging_data_end) ||
@@ -1457,7 +1614,7 @@ void RenderVulkan::destroy_queued_buffers() {
         semaphore_wait_info.pSemaphores = semaphores.data();
         semaphore_wait_info.pValues = values.data();
 
-        if (wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
             // Transfer semaphore is also a destroy dependency. If it just signaled, we need to destroy command buffer
             // before destroying the buffer, because the former may have dependency on the latter.
             process_completed_submits();
@@ -1500,11 +1657,11 @@ void RenderVulkan::destroy_queued_textures() {
         VkSemaphoreWaitInfo semaphore_wait_info{};
         semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
         semaphore_wait_info.flags = 0;
-        semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(timeline_semaphores.size());
+        semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(semaphores.size());
         semaphore_wait_info.pSemaphores = semaphores.data();
         semaphore_wait_info.pValues = values.data();
 
-        if (wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
             // Transfer semaphore is also a destroy dependency. If it just signaled, we need to destroy command buffer
             // before destroying the texture, because the former may have dependency on the latter.
             process_completed_submits();
@@ -1523,39 +1680,38 @@ void RenderVulkan::destroy_queued_textures() {
 }
 
 void RenderVulkan::submit_copy_commands() {
-    std::lock_guard<std::mutex> buffer_lock(m_buffer_copy_command_mutex);
-    std::lock_guard<std::mutex> texture_lock(m_texture_copy_command_mutex);
+    std::scoped_lock buffer_texture_lock(m_buffer_copy_command_mutex, m_texture_copy_command_mutex);
 
     if (!m_buffer_copy_commands.empty() || !m_texture_copy_commands.empty()) {
-        std::lock_guard<std::recursive_mutex> lock(m_submit_data_mutex);
+        std::lock_guard<std::recursive_mutex> submit_data_lock(m_submit_data_mutex);
 
         //
-        // Retrieve command buffer from the pool or create a new one.
+        // Create new command buffer.
         //
 
-        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
-        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.commandPool = m_command_pool;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandBufferCount = 1;
+        VkCommandBufferAllocateInfo transfer_command_buffer_allocate_info{};
+        transfer_command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        transfer_command_buffer_allocate_info.commandPool = m_transfer_command_pool;
+        transfer_command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        transfer_command_buffer_allocate_info.commandBufferCount = 1;
 
-        VkCommandBuffer command_buffer;
+        VkCommandBuffer transfer_command_buffer;
         VK_ERROR(
-            vkAllocateCommandBuffers(device, &command_buffer_allocate_info, &command_buffer),
+            vkAllocateCommandBuffers(device, &transfer_command_buffer_allocate_info, &transfer_command_buffer),
             "Failed to allocate transfer command buffer."
         );
-        VK_NAME(this, command_buffer, "Transfer command buffer ");
+        VK_NAME(*this, transfer_command_buffer, "Transfer command buffer");
 
         //
         // Begin command buffer.
         //
 
-        VkCommandBufferBeginInfo command_buffer_begin_info{};
-        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VkCommandBufferBeginInfo transfer_command_buffer_begin_info{};
+        transfer_command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        transfer_command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         VK_ERROR(
-            vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+            vkBeginCommandBuffer(transfer_command_buffer, &transfer_command_buffer_begin_info),
             "Failed to begin a transfer command buffer."
         );
 
@@ -1563,7 +1719,7 @@ void RenderVulkan::submit_copy_commands() {
         // Copy buffers.
         //
 
-        size_t staging_data_end = 0;
+        uint64_t staging_data_end = 0;
 
         for (BufferCopyCommand& buffer_copy_command : m_buffer_copy_commands) {
             VkBufferCopy buffer_copy{};
@@ -1571,7 +1727,7 @@ void RenderVulkan::submit_copy_commands() {
             buffer_copy.dstOffset = 0;
             buffer_copy.size = buffer_copy_command.staging_buffer_size;
 
-            vkCmdCopyBuffer(command_buffer, m_staging_buffer, buffer_copy_command.buffer, 1, &buffer_copy);
+            vkCmdCopyBuffer(transfer_command_buffer, m_staging_buffer, buffer_copy_command.buffer, 1, &buffer_copy);
 
             if (transfer_queue_family_index != graphics_queue_family_index) {
                 VkBufferMemoryBarrier release_barrier{};
@@ -1584,10 +1740,8 @@ void RenderVulkan::submit_copy_commands() {
                 release_barrier.offset = 0;
                 release_barrier.size = VK_WHOLE_SIZE;
 
-                // TODO: Acquire ownership on graphics (?) queue.
-
                 vkCmdPipelineBarrier(
-                    command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
                     0, nullptr, 1, &release_barrier, 0, nullptr
                 );
             }
@@ -1595,7 +1749,7 @@ void RenderVulkan::submit_copy_commands() {
             staging_data_end = std::max(staging_data_end, buffer_copy_command.staging_buffer_offset + buffer_copy_command.staging_buffer_size);
         }
 
-        m_buffer_copy_commands.clear();
+        // Keep `m_buffer_copy_commands` items for ownership transfer.
 
         //
         // Copy textures.
@@ -1621,7 +1775,7 @@ void RenderVulkan::submit_copy_commands() {
             acquire_barrier.subresourceRange = image_subresource_range;
 
             vkCmdPipelineBarrier(
-                command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                transfer_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
                 0, nullptr, 0, nullptr, 1, &acquire_barrier
             );
 
@@ -1653,7 +1807,7 @@ void RenderVulkan::submit_copy_commands() {
                     extent.depth = depth;
 
                     VkBufferImageCopy buffer_image_copy{};
-                    buffer_image_copy.bufferOffset = texture_copy_command.staging_buffer_offset + array_mip_offset;
+                    buffer_image_copy.bufferOffset = texture_copy_command.staging_buffer_offset + static_cast<VkDeviceSize>(array_mip_offset);
                     buffer_image_copy.bufferRowLength = 0;
                     buffer_image_copy.bufferImageHeight = 0;
                     buffer_image_copy.imageSubresource = image_subresource_layers;
@@ -1669,7 +1823,7 @@ void RenderVulkan::submit_copy_commands() {
             }
 
             vkCmdCopyBufferToImage(
-                command_buffer, m_staging_buffer, texture_copy_command.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                transfer_command_buffer, m_staging_buffer, texture_copy_command.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 static_cast<uint32_t>(buffer_image_copies.size()), buffer_image_copies.data()
             );
 
@@ -1684,10 +1838,8 @@ void RenderVulkan::submit_copy_commands() {
             release_barrier.image = texture_copy_command.image;
             release_barrier.subresourceRange = image_subresource_range;
 
-            // TODO: Acquire ownership on graphics (?) queue.
-
             vkCmdPipelineBarrier(
-                command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
                 0, nullptr, 0, nullptr, 1, &release_barrier
             );
 
@@ -1696,47 +1848,197 @@ void RenderVulkan::submit_copy_commands() {
             staging_data_end = std::max(staging_data_end, texture_copy_command.staging_buffer_offset + texture_copy_command.staging_buffer_size);
         }
 
-        m_texture_copy_commands.clear();
+        // Keep `m_texture_copy_commands` items for ownership transfer.
 
         //
-        // End command buffer and submit.
+        // If transfer and graphics queue are from different families, the copy commands are submitted to a transfer
+        // queue and ownership transfer commands are submitted to a graphics queue. Resource users wait for the latter,
+        // so public semaphore must be signaled from graphics queue.
+        //
+
+        VkSemaphore transfer_semaphore;
+        uint64_t transfer_signal_value;
+
+        if (transfer_queue_family_index != graphics_queue_family_index) {
+            transfer_semaphore = m_intermediate_semaphore->semaphore;
+            transfer_signal_value = ++m_intermediate_semaphore->value;
+        } else {
+            transfer_semaphore = semaphore->semaphore;
+            transfer_signal_value = ++semaphore->value;
+        }
+
+
+        //
+        // End transfer command buffer and submit to a transfer queue.
         //
 
         VK_ERROR(
-            vkEndCommandBuffer(command_buffer),
+            vkEndCommandBuffer(transfer_command_buffer),
             "Failed to end a transfer command buffer."
         );
 
-        uint64_t signal_value = ++semaphore->value;
+        VkTimelineSemaphoreSubmitInfo transfer_timeline_semaphore_submit_info{};
+        transfer_timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        transfer_timeline_semaphore_submit_info.waitSemaphoreValueCount = 0;
+        transfer_timeline_semaphore_submit_info.pWaitSemaphoreValues = nullptr;
+        transfer_timeline_semaphore_submit_info.signalSemaphoreValueCount = 1;
+        transfer_timeline_semaphore_submit_info.pSignalSemaphoreValues = &transfer_signal_value;
 
-        VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info{};
-        timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        timeline_semaphore_submit_info.waitSemaphoreValueCount = 0;
-        timeline_semaphore_submit_info.pWaitSemaphoreValues = nullptr;
-        timeline_semaphore_submit_info.signalSemaphoreValueCount = 1;
-        timeline_semaphore_submit_info.pSignalSemaphoreValues = &signal_value;
-
-        VkSubmitInfo submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.pNext = &timeline_semaphore_submit_info;
-        submit_info.waitSemaphoreCount = 0;
-        submit_info.pWaitSemaphores = nullptr;
-        submit_info.pWaitDstStageMask = 0;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = &semaphore->semaphore;
+        VkSubmitInfo transfer_submit_info{};
+        transfer_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        transfer_submit_info.pNext = &transfer_timeline_semaphore_submit_info;
+        transfer_submit_info.waitSemaphoreCount = 0;
+        transfer_submit_info.pWaitSemaphores = nullptr;
+        transfer_submit_info.pWaitDstStageMask = nullptr;
+        transfer_submit_info.commandBufferCount = 1;
+        transfer_submit_info.pCommandBuffers = &transfer_command_buffer;
+        transfer_submit_info.signalSemaphoreCount = 1;
+        transfer_submit_info.pSignalSemaphores = &transfer_semaphore;
 
         {
             std::lock_guard<Spinlock> lock(*transfer_queue_spinlock);
 
             VK_ERROR(
-                vkQueueSubmit(transfer_queue, 1, &submit_info, VK_NULL_HANDLE),
+                vkQueueSubmit(transfer_queue, 1, &transfer_submit_info, VK_NULL_HANDLE),
                 "Failed to submit copy commands to a transfer queue."
             );
         }
 
-        m_submit_data.push(SubmitData{ command_buffer, signal_value, staging_data_end });
+        //
+        // If transfer and graphics queue are from different families, queue ownership transfer must be performed.
+        //
+
+        VkCommandBuffer graphics_command_buffer = VK_NULL_HANDLE;
+
+        if (transfer_queue_family_index != graphics_queue_family_index) {
+            //
+            // Create new command buffer.
+            //
+
+            VkCommandBufferAllocateInfo graphics_command_buffer_allocate_info{};
+            graphics_command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            graphics_command_buffer_allocate_info.commandPool = m_graphics_command_pool;
+            graphics_command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            graphics_command_buffer_allocate_info.commandBufferCount = 1;
+
+            VK_ERROR(
+                vkAllocateCommandBuffers(device, &graphics_command_buffer_allocate_info, &graphics_command_buffer),
+                "Failed to allocate graphics command buffer."
+            );
+            VK_NAME(*this, graphics_command_buffer, "Graphics command buffer");
+
+            //
+            // Begin command buffer.
+            //
+
+            VkCommandBufferBeginInfo graphics_command_buffer_begin_info{};
+            graphics_command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            graphics_command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            VK_ERROR(
+                vkBeginCommandBuffer(graphics_command_buffer, &graphics_command_buffer_begin_info),
+                "Failed to begin a graphics command buffer."
+            );
+
+            //
+            // Transfer buffer ownership.
+            //
+
+            for (BufferCopyCommand& buffer_copy_command : m_buffer_copy_commands) {
+                VkBufferMemoryBarrier acquire_barrier{};
+                acquire_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                acquire_barrier.srcAccessMask = 0;
+                acquire_barrier.dstAccessMask = 0;
+                acquire_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
+                acquire_barrier.dstQueueFamilyIndex = graphics_queue_family_index;
+                acquire_barrier.buffer = buffer_copy_command.buffer;
+                acquire_barrier.offset = 0;
+                acquire_barrier.size = VK_WHOLE_SIZE;
+
+                vkCmdPipelineBarrier(
+                    graphics_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    0, nullptr, 1, &acquire_barrier, 0, nullptr
+                );
+            }
+
+            //
+            // Transfer texture ownership.
+            //
+
+            for (TextureCopyCommand& texture_copy_command : m_texture_copy_commands) {
+                VkImageSubresourceRange image_subresource_range{};
+                image_subresource_range.aspectMask = texture_copy_command.aspect_mask;
+                image_subresource_range.baseMipLevel = 0;
+                image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+                image_subresource_range.baseArrayLayer = 0;
+                image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+                VkImageMemoryBarrier acquire_barrier{};
+                acquire_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                acquire_barrier.srcAccessMask = 0;
+                acquire_barrier.dstAccessMask = 0;
+                acquire_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                acquire_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                acquire_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
+                acquire_barrier.dstQueueFamilyIndex = graphics_queue_family_index;
+                acquire_barrier.image = texture_copy_command.image;
+                acquire_barrier.subresourceRange = image_subresource_range;
+
+                vkCmdPipelineBarrier(
+                    graphics_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    0, nullptr, 0, nullptr, 1, &acquire_barrier
+                );
+            }
+
+            //
+            // End graphics command buffer and submit it to a graphics queue.
+            //
+
+            VK_ERROR(
+                vkEndCommandBuffer(graphics_command_buffer),
+                "Failed to end a transfer command buffer."
+            );
+
+            uint64_t graphics_signal_value = ++semaphore->value;
+
+            VkTimelineSemaphoreSubmitInfo graphics_timeline_semaphore_submit_info{};
+            graphics_timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+            graphics_timeline_semaphore_submit_info.waitSemaphoreValueCount = 1;
+            graphics_timeline_semaphore_submit_info.pWaitSemaphoreValues = &transfer_signal_value;
+            graphics_timeline_semaphore_submit_info.signalSemaphoreValueCount = 1;
+            graphics_timeline_semaphore_submit_info.pSignalSemaphoreValues = &graphics_signal_value;
+
+            VkPipelineStageFlags graphics_wait_stage_masks = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+
+            VkSubmitInfo graphics_submit_info{};
+            graphics_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            graphics_submit_info.pNext = &graphics_timeline_semaphore_submit_info;
+            graphics_submit_info.waitSemaphoreCount = 1;
+            graphics_submit_info.pWaitSemaphores = &m_intermediate_semaphore->semaphore;
+            graphics_submit_info.pWaitDstStageMask = &graphics_wait_stage_masks;
+            graphics_submit_info.commandBufferCount = 1;
+            graphics_submit_info.pCommandBuffers = &graphics_command_buffer;
+            graphics_submit_info.signalSemaphoreCount = 1;
+            graphics_submit_info.pSignalSemaphores = &semaphore->semaphore;
+
+            {
+                std::lock_guard<Spinlock> lock(*graphics_queue_spinlock);
+
+                VK_ERROR(
+                    vkQueueSubmit(graphics_queue, 1, &graphics_submit_info, VK_NULL_HANDLE),
+                    "Failed to submit ownership transfer commands to a graphics queue."
+                );
+            }
+        }
+
+        m_buffer_copy_commands.clear();
+        m_texture_copy_commands.clear();
+
+        //
+        // Destroy command buffer when copy commands completed on device.
+        //
+
+        m_submit_data.push(SubmitData{ transfer_command_buffer, VK_NULL_HANDLE, graphics_command_buffer, semaphore->value, staging_data_end });
     }
 }
 

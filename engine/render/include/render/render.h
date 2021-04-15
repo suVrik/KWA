@@ -11,6 +11,8 @@ enum class RenderApi {
     DIRECTX,
 };
 
+constexpr size_t RENDER_API_COUNT = 2;
+
 struct RenderDescriptor {
     RenderApi api;
 
@@ -24,23 +26,32 @@ struct RenderDescriptor {
     bool is_debug_names_enabled;
 
     // When overflows, automatically performs flush and waits for transfer to finish.
-    size_t staging_buffer_size;
+    uint64_t staging_buffer_size;
 
     // When overflows, new transient data overwrites old transient data, which may cause visual bugs.
-    size_t transient_buffer_size;
+    uint64_t transient_buffer_size;
 
-    size_t buffer_allocation_size;
-    size_t buffer_block_size;
+    uint64_t buffer_allocation_size;
+    uint64_t buffer_block_size;
 
-    size_t texture_allocation_size;
-    size_t texture_block_size;
+    uint64_t texture_allocation_size;
+    uint64_t texture_block_size;
 };
+
+enum class IndexSize {
+    UINT16,
+    UINT32,
+};
+
+constexpr size_t INDEX_SIZE_COUNT = 2;
 
 struct BufferDescriptor {
     const char* name;
 
     const void* data;
     size_t size;
+
+    IndexSize index_size; // Ignored for vertex buffer.
 };
 
 enum class TextureType {
@@ -120,7 +131,7 @@ namespace TextureFormatUtils {
 
 bool is_depth_stencil(TextureFormat format);
 bool is_compressed(TextureFormat format);
-size_t get_pixel_size(TextureFormat format);
+uint64_t get_pixel_size(TextureFormat format);
 
 } // namespace TextureFormatUtils
 
@@ -154,16 +165,25 @@ public:
 
     virtual ~Render() = default;
 
+    // May block if staging buffer is full and needs to be flushed.
     virtual VertexBuffer create_vertex_buffer(const BufferDescriptor& buffer_descriptor) = 0;
     virtual void destroy_vertex_buffer(VertexBuffer vertex_buffer) = 0;
 
+    // May block if staging buffer is full and needs to be flushed.
     virtual IndexBuffer create_index_buffer(const BufferDescriptor& buffer_descriptor) = 0;
     virtual void destroy_index_buffer(IndexBuffer index_buffer) = 0;
 
-    virtual UniformBuffer acquire_transient_buffer(const void* data, size_t size) = 0;
+    // Never block. Buffer lifetime is defined by transient memory resource. Must not be destroyed manually.
+    virtual VertexBuffer acquire_transient_vertex_buffer(const void* data, size_t size) = 0;
+    virtual IndexBuffer acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) = 0;
+    virtual UniformBuffer acquire_transient_uniform_buffer(const void* data, size_t size) = 0;
 
+    // May block if staging buffer is full and needs to be flushed.
     virtual Texture create_texture(const TextureDescriptor& texture_descriptor) = 0;
     virtual void destroy_texture(Texture texture) = 0;
+
+    // Send copy commands to device. Automatically called by frame graph.
+    virtual void flush() = 0;
 
     virtual RenderApi get_api() const = 0;
 };

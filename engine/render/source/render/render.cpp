@@ -144,7 +144,7 @@ bool is_compressed(TextureFormat format) {
     return IS_COMPRESSED[static_cast<size_t>(format)];
 }
 
-static const size_t PIXEL_SIZE[] = {
+static const uint64_t PIXEL_SIZE[] = {
     0,  // UNKNOWN
     1,  // R8_SINT
     1,  // R8_SNORM
@@ -207,7 +207,7 @@ static const size_t PIXEL_SIZE[] = {
 
 static_assert(std::size(PIXEL_SIZE) == TEXTURE_FORMAT_COUNT);
 
-size_t get_pixel_size(TextureFormat format) {
+uint64_t get_pixel_size(TextureFormat format) {
     return PIXEL_SIZE[static_cast<size_t>(format)];
 }
 
