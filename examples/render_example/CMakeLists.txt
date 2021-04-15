@@ -8,6 +8,9 @@ set_target_properties(render_example PROPERTIES FOLDER "examples")
 file(GLOB_RECURSE render_example_shaders "resource/*.hlsl")
 target_add_shaders(render_example "${render_example_shaders}")
 
+file(GLOB_RECURSE render_example_textures "resource/*.dds")
+target_add_textures(render_example "${render_example_textures}")
+
 target_link_libraries(render_example PRIVATE debug_)
 target_link_libraries(render_example PRIVATE memory)
 target_link_libraries(render_example PRIVATE concurrency)

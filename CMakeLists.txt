@@ -66,6 +66,27 @@ function(target_add_shaders target shaders)
     set_source_files_properties(${shaders} PROPERTIES VS_TOOL_OVERRIDE "None")
 endfunction()
 
+function(target_add_textures target textures)
+    foreach(absolute_path ${textures})
+        cmake_path(RELATIVE_PATH absolute_path BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path)
+
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
+            MAIN_DEPENDENCY ${absolute_path}
+            COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
+            COMMAND_EXPAND_LISTS
+        )
+    endforeach()
+
+    target_sources(${target} PRIVATE ${textures})
+
+    source_group(
+        TREE "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+        PREFIX "Resource Files"
+        FILES ${textures}
+    )
+endfunction()
+
 add_subdirectory("thirdparty")
 add_subdirectory("engine")
 add_subdirectory("tools")
