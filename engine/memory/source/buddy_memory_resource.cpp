@@ -19,7 +19,7 @@ BuddyMemoryResource::BuddyMemoryResource(MemoryResource& memory_resource, size_t
 
     m_heads = memory_resource.allocate<uint32_t>(m_max_depth + 1ull);
     m_leafs = memory_resource.allocate<Leaf>(1ull << m_max_depth);
-    m_memory = memory_resource.allocate<std::byte>(1ull << root_size_log2);
+    m_memory = memory_resource.allocate<uint8_t>(1ull << root_size_log2);
 
     for (uint32_t i = 0; i < m_max_depth; i++) {
         m_heads[i] = END;
@@ -85,16 +85,16 @@ void* BuddyMemoryResource::allocate(size_t size, size_t alignment) {
     m_leafs[local_offset].depth = depth;
 
     // Return absolute pointer.
-    return static_cast<std::byte*>(m_memory) + (static_cast<size_t>(local_offset) << m_leaf_size_log2);
+    return static_cast<uint8_t*>(m_memory) + (static_cast<size_t>(local_offset) << m_leaf_size_log2);
 }
 
 void* BuddyMemoryResource::reallocate(void* memory, size_t size, size_t alignment) {
     void* result = allocate(size, alignment);
 
     if (memory != nullptr && result != nullptr) {
-        KW_ASSERT(memory >= m_memory && memory < static_cast<std::byte*>(m_memory) + (1ull << (m_leaf_size_log2 + m_max_depth)));
+        KW_ASSERT(memory >= m_memory && memory < static_cast<uint8_t*>(m_memory) + (1ull << (m_leaf_size_log2 + m_max_depth)));
 
-        size_t offset = static_cast<std::byte*>(memory) - static_cast<std::byte*>(m_memory);
+        size_t offset = static_cast<uint8_t*>(memory) - static_cast<uint8_t*>(m_memory);
         KW_ASSERT(((offset >> m_leaf_size_log2) << m_leaf_size_log2) == offset);
 
         uint32_t local_offset = static_cast<uint32_t>(offset >> m_leaf_size_log2);
@@ -115,9 +115,9 @@ void* BuddyMemoryResource::reallocate(void* memory, size_t size, size_t alignmen
 
 void BuddyMemoryResource::deallocate(void* memory) {
     if (memory != nullptr) {
-        KW_ASSERT(memory >= m_memory && memory < static_cast<std::byte*>(m_memory) + (1ull << (m_leaf_size_log2 + m_max_depth)));
+        KW_ASSERT(memory >= m_memory && memory < static_cast<uint8_t*>(m_memory) + (1ull << (m_leaf_size_log2 + m_max_depth)));
 
-        size_t offset = static_cast<std::byte*>(memory) - static_cast<std::byte*>(m_memory);
+        size_t offset = static_cast<uint8_t*>(memory) - static_cast<uint8_t*>(m_memory);
         KW_ASSERT(((offset >> m_leaf_size_log2) << m_leaf_size_log2) == offset);
 
         uint32_t local_offset = static_cast<uint32_t>(offset >> m_leaf_size_log2);

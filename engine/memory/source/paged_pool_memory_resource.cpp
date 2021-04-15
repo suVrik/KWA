@@ -61,7 +61,7 @@ void PagedPoolMemoryResource::deallocate(void* memory) {
         void* current_page = m_page_head;
         do {
             void* items_start = reinterpret_cast<void*>((reinterpret_cast<size_t>(m_page_head) + sizeof(void*) + (m_allocation_size - 1)) & ~(m_allocation_size - 1));
-            void* items_end = static_cast<std::byte*>(items_start) + m_allocation_size * m_allocations_per_page;
+            void* items_end = static_cast<uint8_t*>(items_start) + m_allocation_size * m_allocations_per_page;
             if (memory >= items_start && memory < items_end) {
                 valid_range = true;
                 break;
@@ -87,14 +87,14 @@ void PagedPoolMemoryResource::allocate_new_page(void* previous_page) {
 
     // Offset by next page pointer and align by allocation size.
     void* current_item = m_data_head = reinterpret_cast<void*>((reinterpret_cast<size_t>(m_page_head) + sizeof(void*) + (m_allocation_size - 1)) & ~(m_allocation_size - 1));
-    void* next_item = static_cast<std::byte*>(current_item) + m_allocation_size;
+    void* next_item = static_cast<uint8_t*>(current_item) + m_allocation_size;
 
     // Each item (prior the last one) points to the next item.
     for (size_t i = 0; i + 1 < m_allocations_per_page; i++) {
         std::memcpy(current_item, &next_item, sizeof(void*));
 
         current_item = next_item;
-        next_item = static_cast<std::byte*>(current_item) + m_allocation_size;
+        next_item = static_cast<uint8_t*>(current_item) + m_allocation_size;
     }
 
     // The last item points to nothing. Additional page allocation would be required.

@@ -9,7 +9,7 @@ LinearMemoryResource::LinearMemoryResource(MemoryResource& memory_resource, size
 {
     m_begin = memory_resource.allocate(capacity, 1);
     m_current = m_begin;
-    m_end = static_cast<std::byte*>(m_begin) + capacity;
+    m_end = static_cast<uint8_t*>(m_begin) + capacity;
 }
 
 LinearMemoryResource::~LinearMemoryResource() {

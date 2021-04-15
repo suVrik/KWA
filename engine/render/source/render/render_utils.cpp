@@ -7,7 +7,7 @@
 
 namespace kw::RenderUtils {
 
-namespace render_utilities_details {
+namespace render_utils_details {
 
 class Parser {
 public:
@@ -17,9 +17,9 @@ public:
         , m_position(m_data.data()) {
     }
 
-    const std::byte* read(size_t size) {
+    const uint8_t* read(size_t size) {
         if (m_position + size <= m_end) {
-            const std::byte* result = m_position;
+            const uint8_t* result = m_position;
             m_position += size;
             return result;
         }
@@ -32,9 +32,9 @@ public:
     }
 
 private:
-    Vector<std::byte> m_data;
-    const std::byte* m_end;
-    const std::byte* m_position;
+    Vector<uint8_t> m_data;
+    const uint8_t* m_end;
+    const uint8_t* m_position;
 };
 
 constexpr uint32_t GEO_SIGNATURE = ' OEG';
@@ -408,10 +408,10 @@ const FormatDescriptor FORMAT_DESCRIPTORS[] = {
     { 16, true  }, // TextureFormat::BC7_UNORM_SRGB
 };
 
-} // namespace render_utilities_details
+} // namespace render_utils_details
 
 TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
-    using namespace render_utilities_details;
+    using namespace render_utils_details;
 
     Parser parser(memory_resource, relative_path);
 
@@ -545,8 +545,8 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
 
             offsets[array_index * texture_descriptor.mip_levels + mip_index] = texture_descriptor.size;
 
-            const std::byte* data = parser.read(bytes_count);
-            KW_ERROR(data != nullptr, "Failed to read a texture."); // TODO: Here and above. Specify texture path.
+            const uint8_t* data = parser.read(bytes_count);
+            KW_ERROR(data != nullptr, "Failed to read a texture \"%s\".", relative_path.c_str());
 
             if (texture_descriptor.data == nullptr) {
                 texture_descriptor.data = data;

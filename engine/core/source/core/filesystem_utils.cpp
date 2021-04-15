@@ -6,7 +6,7 @@
 
 namespace kw::FilesystemUtils {
 
-Vector<std::byte> read_file(MemoryResource& memory_resource, const String& relative_path) {
+Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relative_path) {
     TCHAR executable_directory[MAX_PATH];
 
     KW_ERROR(
@@ -58,7 +58,7 @@ Vector<std::byte> read_file(MemoryResource& memory_resource, const String& relat
         "Failed to query file \"%s\" size", relative_path.c_str()
     );
 
-    Vector<std::byte> result(bytes_total, memory_resource);
+    Vector<uint8_t> result(bytes_total, memory_resource);
 
     DWORD bytes_read;
     
