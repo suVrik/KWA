@@ -84,11 +84,13 @@ uint64_t log2(uint64_t value);
 class float2 {
 public:
     explicit constexpr float2(float all = 0.f)
-        : x(all), y(all) {
+        : x(all), y(all)
+    {
     }
     
     explicit constexpr float2(float x, float y) 
-        : x(x), y(y) {
+        : x(x), y(y)
+    {
     }
 
     constexpr float* begin() {
@@ -274,16 +276,19 @@ inline bool isfinite(const float2& value) {
 class float3 {
 public:
     explicit constexpr float3(float all = 0.f)
-        : x(all), y(all), z(all) {
+        : x(all), y(all), z(all)
+    {
     }
 
 
     explicit constexpr float3(float x, float y, float z)
-        : x(x), y(y), z(z) {
+        : x(x), y(y), z(z)
+    {
     }
 
     explicit constexpr float3(const float2& value, float z)
-        : x(value.x), y(value.y), z(z) {
+        : x(value.x), y(value.y), z(z)
+    {
     }
 
     constexpr float* begin() {
@@ -485,19 +490,23 @@ inline bool isfinite(const float3& value) {
 class float4 {
 public:
     explicit constexpr float4(float all = 0.f)
-        : x(all), y(all), z(all), w(all) {
+        : x(all), y(all), z(all), w(all)
+    {
     }
     
     explicit constexpr float4(float x, float y, float z, float w)
-        : x(x), y(y), z(z), w(w) {
+        : x(x), y(y), z(z), w(w)
+    {
     }
 
     explicit constexpr float4(const float2& value, float z, float w)
-        : x(value.x), y(value.y), z(z), w(w) {
+        : x(value.x), y(value.y), z(z), w(w)
+    {
     }
 
     explicit constexpr float4(const float3& value, float w)
-        : x(value.x), y(value.y), z(value.z), w(w) {
+        : x(value.x), y(value.y), z(value.z), w(w)
+    {
     }
 
     constexpr float* begin() {
@@ -737,17 +746,20 @@ class float2x2 {
 public:
     explicit constexpr float2x2()
         : _11(1.f), _12(0.f)
-        , _21(0.f), _22(1.f) {
+        , _21(0.f), _22(1.f)
+    {
     }
 
     explicit constexpr float2x2(float _11, float _12,
                                 float _21, float _22)
         : _11(_11), _12(_12)
-        , _21(_21), _22(_22) {
+        , _21(_21), _22(_22)
+    {
     }
 
     constexpr float2x2(const float2& _r0, const float2& _r1) 
-        : _r0(_r0), _r1(_r1) {
+        : _r0(_r0), _r1(_r1)
+    {
     }
 
     constexpr float* begin() {
@@ -936,7 +948,8 @@ public:
     explicit constexpr float3x3()
         : _11(1.f), _12(0.f), _13(0.f)
         , _21(0.f), _22(1.f), _23(0.f)
-        , _31(0.f), _32(0.f), _33(1.f) {
+        , _31(0.f), _32(0.f), _33(1.f)
+    {
     }
 
     explicit constexpr float3x3(float _11, float _12, float _13,
@@ -944,17 +957,20 @@ public:
                                 float _31, float _32, float _33)
         : _11(_11), _12(_12), _13(_13)
         , _21(_21), _22(_22), _23(_23)
-        , _31(_31), _32(_32), _33(_33) {
+        , _31(_31), _32(_32), _33(_33)
+    {
     }
 
     explicit constexpr float3x3(const float2x2& value)
         : _11(value._11), _12(value._12), _13(0.f)
         , _21(value._21), _22(value._22), _23(0.f)
-        , _31(0.f),       _32(0.f),       _33(1.f) {
+        , _31(0.f),       _32(0.f),       _33(1.f)
+    {
     }
 
     constexpr float3x3(const float3& _r0, const float3& _r1, const float3& _r2)
-        : _r0(_r0), _r1(_r1), _r2(_r2) {
+        : _r0(_r0), _r1(_r1), _r2(_r2)
+    {
     }
 
     constexpr float* begin() {
@@ -1228,7 +1244,8 @@ public:
         : _11(1.f), _12(0.f), _13(0.f), _14(0.f)
         , _21(0.f), _22(1.f), _23(0.f), _24(0.f)
         , _31(0.f), _32(0.f), _33(1.f), _34(0.f)
-        , _41(0.f), _42(0.f), _43(0.f), _44(1.f) {
+        , _41(0.f), _42(0.f), _43(0.f), _44(1.f)
+    {
     }
 
     explicit constexpr float4x4(float _11, float _12, float _13, float _14,
@@ -1238,21 +1255,24 @@ public:
         : _11(_11), _12(_12), _13(_13), _14(_14)
         , _21(_21), _22(_22), _23(_23), _24(_24)
         , _31(_31), _32(_32), _33(_33), _34(_34)
-        , _41(_41), _42(_42), _43(_43), _44(_44) {
+        , _41(_41), _42(_42), _43(_43), _44(_44)
+    {
     }
 
     explicit constexpr float4x4(const float2x2& value)
         : _11(value._11), _12(value._12), _13(0.f), _14(0.f)
         , _21(value._21), _22(value._22), _23(0.f), _24(0.f)
         , _31(0.f),       _32(0.f),       _33(1.f), _34(0.f)
-        , _41(0.f),       _42(0.f),       _43(0.f), _44(1.f) {
+        , _41(0.f),       _42(0.f),       _43(0.f), _44(1.f)
+    {
     }
 
     explicit constexpr float4x4(const float3x3& value)
         : _11(value._11), _12(value._12), _13(value._13), _14(0.f)
         , _21(value._21), _22(value._22), _23(value._23), _24(0.f)
         , _31(value._31), _32(value._32), _33(value._33), _34(0.f)
-        , _41(0.f),       _42(0.f),       _43(0.f),       _44(1.f) {
+        , _41(0.f),       _42(0.f),       _43(0.f),       _44(1.f)
+    {
     }
 
     constexpr float4x4(const float4& _r0, const float4& _r1, const float4& _r2, const float4& _r3)
@@ -1651,19 +1671,23 @@ public:
     static float4x4 to_matrix(const quaternion& quaternion);
 
     constexpr quaternion() 
-        : x(0.f), y(0.f), z(0.f), w(1.f) {
+        : x(0.f), y(0.f), z(0.f), w(1.f)
+    {
     }
 
     constexpr quaternion(float x, float y, float z, float w)
-        : x(x), y(y), z(z), w(w) {
+        : x(x), y(y), z(z), w(w)
+    {
     }
 
     constexpr quaternion(const float3& value, float w)
-        : x(value.x), y(value.y), z(value.z), w(w) {
+        : x(value.x), y(value.y), z(value.z), w(w)
+    {
     }
 
     explicit constexpr quaternion(const float4& value)
-        : x(value.x), y(value.y), z(value.z), w(value.w) {
+        : x(value.x), y(value.y), z(value.z), w(value.w)
+    {
     }
 
     constexpr float* begin() {
@@ -1822,5 +1846,29 @@ constexpr bool equal(const quaternion& lhs, const quaternion& rhs, float epsilon
 inline bool isfinite(const quaternion& value) {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z) && std::isfinite(value.w);
 }
+
+class AABBox {
+public:
+    AABBox()
+        : min(float3(0.f, 0.f, 0.f))
+        , max(float3(0.f, 0.f, 0.f))
+    {
+    }
+
+    AABBox(const float3& min, const float3& max)
+        : min(min)
+        , max(max)
+    {
+    }
+
+    union {
+        struct {
+            float3 min;
+            float3 max;
+        };
+
+        float data[6];
+    };
+};
 
 } // namespace kw
