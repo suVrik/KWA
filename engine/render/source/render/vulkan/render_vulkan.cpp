@@ -1419,7 +1419,7 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
     vkGetImageMemoryRequirements(device, image, &memory_requirements);
 
     DeviceAllocation device_allocation = allocate_device_texture_memory(memory_requirements.size, memory_requirements.alignment);
-    KW_ASSERT(device_allocation.data_index < m_buffer_device_data.size());
+    KW_ASSERT(device_allocation.data_index < m_texture_device_data.size());
 
     VK_ERROR(
         vkBindImageMemory(device, image, device_allocation.memory, device_allocation.data_offset),
@@ -1431,9 +1431,8 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
     //
 
     VkImageAspectFlags aspect_mask;
-    if (texture_descriptor.format == TextureFormat::D24_UNORM_S8_UINT || texture_descriptor.format == TextureFormat::D32_FLOAT_S8X24_UINT) {
-        aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-    } else if (texture_descriptor.format == TextureFormat::D16_UNORM || texture_descriptor.format == TextureFormat::D32_FLOAT) {
+    if (TextureFormatUtils::is_depth_stencil(texture_descriptor.format)) {
+        // Sampled depth stencil textures provide access only to depth.
         aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
     } else {
         aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1738,7 +1737,7 @@ void RenderVulkan::submit_copy_commands() {
                 VkBufferMemoryBarrier release_barrier{};
                 release_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
                 release_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                release_barrier.dstAccessMask = 0;
+                release_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
                 release_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
                 release_barrier.dstQueueFamilyIndex = graphics_queue_family_index;
                 release_barrier.buffer = buffer_copy_command.buffer;
@@ -1746,7 +1745,7 @@ void RenderVulkan::submit_copy_commands() {
                 release_barrier.size = VK_WHOLE_SIZE;
 
                 vkCmdPipelineBarrier(
-                    transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
                     0, nullptr, 1, &release_barrier, 0, nullptr
                 );
             }
@@ -1835,7 +1834,7 @@ void RenderVulkan::submit_copy_commands() {
             VkImageMemoryBarrier release_barrier{};
             release_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             release_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            release_barrier.dstAccessMask = 0;
+            release_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             release_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             release_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             release_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
@@ -1844,7 +1843,7 @@ void RenderVulkan::submit_copy_commands() {
             release_barrier.subresourceRange = image_subresource_range;
 
             vkCmdPipelineBarrier(
-                transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                transfer_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
                 0, nullptr, 0, nullptr, 1, &release_barrier
             );
 
@@ -1952,8 +1951,8 @@ void RenderVulkan::submit_copy_commands() {
             for (BufferCopyCommand& buffer_copy_command : m_buffer_copy_commands) {
                 VkBufferMemoryBarrier acquire_barrier{};
                 acquire_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                acquire_barrier.srcAccessMask = 0;
-                acquire_barrier.dstAccessMask = 0;
+                acquire_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                acquire_barrier.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
                 acquire_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
                 acquire_barrier.dstQueueFamilyIndex = graphics_queue_family_index;
                 acquire_barrier.buffer = buffer_copy_command.buffer;
@@ -1961,7 +1960,7 @@ void RenderVulkan::submit_copy_commands() {
                 acquire_barrier.size = VK_WHOLE_SIZE;
 
                 vkCmdPipelineBarrier(
-                    graphics_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    graphics_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
                     0, nullptr, 1, &acquire_barrier, 0, nullptr
                 );
             }
@@ -1980,9 +1979,9 @@ void RenderVulkan::submit_copy_commands() {
 
                 VkImageMemoryBarrier acquire_barrier{};
                 acquire_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                acquire_barrier.srcAccessMask = 0;
-                acquire_barrier.dstAccessMask = 0;
-                acquire_barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                acquire_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                acquire_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                acquire_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
                 acquire_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 acquire_barrier.srcQueueFamilyIndex = transfer_queue_family_index;
                 acquire_barrier.dstQueueFamilyIndex = graphics_queue_family_index;
@@ -1990,7 +1989,7 @@ void RenderVulkan::submit_copy_commands() {
                 acquire_barrier.subresourceRange = image_subresource_range;
 
                 vkCmdPipelineBarrier(
-                    graphics_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                    graphics_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
                     0, nullptr, 0, nullptr, 1, &acquire_barrier
                 );
             }
@@ -2013,7 +2012,7 @@ void RenderVulkan::submit_copy_commands() {
             graphics_timeline_semaphore_submit_info.signalSemaphoreValueCount = 1;
             graphics_timeline_semaphore_submit_info.pSignalSemaphoreValues = &graphics_signal_value;
 
-            VkPipelineStageFlags graphics_wait_stage_masks = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            VkPipelineStageFlags graphics_wait_stage_masks = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 
             VkSubmitInfo graphics_submit_info{};
             graphics_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

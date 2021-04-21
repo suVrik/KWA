@@ -644,6 +644,8 @@ public:
     }
 
     union {
+        float3 xyz;
+
         struct {
             float x, y, z, w;
         };

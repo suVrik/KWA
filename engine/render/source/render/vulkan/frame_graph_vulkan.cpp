@@ -516,7 +516,7 @@ void FrameGraphVulkan::render() {
 
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-        RenderPassContextVulkan render_pass_context(*this, command_buffer, thread_task_data.render_pass_index, thread_task_data.framebuffer_index);
+        RenderPassContextVulkan render_pass_context(*this, swapchain_image_index, command_buffer, thread_task_data.render_pass_index, thread_task_data.framebuffer_index);
 
         KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
         render_pass_data.render_pass_delegate->render(render_pass_context);
@@ -3001,6 +3001,11 @@ void FrameGraphVulkan::destroy_temporary_resources() {
     m_allocation_data.clear();
 
     for (AttachmentData& attachment_data : m_attachment_data) {
+        if (attachment_data.sampled_view != attachment_data.image_view) {
+            vkDestroyImageView(m_render.device, attachment_data.sampled_view, &m_render.allocation_callbacks);
+        }
+        attachment_data.sampled_view = VK_NULL_HANDLE;
+        
         vkDestroyImageView(m_render.device, attachment_data.image_view, &m_render.allocation_callbacks);
         attachment_data.image_view = VK_NULL_HANDLE;
 
@@ -3343,6 +3348,19 @@ void FrameGraphVulkan::create_attachment_image_views() {
             "Failed to create attachment image view \"%s\".", attachment_descriptor.name
         );
         VK_NAME(m_render, attachment_data.image_view, "Attachment view \"%s\"", attachment_descriptor.name);
+
+        if (aspect_mask == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+            image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+            KW_ASSERT(attachment_data.sampled_view == VK_NULL_HANDLE);
+            VK_ERROR(
+                vkCreateImageView(m_render.device, &image_view_create_info, &m_render.allocation_callbacks, &attachment_data.sampled_view),
+                "Failed to create attachment image view \"%s\".", attachment_descriptor.name
+            );
+            VK_NAME(m_render, attachment_data.sampled_view, "Attachment sampled view \"%s\"", attachment_descriptor.name);
+        } else {
+            attachment_data.sampled_view = attachment_data.image_view;
+        }
     }
 }
 
@@ -3532,10 +3550,11 @@ FrameGraphVulkan::RenderPassData::RenderPassData(RenderPassData&& other)
 {
 }
 
-FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, VkCommandBuffer command_buffer,
-                                                                   uint32_t render_pass_index, uint32_t attachment_index)
+FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t swapchain_image_index,
+                                                                   VkCommandBuffer command_buffer, uint32_t render_pass_index, uint32_t attachment_index)
     : transfer_semaphore_value(0)
     , m_frame_graph(frame_graph)
+    , m_swapchain_image_index(swapchain_image_index)
     , m_command_buffer(command_buffer)
     , m_render_pass_index(render_pass_index)
     , m_attachment_index(attachment_index)
@@ -3851,11 +3870,16 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
                     }
 
                     AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index + attachment_offset];
-                    KW_ASSERT(attachment_data.image_view != VK_NULL_HANDLE);
 
                     VkDescriptorImageInfo& descriptor_image_info = attachment_descriptors[i];
                     descriptor_image_info.sampler = VK_NULL_HANDLE;
-                    descriptor_image_info.imageView = attachment_data.image_view;
+
+                    if (attachment_index == 0) {
+                        descriptor_image_info.imageView = m_frame_graph.m_swapchain_image_views[m_swapchain_image_index];
+                    } else {
+                        KW_ASSERT(attachment_data.sampled_view != VK_NULL_HANDLE);
+                        descriptor_image_info.imageView = attachment_data.sampled_view;
+                    }
 
                     if ((attachment_data.usage_mask & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0) {
                         descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -3992,7 +4016,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     if (graphics_pipeline_data.push_constants_visibility != 0) {
         vkCmdPushConstants(
             m_command_buffer, graphics_pipeline_data.pipeline_layout,
-            graphics_pipeline_data.push_constants_visibility, 0, graphics_pipeline_data.push_constants_size, &descriptor.push_constants
+            graphics_pipeline_data.push_constants_visibility, 0, graphics_pipeline_data.push_constants_size, descriptor.push_constants
         );
     }
 

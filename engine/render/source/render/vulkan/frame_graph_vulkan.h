@@ -61,6 +61,10 @@ private:
         VkImage image;
         VkImageView image_view;
 
+        // Sampled depth stencil attachments must have either depth or stencil aspect, not both.
+        // Attachment must have both though. For color attachment and depth attachments these views alias each other.
+        VkImageView sampled_view;
+
         // Occasionally min index may be larger than max index. This means that the attachment is created at the end
         // of the frame and used at the beginning of the next frame and therefore must be aliased in between.
         uint32_t min_parallel_block_index;
@@ -235,8 +239,8 @@ private:
 
     class RenderPassContextVulkan : public RenderPassContext {
     public:
-        RenderPassContextVulkan(FrameGraphVulkan& frame_graph, VkCommandBuffer command_buffer,
-                                uint32_t render_pass_index, uint32_t attachment_index);
+        RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t swapchain_image_index,
+                                VkCommandBuffer command_buffer, uint32_t render_pass_index, uint32_t attachment_index);
 
         void draw(const DrawCallDescriptor& descriptor) override;
         
@@ -249,6 +253,7 @@ private:
         bool allocate_descriptor_sets(GraphicsPipelineData& graphics_pipeline_data);
 
         FrameGraphVulkan& m_frame_graph;
+        uint32_t m_swapchain_image_index;
         VkCommandBuffer m_command_buffer;
         uint32_t m_render_pass_index;
         uint32_t m_attachment_index;
