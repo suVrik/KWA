@@ -237,9 +237,10 @@ private:
 
     VkBuffer create_transient_buffer(const RenderDescriptor& render_descriptor);
     VkDeviceMemory allocate_transient_memory();
+    void* map_transient_memory();
     uint64_t allocate_from_transient_memory(uint64_t size, uint64_t alignment);
 
-    BufferVulkan* acquire_transient_buffer_vulkan(const void* data, size_t size, BufferFlagsVulkan flags);
+    BufferVulkan* acquire_transient_buffer_vulkan(const void* data, size_t size, size_t alignment, BufferFlagsVulkan flags);
 
     uint32_t compute_texture_memory_index(VkMemoryPropertyFlags properties);
 
@@ -276,6 +277,7 @@ private:
     // Transient buffer is accessed on host and graphics queue.
     VkBuffer m_transient_buffer;
     VkDeviceMemory m_transient_memory;
+    void* m_transient_memory_mapping;
     uint64_t m_transient_buffer_size;
     std::atomic_uint64_t m_transient_data_end;
 

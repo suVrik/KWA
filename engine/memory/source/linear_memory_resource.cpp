@@ -42,7 +42,7 @@ void* LinearMemoryResource::reallocate(void* memory, size_t size, size_t alignme
 }
 
 void LinearMemoryResource::deallocate(void* memory) {
-    KW_ASSERT(memory == nullptr || (memory >= m_begin && memory < m_current), "Invalid deallocation.");
+    // No-op.
 }
 
 void LinearMemoryResource::reset() {

@@ -8,10 +8,10 @@
 
 #include <spirv_reflect.h>
 
-#define VK_ERROR(statement, ...)                  \
-do {                                              \
-   VkResult result = (statement);                 \
-   KW_ERROR(result == VK_SUCCESS, ##__VA_ARGS__); \
+#define VK_ERROR(statement, ...)                     \
+do {                                                 \
+   VkResult vk_result = (statement);                 \
+   KW_ERROR(vk_result == VK_SUCCESS, ##__VA_ARGS__); \
 } while (false)
 
 #define SDL_ERROR(statement, ...) KW_ERROR((statement) == SDL_TRUE, ##__VA_ARGS__)

@@ -1187,16 +1187,18 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
                 }
 
                 if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                        if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
-                            parallel_block_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                        }
+                    if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                            if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
+                                parallel_block_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                            }
 
-                        if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE) {
+                            if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE) {
+                                parallel_block_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
+                            }
+                        } else {
                             parallel_block_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
                         }
-                    } else {
-                        parallel_block_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
                     }
                 } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
                     if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
@@ -2412,7 +2414,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
     }
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.instance_binding_descriptor_count; i++) {
-        const BindingDescriptor& binding_descriptor = graphics_pipeline_descriptor.vertex_binding_descriptors[i];
+        const BindingDescriptor& binding_descriptor = graphics_pipeline_descriptor.instance_binding_descriptors[i];
 
         VkVertexInputBindingDescription vertex_binding_description{};
         vertex_binding_description.binding = static_cast<uint32_t>(instance_binding_offset + i);

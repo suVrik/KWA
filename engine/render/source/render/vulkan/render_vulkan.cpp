@@ -124,6 +124,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     }
     , m_transient_buffer(create_transient_buffer(descriptor))
     , m_transient_memory(allocate_transient_memory())
+    , m_transient_memory_mapping(map_transient_memory())
     , m_transient_buffer_size(descriptor.transient_buffer_size)
     , m_transient_data_end(0)
     , m_texture_device_data(persistent_memory_resource)
@@ -226,6 +227,8 @@ RenderVulkan::~RenderVulkan() {
         vkFreeMemory(device, device_data.memory, &allocation_callbacks);
     }
 
+    vkUnmapMemory(device, m_transient_memory);
+
     vkDestroyBuffer(device, m_transient_buffer, &allocation_callbacks);
     vkFreeMemory(device, m_transient_memory, &allocation_callbacks);
 
@@ -267,15 +270,20 @@ void RenderVulkan::destroy_index_buffer(IndexBuffer index_buffer) {
 }
 
 VertexBuffer RenderVulkan::acquire_transient_vertex_buffer(const void* data, size_t size) {
-    return reinterpret_cast<VertexBuffer>(acquire_transient_buffer_vulkan(data, size, BufferFlagsVulkan::NONE));
+    return reinterpret_cast<VertexBuffer>(acquire_transient_buffer_vulkan(data, size, 1, BufferFlagsVulkan::NONE));
 }
 
 IndexBuffer RenderVulkan::acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) {
-    return reinterpret_cast<IndexBuffer>(acquire_transient_buffer_vulkan(data, size, index_size == IndexSize::UINT16 ? BufferFlagsVulkan::INDEX16 : BufferFlagsVulkan::INDEX32));
+    if (index_size == IndexSize::UINT16) {
+        return reinterpret_cast<IndexBuffer>(acquire_transient_buffer_vulkan(data, size, 2, BufferFlagsVulkan::INDEX16));
+    } else {
+        return reinterpret_cast<IndexBuffer>(acquire_transient_buffer_vulkan(data, size, 4, BufferFlagsVulkan::INDEX32));
+    }
 }
 
 UniformBuffer RenderVulkan::acquire_transient_uniform_buffer(const void* data, size_t size) {
-    return reinterpret_cast<UniformBuffer>(acquire_transient_buffer_vulkan(data, size, BufferFlagsVulkan::NONE));
+    size_t alignment = static_cast<size_t>(physical_device_properties.limits.minUniformBufferOffsetAlignment);
+    return reinterpret_cast<UniformBuffer>(acquire_transient_buffer_vulkan(data, size, alignment, BufferFlagsVulkan::NONE));
 }
 
 Texture RenderVulkan::create_texture(const TextureDescriptor& texture_descriptor) {
@@ -1205,6 +1213,17 @@ VkDeviceMemory RenderVulkan::allocate_transient_memory() {
     KW_ERROR(false, "Failed to allocate %llu bytes for transient buffer.", memory_requirements.size);
 }
 
+void* RenderVulkan::map_transient_memory() {
+    void* result;
+    
+    VK_ERROR(
+        vkMapMemory(device, m_transient_memory, 0, VK_WHOLE_SIZE, 0, &result),
+        "Failed to map transient buffer to staging memory."
+    );
+
+    return result;
+}
+
 uint64_t RenderVulkan::allocate_from_transient_memory(uint64_t size, uint64_t alignment) {
     KW_ASSERT(
         size + alignment - 1 <= m_transient_buffer_size,
@@ -1229,21 +1248,14 @@ uint64_t RenderVulkan::allocate_from_transient_memory(uint64_t size, uint64_t al
     }
 }
 
-BufferVulkan* RenderVulkan::acquire_transient_buffer_vulkan(const void* data, size_t size, BufferFlagsVulkan flags) {
+BufferVulkan* RenderVulkan::acquire_transient_buffer_vulkan(const void* data, size_t size, size_t alignment, BufferFlagsVulkan flags) {
     KW_ASSERT(data != nullptr, "Invalid buffer data.");
     KW_ASSERT(size > 0, "Invalid buffer data size.");
 
-    uint64_t transient_buffer_offset = allocate_from_transient_memory(static_cast<uint64_t>(size), 1);
+    uint64_t transient_buffer_offset = allocate_from_transient_memory(static_cast<uint64_t>(size), static_cast<uint64_t>(alignment));
 
-    void* mapped_data;
-    VK_ERROR(
-        vkMapMemory(device, m_transient_memory, transient_buffer_offset, static_cast<VkDeviceSize>(size), 0, &mapped_data),
-        "Failed to map transient buffer to staging memory."
-    );
-
-    std::memcpy(mapped_data, data, size);
-
-    vkUnmapMemory(device, m_transient_memory);
+    // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
+    std::memcpy(static_cast<uint8_t*>(m_transient_memory_mapping) + transient_buffer_offset, data, size);
 
     BufferVulkan* result = transient_memory_resource.allocate<BufferVulkan>();
     result->buffer = m_transient_buffer;
