@@ -134,6 +134,7 @@ private:
 
     struct DeviceData {
         VkDeviceMemory memory;
+        void* memory_mapping;
         RenderBuddyAllocator allocator;
         uint32_t memory_type_index;
     };
@@ -230,6 +231,8 @@ private:
     VkDeviceMemory allocate_staging_memory();
     uint64_t allocate_from_staging_memory(uint64_t size, uint64_t alignment);
 
+    void* map_memory(VkDeviceMemory memory);
+
     uint32_t compute_buffer_memory_index(VkMemoryPropertyFlags properties);
 
     BufferVulkan* create_buffer_vulkan(const BufferDescriptor& buffer_descriptor, VkBufferUsageFlags usage);
@@ -237,7 +240,6 @@ private:
 
     VkBuffer create_transient_buffer(const RenderDescriptor& render_descriptor);
     VkDeviceMemory allocate_transient_memory();
-    void* map_transient_memory();
     uint64_t allocate_from_transient_memory(uint64_t size, uint64_t alignment);
 
     BufferVulkan* acquire_transient_buffer_vulkan(const void* data, size_t size, size_t alignment, BufferFlagsVulkan flags);
@@ -262,6 +264,7 @@ private:
     // Staging buffer is accessed on host and transfer queue.
     VkBuffer m_staging_buffer;
     VkDeviceMemory m_staging_memory;
+    void* m_staging_memory_mapping;
     uint64_t m_staging_buffer_size;
     std::atomic_uint64_t m_staging_data_begin;
     std::atomic_uint64_t m_staging_data_end;

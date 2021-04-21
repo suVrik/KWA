@@ -112,6 +112,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , m_set_object_name(create_set_object_name(descriptor))
     , m_staging_buffer(create_staging_buffer(descriptor))
     , m_staging_memory(allocate_staging_memory())
+    , m_staging_memory_mapping(map_memory(m_staging_memory))
     , m_staging_buffer_size(descriptor.staging_buffer_size)
     , m_staging_data_begin(0)
     , m_staging_data_end(0)
@@ -124,7 +125,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     }
     , m_transient_buffer(create_transient_buffer(descriptor))
     , m_transient_memory(allocate_transient_memory())
-    , m_transient_memory_mapping(map_transient_memory())
+    , m_transient_memory_mapping(map_memory(m_transient_memory))
     , m_transient_buffer_size(descriptor.transient_buffer_size)
     , m_transient_data_end(0)
     , m_texture_device_data(persistent_memory_resource)
@@ -233,8 +234,14 @@ RenderVulkan::~RenderVulkan() {
     vkFreeMemory(device, m_transient_memory, &allocation_callbacks);
 
     for (DeviceData& device_data : m_buffer_device_data) {
+        if (device_data.memory_mapping != nullptr) {
+            vkUnmapMemory(device, device_data.memory);
+        }
+
         vkFreeMemory(device, device_data.memory, &allocation_callbacks);
     }
+
+    vkUnmapMemory(device, m_staging_memory);
 
     vkDestroyBuffer(device, m_staging_buffer, &allocation_callbacks);
     vkFreeMemory(device, m_staging_memory, &allocation_callbacks);
@@ -367,7 +374,17 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_buffer_memory(uint6
             VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
             if (result == VK_SUCCESS) {
                 size_t device_data_index = m_buffer_device_data.size();
-                m_buffer_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_buffer_block_size)), buffer_memory_index });
+
+                void* memory_mapping = nullptr;
+                if (buffer_memory_index == m_buffer_memory_indices[1]) {
+                    // Persistently map host visible & host coherent memory.
+                    VK_ERROR(
+                        vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &memory_mapping),
+                        "Failed to map host visible memory."
+                    );
+                }
+
+                m_buffer_device_data.push_back(DeviceData{ memory, memory_mapping, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_buffer_block_size)), buffer_memory_index });
 
                 uint64_t offset = m_buffer_device_data.back().allocator.allocate(size, alignment);
                 KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
@@ -434,7 +451,9 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(uint
             VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
             if (result == VK_SUCCESS) {
                 size_t device_data_index = m_texture_device_data.size();
-                m_texture_device_data.push_back(DeviceData{ memory, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)), texture_memory_index });
+
+                // We won't ever map texture memory, because we can't simply memcpy to textures.
+                m_texture_device_data.push_back(DeviceData{ memory, nullptr, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)), texture_memory_index });
 
                 uint64_t offset = m_texture_device_data.back().allocator.allocate(size, alignment);
                 KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
@@ -1075,16 +1094,9 @@ BufferVulkan* RenderVulkan::create_buffer_vulkan(const BufferDescriptor& buffer_
     // If device allocation is host visible, we can simply memcpy our buffer there. Otherwise staging buffer is required.
     //
 
-    if ((m_buffer_device_data[device_allocation.data_index].memory_type_index & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-        void* data;
-        VK_ERROR(
-            vkMapMemory(device, device_allocation.memory, device_allocation.data_offset, buffer_descriptor.size, 0, &data),
-            "Failed to map buffer \"%s\" to staging memory.", buffer_descriptor.name
-        );
-
-        std::memcpy(data, buffer_descriptor.data, buffer_descriptor.size);
-
-        vkUnmapMemory(device, m_staging_memory);
+    if (m_buffer_device_data[device_allocation.data_index].memory_mapping != nullptr) {
+        // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
+        std::memcpy(static_cast<uint8_t*>(m_buffer_device_data[device_allocation.data_index].memory_mapping) + device_allocation.data_offset, buffer_descriptor.data, buffer_descriptor.size);
 
         BufferVulkan* result = persistent_memory_resource.allocate<BufferVulkan>();
         result->buffer = device_buffer;
@@ -1100,15 +1112,8 @@ BufferVulkan* RenderVulkan::create_buffer_vulkan(const BufferDescriptor& buffer_
 
         uint64_t staging_buffer_offset = allocate_from_staging_memory(static_cast<uint64_t>(buffer_descriptor.size), 1);
 
-        void* data;
-        VK_ERROR(
-            vkMapMemory(device, m_staging_memory, staging_buffer_offset, buffer_descriptor.size, 0, &data),
-            "Failed to map buffer \"%s\" to staging memory.", buffer_descriptor.name
-        );
-
-        std::memcpy(data, buffer_descriptor.data, buffer_descriptor.size);
-
-        vkUnmapMemory(device, m_staging_memory);
+        // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
+        std::memcpy(static_cast<uint8_t*>(m_staging_memory_mapping) + staging_buffer_offset, buffer_descriptor.data, buffer_descriptor.size);
 
         //
         // Enqueue copy command and return.
@@ -1213,12 +1218,12 @@ VkDeviceMemory RenderVulkan::allocate_transient_memory() {
     KW_ERROR(false, "Failed to allocate %llu bytes for transient buffer.", memory_requirements.size);
 }
 
-void* RenderVulkan::map_transient_memory() {
+void* RenderVulkan::map_memory(VkDeviceMemory memory) {
     void* result;
     
     VK_ERROR(
-        vkMapMemory(device, m_transient_memory, 0, VK_WHOLE_SIZE, 0, &result),
-        "Failed to map transient buffer to staging memory."
+        vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &result),
+        "Failed to map memory."
     );
 
     return result;
@@ -1478,15 +1483,8 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
 
     uint64_t staging_buffer_offset = allocate_from_staging_memory(static_cast<uint64_t>(texture_descriptor.size), 16);
 
-    void* data;
-    VK_ERROR(
-        vkMapMemory(device, m_staging_memory, staging_buffer_offset, static_cast<VkDeviceSize>(texture_descriptor.size), 0, &data),
-        "Failed to map texture \"%s\" to staging memory.", texture_descriptor.name
-    );
-
-    std::memcpy(data, texture_descriptor.data, texture_descriptor.size);
-
-    vkUnmapMemory(device, m_staging_memory);
+    // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
+    std::memcpy(static_cast<uint8_t*>(m_staging_memory_mapping) + staging_buffer_offset, texture_descriptor.data, texture_descriptor.size);
 
     //
     // Enqueue copy command and return.
