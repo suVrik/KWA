@@ -1,13 +1,15 @@
 #include "render/render_utils.h"
 
+#include <core/endian_utils.h>
 #include <core/error.h>
 #include <core/filesystem_utils.h>
 
+#include <debug/log.h>
+
 #include <map>
+#include <type_traits>
 
-namespace kw::RenderUtils {
-
-namespace render_utils_details {
+namespace kw {
 
 class Parser {
 public:
@@ -18,9 +20,9 @@ public:
     {
     }
 
-    const uint8_t* read(size_t size) {
+    uint8_t* read(size_t size) {
         if (m_position + size <= m_end) {
-            const uint8_t* result = m_position;
+            uint8_t* result = m_position;
             m_position += size;
             return result;
         }
@@ -28,14 +30,28 @@ public:
     }
 
     template <typename T>
-    const T* read() {
-        return reinterpret_cast<const T*>(read(sizeof(T)));
+    T* read(size_t count = 1) {
+        T* result = reinterpret_cast<T*>(read(sizeof(T) * count));
+        if (result != nullptr) {
+            for (size_t i = 0; i < count; i++) {
+                if constexpr (std::is_enum_v<T>) {
+                    result[i] = static_cast<T>(EndianUtils::swap_le(static_cast<std::underlying_type_t<T>>(result[i])));
+                } else {
+                    result[i] = EndianUtils::swap_le(result[i]);
+                }
+            }
+        }
+        return result;
+    }
+
+    bool is_eof() const {
+        return m_position == m_end;
     }
 
 private:
     Vector<uint8_t> m_data;
-    const uint8_t* m_end;
-    const uint8_t* m_position;
+    uint8_t* m_end;
+    uint8_t* m_position;
 };
 
 constexpr uint32_t GEO_SIGNATURE = ' OEG';
@@ -100,6 +116,35 @@ struct DDS_HEADER {
     uint32_t dwCaps4;
     uint32_t dwReserved2;
 };
+
+namespace EndianUtils {
+
+static DDS_HEADER swap_le(const DDS_HEADER& dds_header) {
+    DDS_HEADER result;
+    result.dwSize = swap_le(dds_header.dwSize);
+    result.dwFlags = swap_le(dds_header.dwFlags);
+    result.dwHeight = swap_le(dds_header.dwHeight);
+    result.dwWidth = swap_le(dds_header.dwWidth);
+    result.dwPitchOrLinearSize = swap_le(dds_header.dwPitchOrLinearSize);
+    result.dwDepth = swap_le(dds_header.dwDepth);
+    result.dwMipMapCount = swap_le(dds_header.dwMipMapCount);
+    result.ddspf.dwSize = swap_le(dds_header.ddspf.dwSize);
+    result.ddspf.dwFlags = swap_le(dds_header.ddspf.dwFlags);
+    result.ddspf.dwFourCC = swap_le(dds_header.ddspf.dwFourCC);
+    result.ddspf.dwRGBBitCount = swap_le(dds_header.ddspf.dwRGBBitCount);
+    result.ddspf.dwRBitMask = swap_le(dds_header.ddspf.dwRBitMask);
+    result.ddspf.dwGBitMask = swap_le(dds_header.ddspf.dwGBitMask);
+    result.ddspf.dwBBitMask = swap_le(dds_header.ddspf.dwBBitMask);
+    result.ddspf.dwABitMask = swap_le(dds_header.ddspf.dwABitMask);
+    result.dwCaps = swap_le(dds_header.dwCaps);
+    result.dwCaps2 = swap_le(dds_header.dwCaps2);
+    result.dwCaps3 = swap_le(dds_header.dwCaps3);
+    result.dwCaps4 = swap_le(dds_header.dwCaps4);
+    result.dwReserved2 = swap_le(dds_header.dwReserved2);
+    return result;
+}
+
+} // namespace EndianUtils
 
 constexpr uint32_t DDPF_FOURCC_DX10 = '01XD';
 
@@ -246,7 +291,21 @@ struct DDS_HEADER_DXT10 {
     uint32_t miscFlags2;
 };
 
-const std::map<DXGI_FORMAT, TextureFormat> DXGI_MAPPING = {
+namespace EndianUtils {
+
+static DDS_HEADER_DXT10 swap_le(const DDS_HEADER_DXT10& dds_header_dxt12) {
+    DDS_HEADER_DXT10 result;
+    result.dxgiFormat = static_cast<DXGI_FORMAT>(swap_le(static_cast<int>(dds_header_dxt12.dxgiFormat)));
+    result.resourceDimension = static_cast<D3D10_RESOURCE_DIMENSION>(swap_le(static_cast<int>(dds_header_dxt12.resourceDimension)));
+    result.miscFlag = swap_le(dds_header_dxt12.miscFlag);
+    result.arraySize = swap_le(dds_header_dxt12.arraySize);
+    result.miscFlags2 = swap_le(dds_header_dxt12.miscFlags2);
+    return result;
+}
+
+} // namespace EndianUtils
+
+static const std::map<DXGI_FORMAT, TextureFormat> DXGI_MAPPING = {
     { DXGI_FORMAT_R8_SINT,              TextureFormat::R8_SINT              },
     { DXGI_FORMAT_R8_SNORM,             TextureFormat::R8_SNORM             },
     { DXGI_FORMAT_R8_UINT,              TextureFormat::R8_UINT              },
@@ -324,7 +383,7 @@ const std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint
     { { DDPF_BUMPDUDV,  32, 0x0000FFFF, 0xFFFF0000, 0x00000000, 0x00000000 }, TextureFormat::RG16_SNORM  },
 };
 
-const std::map<uint32_t, TextureFormat> FOURCC_MAPPING = {
+static const std::map<uint32_t, TextureFormat> FOURCC_MAPPING = {
     { '1TXD', TextureFormat::BC1_UNORM    },
     { '2TXD', TextureFormat::BC2_UNORM    },
     { '3TXD', TextureFormat::BC2_UNORM    },
@@ -351,7 +410,7 @@ struct FormatDescriptor {
     bool is_compressed;
 };
 
-const FormatDescriptor FORMAT_DESCRIPTORS[] = {
+static const FormatDescriptor FORMAT_DESCRIPTORS[] = {
     { 0,  false }, // TextureFormat::UNKNOWN
     { 1,  false }, // TextureFormat::R8_SINT
     { 1,  false }, // TextureFormat::R8_SNORM
@@ -417,9 +476,42 @@ const FormatDescriptor FORMAT_DESCRIPTORS[] = {
 
 static_assert(std::size(FORMAT_DESCRIPTORS) == TEXTURE_FORMAT_COUNT);
 
-TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
-    using namespace render_utils_details;
+enum class ChunkType : uint16_t {
+    VERTICES  = 0,
+    INDICES16 = 10,
+    INDICES32 = 11,
+    BOUNDS    = 20,
+};
 
+namespace EndianUtils {
+
+template <typename T>
+static void swap_le_array(T* values, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        values[i] = swap_le(values[i]);
+    }
+}
+
+static AABBox swap_le(const AABBox& bounds) {
+    AABBox result = bounds;
+    swap_le_array(result.data, std::size(result.data));
+    return result;
+}
+
+static GeometyData::Vertex swap_le(const GeometyData::Vertex& vertex) {
+    GeometyData::Vertex result = vertex;
+    swap_le_array(result.position.data, std::size(result.position.data));
+    swap_le_array(result.normal.data, std::size(result.normal.data));
+    swap_le_array(result.tangent.data, std::size(result.tangent.data));
+    swap_le_array(result.texcoord_0.data, std::size(result.texcoord_0.data));
+    return result;
+}
+
+} // namespace EndianUtils
+
+namespace RenderUtils {
+
+TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
     Parser parser(memory_resource, relative_path);
 
     const auto* magic = parser.read<uint32_t>();
@@ -569,4 +661,80 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
     return texture_descriptor;
 }
 
-} // namespace kw::RenderUtils
+GeometyData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
+    GeometyData result{};
+
+    Parser parser(memory_resource, relative_path);
+    
+    while (!parser.is_eof()) {
+        ChunkType* chunk_type = parser.read<ChunkType>();
+        KW_ERROR(chunk_type != nullptr, "Failed to read geometry chunk type from \"%s\".", relative_path.c_str());
+
+        uint32_t* chunk_size = parser.read<uint32_t>();
+        KW_ERROR(chunk_size != nullptr, "Failed to read geometry chunk size from \"%s\".", relative_path.c_str());
+
+        switch (*chunk_type) {
+        case ChunkType::VERTICES: {
+            KW_ERROR(result.vertices == nullptr, "Geomtry vertices specified twice in \"%s\".", relative_path.c_str());
+
+            uint32_t* vertex_count = parser.read<uint32_t>();
+            KW_ERROR(vertex_count != nullptr, "Failed to read geometry vertex count from \"%s\".", relative_path.c_str());
+
+            result.vertices = parser.read<GeometyData::Vertex>(*vertex_count);
+            KW_ERROR(result.vertices != nullptr, "Failed to read geometry vertices from \"%s\".", relative_path.c_str());
+
+            result.vertex_count = *vertex_count;
+
+            break;
+        }
+        case ChunkType::INDICES16: {
+            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+
+            uint32_t* index_count = parser.read<uint32_t>();
+            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path.c_str());
+
+            result.indices16 = parser.read<uint16_t>(*index_count);
+            KW_ERROR(result.indices16 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path.c_str());
+
+            result.index16_count = *index_count;
+
+            break;
+        }
+        case ChunkType::INDICES32: {
+            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+
+            uint32_t* index_count = parser.read<uint32_t>();
+            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path.c_str());
+
+            result.indices32 = parser.read<uint32_t>(*index_count);
+            KW_ERROR(result.indices32 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path.c_str());
+
+            result.index32_count = *index_count;
+
+            break;
+        }
+        case ChunkType::BOUNDS: {
+            KW_ERROR(result.bounds == nullptr, "Geomtry bounds specified twice in \"%s\".", relative_path.c_str());
+
+            result.bounds = parser.read<AABBox>();
+            KW_ERROR(result.bounds != nullptr, "Failed to read geometry bounds from \"%s\".", relative_path.c_str());
+
+            break;
+        }
+        default: {
+            Log::print("[WARNING] Unknown KWG chunk %u.", static_cast<uint32_t>(*chunk_type));
+            
+            uint8_t* data = parser.read(*chunk_size);
+            KW_ERROR(data != nullptr, "Failed to skip geometry chunk in \"%s\".", relative_path.c_str());
+        }
+        }
+    }
+
+    return result;
+}
+
+} // namespace RenderUtils
+
+} // namespace kw
