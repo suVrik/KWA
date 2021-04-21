@@ -1260,6 +1260,11 @@ uint32_t RenderVulkan::compute_texture_memory_index(VkMemoryPropertyFlags proper
     for (size_t i = 1; i < TEXTURE_FORMAT_COUNT; i++) {
         TextureFormat format = static_cast<TextureFormat>(i);
 
+        if (format == TextureFormat::RGB32_FLOAT || format == TextureFormat::RGB32_SINT || format == TextureFormat::RGB32_UINT) {
+            // TODO: Perhaps some mapping?
+            continue;
+        }
+
         VkImageCreateInfo image_create_info{};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.flags = 0;

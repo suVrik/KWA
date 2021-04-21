@@ -46,6 +46,9 @@ static const bool IS_DEPTH_STENCIL[] = {
     false, // RG32_FLOAT
     false, // RG32_SINT
     false, // RG32_UINT
+    false, // RGB32_FLOAT
+    false, // RGB32_SINT
+    false, // RGB32_UINT
     false, // RGBA32_FLOAT
     false, // RGBA32_SINT
     false, // RGBA32_UINT
@@ -113,6 +116,9 @@ static const bool IS_COMPRESSED[] = {
     false, // RG32_FLOAT
     false, // RG32_SINT
     false, // RG32_UINT
+    false, // RGB32_FLOAT
+    false, // RGB32_SINT
+    false, // RGB32_UINT
     false, // RGBA32_FLOAT
     false, // RGBA32_SINT
     false, // RGBA32_UINT
@@ -180,6 +186,9 @@ static const uint64_t PIXEL_SIZE[] = {
     8,  // RG32_FLOAT
     8,  // RG32_SINT
     8,  // RG32_UINT
+    12, // RGB32_FLOAT
+    12, // RGB32_SINT
+    12, // RGB32_UINT
     16, // RGBA32_FLOAT
     16, // RGBA32_SINT
     16, // RGBA32_UINT

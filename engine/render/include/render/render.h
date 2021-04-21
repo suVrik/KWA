@@ -100,6 +100,9 @@ enum class TextureFormat {
     RG32_FLOAT,
     RG32_SINT,
     RG32_UINT,
+    RGB32_FLOAT,
+    RGB32_SINT,
+    RGB32_UINT,
     RGBA32_FLOAT,
     RGBA32_SINT,
     RGBA32_UINT,
@@ -125,7 +128,7 @@ enum class TextureFormat {
     BC7_UNORM_SRGB,
 };
 
-constexpr size_t TEXTURE_FORMAT_COUNT = 58;
+constexpr size_t TEXTURE_FORMAT_COUNT = 61;
 
 namespace TextureFormatUtils {
 

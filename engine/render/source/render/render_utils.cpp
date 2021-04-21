@@ -281,6 +281,9 @@ const std::map<DXGI_FORMAT, TextureFormat> DXGI_MAPPING = {
     { DXGI_FORMAT_R32G32_FLOAT,         TextureFormat::RG32_FLOAT           },
     { DXGI_FORMAT_R32G32_SINT,          TextureFormat::RG32_SINT            },
     { DXGI_FORMAT_R32G32_UINT,          TextureFormat::RG32_UINT            },
+    { DXGI_FORMAT_R32G32B32_FLOAT,      TextureFormat::RGB32_FLOAT          },
+    { DXGI_FORMAT_R32G32B32_SINT,       TextureFormat::RGB32_SINT           },
+    { DXGI_FORMAT_R32G32B32_UINT,       TextureFormat::RGB32_UINT           },
     { DXGI_FORMAT_R32G32B32A32_FLOAT,   TextureFormat::RGBA32_FLOAT         },
     { DXGI_FORMAT_R32G32B32A32_SINT,    TextureFormat::RGBA32_SINT          },
     { DXGI_FORMAT_R32G32B32A32_UINT,    TextureFormat::RGBA32_UINT          },
@@ -384,6 +387,9 @@ const FormatDescriptor FORMAT_DESCRIPTORS[] = {
     { 8,  false }, // TextureFormat::RG32_FLOAT
     { 8,  false }, // TextureFormat::RG32_SINT
     { 8,  false }, // TextureFormat::RG32_UINT
+    { 12, false }, // TextureFormat::RGB32_FLOAT
+    { 12, false }, // TextureFormat::RGB32_SINT
+    { 12, false }, // TextureFormat::RGB32_UINT
     { 16, false }, // TextureFormat::RGBA32_FLOAT
     { 16, false }, // TextureFormat::RGBA32_SINT
     { 16, false }, // TextureFormat::RGBA32_UINT
@@ -409,7 +415,7 @@ const FormatDescriptor FORMAT_DESCRIPTORS[] = {
     { 16, true  }, // TextureFormat::BC7_UNORM_SRGB
 };
 
-} // namespace render_utils_details
+static_assert(std::size(FORMAT_DESCRIPTORS) == TEXTURE_FORMAT_COUNT);
 
 TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
     using namespace render_utils_details;
