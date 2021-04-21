@@ -47,10 +47,10 @@ function(target_add_shaders target shaders)
 
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_cso}" "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_spv}"
-            MAIN_DEPENDENCY ${absolute_path_hlsl}
             COMMAND ${CMAKE_COMMAND} -E make_directory "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_dir}\""
             COMMAND ${vulkan_dxc_executable} -T ps_6_0 -Fo "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_cso}\"" "$<$<CONFIG:Debug>:-Od;-Zi;-O0;-Qembed_debug>" -Wno-ignored-attributes "\"${absolute_path_hlsl}\""
             COMMAND ${vulkan_dxc_executable} -T ps_6_0 -Fo "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_spv}\"" "$<$<CONFIG:Debug>:-Od;-Zi;-O0;-Qembed_debug;-fspv-debug=line>" -fspv-reflect -fvk-use-dx-position-w -fvk-use-dx-layout -spirv "\"${absolute_path_hlsl}\""
+            MAIN_DEPENDENCY ${absolute_path_hlsl}
             COMMAND_EXPAND_LISTS
         )
     endforeach()
@@ -72,8 +72,8 @@ function(target_add_textures target textures)
 
         add_custom_command(
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
-            MAIN_DEPENDENCY ${absolute_path}
             COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
+            MAIN_DEPENDENCY ${absolute_path}
             COMMAND_EXPAND_LISTS
         )
     endforeach()
@@ -85,6 +85,40 @@ function(target_add_textures target textures)
         PREFIX "Resource Files"
         FILES ${textures}
     )
+endfunction()
+
+function(target_add_geometries target geometries)
+    foreach(absolute_path_glb ${geometries})
+        cmake_path(RELATIVE_PATH absolute_path_glb BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path_glb)
+        cmake_path(REPLACE_EXTENSION relative_path_glb LAST_ONLY "kwg" OUTPUT_VARIABLE relative_path_kwg)
+
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwg}"
+            COMMAND $<TARGET_FILE:geometry_converter> "\"${absolute_path_glb}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwg}\""
+            MAIN_DEPENDENCY ${absolute_path_glb}
+            DEPENDS geometry_converter
+            COMMAND_EXPAND_LISTS
+        )
+    endforeach()
+
+    target_sources(${target} PRIVATE ${geometries})
+
+    source_group(
+        TREE "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+        PREFIX "Resource Files"
+        FILES ${geometries}
+    )
+endfunction()
+
+function(target_add_resources target)
+    file(GLOB_RECURSE shaders "resource/*.hlsl")
+    target_add_shaders(${target} "${shaders}")
+
+    file(GLOB_RECURSE textures "resource/*.dds")
+    target_add_textures(${target} "${textures}")
+
+    file(GLOB_RECURSE geometries "resource/*.glb")
+    target_add_geometries(${target} "${geometries}")
 endfunction()
 
 add_subdirectory("thirdparty")
