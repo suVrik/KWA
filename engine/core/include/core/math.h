@@ -83,7 +83,12 @@ uint64_t log2(uint64_t value);
 
 class float2 {
 public:
-    explicit constexpr float2(float all = 0.f)
+    constexpr float2()
+        : x(0.f), y(0.f)
+    {
+    }
+
+    explicit constexpr float2(float all)
         : x(all), y(all)
     {
     }
@@ -275,7 +280,12 @@ inline bool isfinite(const float2& value) {
 
 class float3 {
 public:
-    explicit constexpr float3(float all = 0.f)
+    constexpr float3()
+        : x(0.f), y(0.f), z(0.f)
+    {
+    }
+
+    explicit constexpr float3(float all)
         : x(all), y(all), z(all)
     {
     }
@@ -489,7 +499,12 @@ inline bool isfinite(const float3& value) {
 
 class float4 {
 public:
-    explicit constexpr float4(float all = 0.f)
+    constexpr float4()
+        : x(0.f), y(0.f), z(0.f), w(0.f)
+    {
+    }
+
+    explicit constexpr float4(float all)
         : x(all), y(all), z(all), w(all)
     {
     }
@@ -746,7 +761,7 @@ inline bool isfinite(const float4& value) {
 
 class float2x2 {
 public:
-    explicit constexpr float2x2()
+    constexpr float2x2()
         : _11(1.f), _12(0.f)
         , _21(0.f), _22(1.f)
     {
@@ -947,7 +962,7 @@ inline bool isfinite(const float2x2& value) {
 
 class float3x3 {
 public:
-    explicit constexpr float3x3()
+    constexpr float3x3()
         : _11(1.f), _12(0.f), _13(0.f)
         , _21(0.f), _22(1.f), _23(0.f)
         , _31(0.f), _32(0.f), _33(1.f)
@@ -1242,7 +1257,7 @@ public:
     static float4x4 look_at_lh(const float3& source, const float3& target, const float3& up);
     static float4x4 look_at_rh(const float3& source, const float3& target, const float3& up);
 
-    explicit constexpr float4x4()
+    constexpr float4x4()
         : _11(1.f), _12(0.f), _13(0.f), _14(0.f)
         , _21(0.f), _22(1.f), _23(0.f), _24(0.f)
         , _31(0.f), _32(0.f), _33(1.f), _34(0.f)
