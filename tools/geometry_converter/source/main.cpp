@@ -566,12 +566,12 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
                                    node.matrix[8],  node.matrix[9],  node.matrix[10], node.matrix[11],
                                    node.matrix[12], node.matrix[13], node.matrix[14], node.matrix[15]);
     } else {
-        if (node.translation.size() == 3) {
-            local_transform *= float4x4::translation(float3(static_cast<float>(node.translation[0]),
-                                                            static_cast<float>(node.translation[1]),
-                                                            static_cast<float>(node.translation[2])));
+        if (node.scale.size() == 3) {
+            local_transform *= float4x4::scale(float3(static_cast<float>(node.scale[0]),
+                                                      static_cast<float>(node.scale[1]),
+                                                      static_cast<float>(node.scale[2])));
         }
-
+        
         if (node.rotation.size() == 4) {
             local_transform *= quaternion::to_matrix(quaternion(static_cast<float>(node.rotation[0]),
                                                                 static_cast<float>(node.rotation[1]),
@@ -579,10 +579,10 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
                                                                 static_cast<float>(node.rotation[3])));
         }
 
-        if (node.scale.size() == 3) {
-            local_transform *= float4x4::scale(float3(static_cast<float>(node.scale[0]),
-                                                      static_cast<float>(node.scale[1]),
-                                                      static_cast<float>(node.scale[2])));
+        if (node.translation.size() == 3) {
+            local_transform *= float4x4::translation(float3(static_cast<float>(node.translation[0]),
+                                                            static_cast<float>(node.translation[1]),
+                                                            static_cast<float>(node.translation[2])));
         }
     }
 
@@ -613,6 +613,11 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
     return true;
 }
 
+bool image_loader_dummy(tinygltf::Image*, const int, std::string*, std::string*, int, int, const unsigned char*, int, void* user_pointer) {
+    std::cout << "Warning in geometry file \"" << filename << "\": Texture is not used. Prefer to exclude textures and materials from geometry files." << std::endl;
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cout << "Geometry converter requires at two command line arguments: input *.GLB file and output *.KWG file." << std::endl;
@@ -620,6 +625,8 @@ int main(int argc, char* argv[]) {
     }
 
     filename = argv[1];
+
+    gltf.SetImageLoader(image_loader_dummy, nullptr);
 
     bool is_loaded = gltf.LoadBinaryFromFile(&model, &error, &warning, filename);
 
