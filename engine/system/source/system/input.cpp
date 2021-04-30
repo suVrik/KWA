@@ -150,10 +150,20 @@ bool Input::is_mouse_relative() const {
     return m_is_mouse_relative;
 }
 
-void Input::set_mouse_relative(bool is_relative) {
+void Input::toggle_mouse_relative(bool is_relative) {
     if (is_relative != m_is_mouse_relative) {
         SDL_SetRelativeMouseMode(is_relative ? SDL_TRUE : SDL_FALSE);
         m_is_mouse_relative = is_relative;
+    }
+}
+
+bool Input::is_mouse_capture() const {
+    return m_is_mouse_capture;
+}
+
+void Input::toggle_mouse_capture(bool is_capture) {
+    if (m_is_mouse_capture != is_capture) {
+        SDL_CaptureMouse(is_capture ? SDL_TRUE : SDL_FALSE);
     }
 }
 

@@ -37,7 +37,10 @@ public:
     int32_t get_mouse_wheel() const;
 
     bool is_mouse_relative() const;
-    void set_mouse_relative(bool is_relative);
+    void toggle_mouse_relative(bool is_relative);
+
+    bool is_mouse_capture() const;
+    void toggle_mouse_capture(bool is_capture);
 
     // All the currently pressed keyboard controls will be released. On the next update all pressed keys will be in
     // just pressed state. Designed specifically for ImGui's "capture_keyboard" feature.
@@ -75,6 +78,7 @@ public:
     int32_t m_next_mouse_wheel = 0;
 
     bool m_is_mouse_relative = false;
+    bool m_is_mouse_capture = false;
 };
 
 } // namespace kw

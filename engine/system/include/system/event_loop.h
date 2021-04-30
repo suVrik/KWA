@@ -273,6 +273,10 @@ enum class Scancode {
 
 constexpr size_t SCANCODE_COUNT = 243;
 
+constexpr uint32_t BUTTON_LEFT   = 1;
+constexpr uint32_t BUTTON_MIDDLE = 2;
+constexpr uint32_t BUTTON_RIGHT  = 3;
+
 union Event {
     EventType type;
 
