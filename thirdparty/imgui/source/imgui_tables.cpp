@@ -319,7 +319,7 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     }
 
     // Acquire storage for the table
-    ImGuiTable* table = g.Tables.GetOrAddByKey(id);
+    ImGuiTable* table = g.Tables.GetOrAddByKey(id, *this);
     const int instance_no = (table->LastFrameActive != g.FrameCount) ? 0 : table->InstanceCurrent + 1;
     const ImGuiID instance_id = id + instance_no;
     const ImGuiTableFlags table_last_flags = table->Flags;
@@ -458,7 +458,7 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     const int stored_size = table->Columns.size();
     if (stored_size != 0 && stored_size != columns_count)
     {
-        IM_FREE(table->RawData);
+        IM_FREE(*this, table->RawData);
         table->RawData = NULL;
     }
     if (table->RawData == NULL)
@@ -540,7 +540,7 @@ void ImGui::TableBeginInitMemory(ImGuiTable* table, int columns_count)
     span_allocator.Reserve(0, columns_count * sizeof(ImGuiTableColumn));
     span_allocator.Reserve(1, columns_count * sizeof(ImGuiTableColumnIdx));
     span_allocator.Reserve(2, columns_count * sizeof(ImGuiTableCellData), 4);
-    table->RawData = IM_ALLOC(span_allocator.GetArenaSizeInBytes());
+    table->RawData = IM_ALLOC(*this, span_allocator.GetArenaSizeInBytes());
     memset(table->RawData, 0, span_allocator.GetArenaSizeInBytes());
     span_allocator.SetArenaBasePtr(table->RawData);
     span_allocator.GetSpan(0, &table->Columns);
@@ -668,7 +668,7 @@ static void TableSetupColumnFlags(ImGuiTable* table, ImGuiTableColumn* column, I
         column->SortDirectionsAvailList = (ImU8)list;
         column->SortDirectionsAvailMask = (ImU8)mask;
         column->SortDirectionsAvailCount = (ImU8)count;
-        ImGui::TableFixColumnSortDirection(table, column);
+        table->imgui.TableFixColumnSortDirection(table, column);
     }
 }
 
@@ -3236,7 +3236,7 @@ static void TableSettingsHandler_ClearAll(ImGuiContext* ctx, ImGuiSettingsHandle
 }
 
 // Apply to existing windows (if any)
-static void TableSettingsHandler_ApplyAll(ImGuiContext* ctx, ImGuiSettingsHandler*)
+static void TableSettingsHandler_ApplyAll(ImGui& imgui_, ImGuiContext* ctx, ImGuiSettingsHandler*)
 {
     ImGuiContext& g = *ctx;
     for (int i = 0; i != g.Tables.GetSize(); i++)
@@ -3247,14 +3247,14 @@ static void TableSettingsHandler_ApplyAll(ImGuiContext* ctx, ImGuiSettingsHandle
     }
 }
 
-static void* TableSettingsHandler_ReadOpen(ImGuiContext*, ImGuiSettingsHandler*, const char* name)
+static void* TableSettingsHandler_ReadOpen(ImGui& imgui_, ImGuiContext*, ImGuiSettingsHandler*, const char* name)
 {
     ImGuiID id = 0;
     int columns_count = 0;
     if (sscanf(name, "0x%08X,%d", &id, &columns_count) < 2)
         return NULL;
 
-    if (ImGuiTableSettings* settings = ImGui::TableSettingsFindByID(id))
+    if (ImGuiTableSettings* settings = imgui_.TableSettingsFindByID(id))
     {
         if (settings->ColumnsCountMax >= columns_count)
         {
@@ -3263,7 +3263,7 @@ static void* TableSettingsHandler_ReadOpen(ImGuiContext*, ImGuiSettingsHandler*,
         }
         settings->ID = 0; // Invalidate storage, we won't fit because of a count change
     }
-    return ImGui::TableSettingsCreate(id, columns_count);
+    return imgui_.TableSettingsCreate(id, columns_count);
 }
 
 static void TableSettingsHandler_ReadLine(ImGuiContext*, ImGuiSettingsHandler*, void* entry, const char* line)
@@ -3292,7 +3292,7 @@ static void TableSettingsHandler_ReadLine(ImGuiContext*, ImGuiSettingsHandler*, 
     }
 }
 
-static void TableSettingsHandler_WriteAll(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
+static void TableSettingsHandler_WriteAll(ImGui& imgui_, ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf)
 {
     ImGuiContext& g = *ctx;
     for (ImGuiTableSettings* settings = g.SettingsTables.begin(); settings != NULL; settings = g.SettingsTables.next_chunk(settings))
@@ -3391,7 +3391,7 @@ void ImGui::TableGcCompactSettings()
             required_memory += (int)TableSettingsCalcChunkSize(settings->ColumnsCount);
     if (required_memory == g.SettingsTables.Buf.Size)
         return;
-    ImChunkStream<ImGuiTableSettings> new_chunk_stream;
+    ImChunkStream<ImGuiTableSettings> new_chunk_stream(*this);
     new_chunk_stream.Buf.reserve(required_memory);
     for (ImGuiTableSettings* settings = g.SettingsTables.begin(); settings != NULL; settings = g.SettingsTables.next_chunk(settings))
         if (settings->ID != 0)
@@ -3566,7 +3566,7 @@ float ImGui::GetColumnNormFromOffset(const ImGuiOldColumns* columns, float offse
 
 static const float COLUMNS_HIT_RECT_HALF_WIDTH = 4.0f;
 
-static float GetDraggedColumnOffset(ImGuiOldColumns* columns, int column_index)
+static float GetDraggedColumnOffset(ImGui& imgui_, ImGuiOldColumns* columns, int column_index)
 {
     // Active (dragged) column always follow mouse. The reason we need this is that dragging a column to the right edge of an auto-resizing
     // window creates a feedback loop because we store normalized positions. So while dragging we enforce absolute positioning.
@@ -3576,9 +3576,9 @@ static float GetDraggedColumnOffset(ImGuiOldColumns* columns, int column_index)
     IM_ASSERT(g.ActiveId == columns->ID + ImGuiID(column_index));
 
     float x = g.IO.MousePos.x - g.ActiveIdClickOffset.x + COLUMNS_HIT_RECT_HALF_WIDTH - window->Pos.x;
-    x = ImMax(x, ImGui::GetColumnOffset(column_index - 1) + g.Style.ColumnsMinSpacing);
+    x = ImMax(x, imgui_.GetColumnOffset(column_index - 1) + g.Style.ColumnsMinSpacing);
     if ((columns->Flags & ImGuiOldColumnFlags_NoPreserveWidths))
-        x = ImMin(x, ImGui::GetColumnOffset(column_index + 1) - g.Style.ColumnsMinSpacing);
+        x = ImMin(x, imgui_.GetColumnOffset(column_index + 1) - g.Style.ColumnsMinSpacing);
 
     return x;
 }
@@ -3599,7 +3599,7 @@ float ImGui::GetColumnOffset(int column_index)
     return x_offset;
 }
 
-static float GetColumnWidthEx(ImGuiOldColumns* columns, int column_index, bool before_resize = false)
+static float GetColumnWidthEx(ImGui& imgui_, ImGuiOldColumns* columns, int column_index, bool before_resize = false)
 {
     if (column_index < 0)
         column_index = columns->Current;
@@ -3609,7 +3609,7 @@ static float GetColumnWidthEx(ImGuiOldColumns* columns, int column_index, bool b
         offset_norm = columns->Columns[column_index + 1].OffsetNormBeforeResize - columns->Columns[column_index].OffsetNormBeforeResize;
     else
         offset_norm = columns->Columns[column_index + 1].OffsetNorm - columns->Columns[column_index].OffsetNorm;
-    return ImGui::GetColumnOffsetFromNorm(columns, offset_norm);
+    return imgui_.GetColumnOffsetFromNorm(columns, offset_norm);
 }
 
 float ImGui::GetColumnWidth(int column_index)
@@ -3637,7 +3637,7 @@ void ImGui::SetColumnOffset(int column_index, float offset)
     IM_ASSERT(column_index < columns->Columns.Size);
 
     const bool preserve_width = !(columns->Flags & ImGuiOldColumnFlags_NoPreserveWidths) && (column_index < columns->Count - 1);
-    const float width = preserve_width ? GetColumnWidthEx(columns, column_index, columns->IsBeingResized) : 0.0f;
+    const float width = preserve_width ? GetColumnWidthEx(*this, columns, column_index, columns->IsBeingResized) : 0.0f;
 
     if (!(columns->Flags & ImGuiOldColumnFlags_NoForceWithinWindow))
         offset = ImMin(offset, columns->OffMaxX - g.Style.ColumnsMinSpacing * (columns->Count - column_index));
@@ -3702,7 +3702,7 @@ ImGuiOldColumns* ImGui::FindOrCreateColumns(ImGuiWindow* window, ImGuiID id)
         if (window->ColumnsStorage[n].ID == id)
             return &window->ColumnsStorage[n];
 
-    window->ColumnsStorage.push_back(ImGuiOldColumns());
+    window->ColumnsStorage.push_back(ImGuiOldColumns(*this));
     ImGuiOldColumns* columns = &window->ColumnsStorage.back();
     columns->ID = id;
     return columns;
@@ -3916,7 +3916,7 @@ void ImGui::EndColumns()
                 for (int n = 0; n < columns->Count + 1; n++)
                     columns->Columns[n].OffsetNormBeforeResize = columns->Columns[n].OffsetNorm;
             columns->IsBeingResized = is_being_resized = true;
-            float x = GetDraggedColumnOffset(columns, dragging_column);
+            float x = GetDraggedColumnOffset(*this, columns, dragging_column);
             SetColumnOffset(dragging_column, x);
         }
     }

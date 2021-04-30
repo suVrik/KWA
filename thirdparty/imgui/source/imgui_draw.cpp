@@ -137,8 +137,8 @@ namespace IMGUI_STB_NAMESPACE
 #ifdef  IMGUI_ENABLE_STB_TRUETYPE
 #ifndef STB_TRUETYPE_IMPLEMENTATION                         // in case the user already have an implementation in the _same_ compilation unit (e.g. unity builds)
 #ifndef IMGUI_DISABLE_STB_TRUETYPE_IMPLEMENTATION           // in case the user already have an implementation in another compilation unit
-#define STBTT_malloc(x,u)   ((void)(u), IM_ALLOC(x))
-#define STBTT_free(x,u)     ((void)(u), IM_FREE(x))
+#define STBTT_malloc(i,x,u)   ((void)(u), IM_ALLOC((i), x))
+#define STBTT_free(i,x,u)     ((void)(u), IM_FREE((i), x))
 #define STBTT_assert(x)     do { IM_ASSERT(x); } while(0)
 #define STBTT_fmod(x,y)     ImFmod(x,y)
 #define STBTT_sqrt(x)       ImSqrt(x)
@@ -433,7 +433,7 @@ void ImDrawList::_ClearFreeMemory()
 
 ImDrawList* ImDrawList::CloneOutput() const
 {
-    ImDrawList* dst = IM_NEW(ImDrawList(_Data));
+    ImDrawList* dst = IM_NEW(imgui, ImDrawList(imgui, _Data));
     dst->CmdBuffer = CmdBuffer;
     dst->IdxBuffer = IdxBuffer;
     dst->VtxBuffer = VtxBuffer;
@@ -1622,7 +1622,7 @@ void ImDrawList::AddImageRounded(ImTextureID user_texture_id, const ImVec2& p_mi
     PathRect(p_min, p_max, rounding, flags);
     PathFillConvex(col);
     int vert_end_idx = VtxBuffer.Size;
-    ImGui::ShadeVertsLinearUV(this, vert_start_idx, vert_end_idx, p_min, p_max, uv_min, uv_max, true);
+    imgui.ShadeVertsLinearUV(this, vert_start_idx, vert_end_idx, p_min, p_max, uv_min, uv_max, true);
 
     if (push_texture_id)
         PopTextureID();
@@ -1669,7 +1669,7 @@ void ImDrawListSplitter::Split(ImDrawList* draw_list, int channels_count)
     {
         if (i >= old_channels_count)
         {
-            IM_PLACEMENT_NEW(&_Channels[i]) ImDrawChannel();
+            IM_PLACEMENT_NEW(&_Channels[i]) ImDrawChannel { ImVector<ImDrawCmd>(draw_list->imgui), ImVector<ImDrawIdx>(draw_list->imgui) };
         }
         else
         {
@@ -1781,7 +1781,7 @@ void ImDrawListSplitter::SetCurrentChannel(ImDrawList* draw_list, int idx)
 // For backward compatibility: convert all buffers from indexed to de-indexed, in case you cannot render indexed. Note: this is slow and most likely a waste of resources. Always prefer indexed rendering!
 void ImDrawData::DeIndexAllBuffers()
 {
-    ImVector<ImDrawVert> new_vtx_buffer;
+    ImVector<ImDrawVert> new_vtx_buffer(imgui);
     TotalVtxCount = TotalIdxCount = 0;
     for (int i = 0; i < CmdListsCount; i++)
     {
@@ -1933,7 +1933,11 @@ static const ImVec2 FONT_ATLAS_DEFAULT_TEX_CURSOR_DATA[ImGuiMouseCursor_COUNT][3
     { ImVec2(91,0), ImVec2(17,22), ImVec2( 5, 0) }, // ImGuiMouseCursor_Hand
 };
 
-ImFontAtlas::ImFontAtlas()
+ImFontAtlas::ImFontAtlas(ImGui& imgui_)
+    : imgui(imgui_)
+    , Fonts(imgui_)
+    , CustomRects(imgui_)
+    , ConfigData(imgui_)
 {
     memset(this, 0, sizeof(*this));
     TexGlyphPadding = 1;
@@ -1952,7 +1956,7 @@ void    ImFontAtlas::ClearInputData()
     for (int i = 0; i < ConfigData.Size; i++)
         if (ConfigData[i].FontData && ConfigData[i].FontDataOwnedByAtlas)
         {
-            IM_FREE(ConfigData[i].FontData);
+            IM_FREE(imgui, ConfigData[i].FontData);
             ConfigData[i].FontData = NULL;
         }
 
@@ -1972,9 +1976,9 @@ void    ImFontAtlas::ClearTexData()
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
     if (TexPixelsAlpha8)
-        IM_FREE(TexPixelsAlpha8);
+        IM_FREE(imgui, TexPixelsAlpha8);
     if (TexPixelsRGBA32)
-        IM_FREE(TexPixelsRGBA32);
+        IM_FREE(imgui, TexPixelsRGBA32);
     TexPixelsAlpha8 = NULL;
     TexPixelsRGBA32 = NULL;
     TexPixelsUseColors = false;
@@ -1984,7 +1988,7 @@ void    ImFontAtlas::ClearFonts()
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
     for (int i = 0; i < Fonts.Size; i++)
-        IM_DELETE(Fonts[i]);
+        IM_DELETE(imgui, Fonts[i]);
     Fonts.clear();
 }
 
@@ -2021,7 +2025,7 @@ void    ImFontAtlas::GetTexDataAsRGBA32(unsigned char** out_pixels, int* out_wid
         GetTexDataAsAlpha8(&pixels, NULL, NULL);
         if (pixels)
         {
-            TexPixelsRGBA32 = (unsigned int*)IM_ALLOC((size_t)TexWidth * (size_t)TexHeight * 4);
+            TexPixelsRGBA32 = (unsigned int*)IM_ALLOC(imgui, (size_t)TexWidth * (size_t)TexHeight * 4);
             const unsigned char* src = pixels;
             unsigned int* dst = TexPixelsRGBA32;
             for (int n = TexWidth * TexHeight; n > 0; n--)
@@ -2043,7 +2047,7 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
 
     // Create new font
     if (!font_cfg->MergeMode)
-        Fonts.push_back(IM_NEW(ImFont));
+        Fonts.push_back(IM_NEW(imgui, ImFont)(imgui));
     else
         IM_ASSERT(!Fonts.empty() && "Cannot use MergeMode for the first font"); // When using MergeMode make sure that a font has already been added before. You can use ImGui::GetIO().Fonts->AddFontDefault() to add the default imgui font.
 
@@ -2053,7 +2057,7 @@ ImFont* ImFontAtlas::AddFont(const ImFontConfig* font_cfg)
         new_font_cfg.DstFont = Fonts.back();
     if (!new_font_cfg.FontDataOwnedByAtlas)
     {
-        new_font_cfg.FontData = IM_ALLOC(new_font_cfg.FontDataSize);
+        new_font_cfg.FontData = IM_ALLOC(imgui, new_font_cfg.FontDataSize);
         new_font_cfg.FontDataOwnedByAtlas = true;
         memcpy(new_font_cfg.FontData, font_cfg->FontData, (size_t)new_font_cfg.FontDataSize);
     }
@@ -2108,7 +2112,7 @@ ImFont* ImFontAtlas::AddFontFromFileTTF(const char* filename, float size_pixels,
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas between NewFrame() and EndFrame/Render()!");
     size_t data_size = 0;
-    void* data = ImFileLoadToMemory(filename, "rb", &data_size, 0);
+    void* data = ImFileLoadToMemory(imgui, filename, "rb", &data_size, 0);
     if (!data)
     {
         IM_ASSERT_USER_ERROR(0, "Could not load font file!");
@@ -2142,7 +2146,7 @@ ImFont* ImFontAtlas::AddFontFromMemoryTTF(void* ttf_data, int ttf_size, float si
 ImFont* ImFontAtlas::AddFontFromMemoryCompressedTTF(const void* compressed_ttf_data, int compressed_ttf_size, float size_pixels, const ImFontConfig* font_cfg_template, const ImWchar* glyph_ranges)
 {
     const unsigned int buf_decompressed_size = stb_decompress_length((const unsigned char*)compressed_ttf_data);
-    unsigned char* buf_decompressed_data = (unsigned char*)IM_ALLOC(buf_decompressed_size);
+    unsigned char* buf_decompressed_data = (unsigned char*)IM_ALLOC(imgui, buf_decompressed_size);
     stb_decompress(buf_decompressed_data, (const unsigned char*)compressed_ttf_data, (unsigned int)compressed_ttf_size);
 
     ImFontConfig font_cfg = font_cfg_template ? *font_cfg_template : ImFontConfig();
@@ -2154,10 +2158,10 @@ ImFont* ImFontAtlas::AddFontFromMemoryCompressedTTF(const void* compressed_ttf_d
 ImFont* ImFontAtlas::AddFontFromMemoryCompressedBase85TTF(const char* compressed_ttf_data_base85, float size_pixels, const ImFontConfig* font_cfg, const ImWchar* glyph_ranges)
 {
     int compressed_ttf_size = (((int)strlen(compressed_ttf_data_base85) + 4) / 5) * 4;
-    void* compressed_ttf = IM_ALLOC((size_t)compressed_ttf_size);
+    void* compressed_ttf = IM_ALLOC(imgui, (size_t)compressed_ttf_size);
     Decode85((const unsigned char*)compressed_ttf_data_base85, (unsigned char*)compressed_ttf);
     ImFont* font = AddFontFromMemoryCompressedTTF(compressed_ttf, compressed_ttf_size, size_pixels, font_cfg, glyph_ranges);
-    IM_FREE(compressed_ttf);
+    IM_FREE(imgui, compressed_ttf);
     return font;
 }
 
@@ -2314,8 +2318,8 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     atlas->ClearTexData();
 
     // Temporary storage for building
-    ImVector<ImFontBuildSrcData> src_tmp_array;
-    ImVector<ImFontBuildDstData> dst_tmp_array;
+    ImVector<ImFontBuildSrcData> src_tmp_array(atlas->imgui);
+    ImVector<ImFontBuildDstData> dst_tmp_array(atlas->imgui);
     src_tmp_array.resize(atlas->ConfigData.Size);
     dst_tmp_array.resize(atlas->Fonts.Size);
     memset(src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());
@@ -2395,8 +2399,8 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
 
     // Allocate packing character data and flag packed characters buffer as non-packed (x0=y0=x1=y1=0)
     // (We technically don't need to zero-clear buf_rects, but let's do it for the sake of sanity)
-    ImVector<stbrp_rect> buf_rects;
-    ImVector<stbtt_packedchar> buf_packedchars;
+    ImVector<stbrp_rect> buf_rects(atlas->imgui);
+    ImVector<stbtt_packedchar> buf_packedchars(atlas->imgui);
     buf_rects.resize(total_glyphs_count);
     buf_packedchars.resize(total_glyphs_count);
     memset(buf_rects.Data, 0, (size_t)buf_rects.size_in_bytes());
@@ -2456,7 +2460,7 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     // Pack our extra data rectangles first, so it will be on the upper-left corner of our texture (UV will have small values).
     const int TEX_HEIGHT_MAX = 1024 * 32;
     stbtt_pack_context spc = {};
-    stbtt_PackBegin(&spc, NULL, atlas->TexWidth, TEX_HEIGHT_MAX, 0, atlas->TexGlyphPadding, NULL);
+    stbtt_PackBegin(atlas->imgui, &spc, NULL, atlas->TexWidth, TEX_HEIGHT_MAX, 0, atlas->TexGlyphPadding, NULL);
     ImFontAtlasBuildPackCustomRects(atlas, spc.pack_info);
 
     // 6. Pack each source font. No rendering yet, we are working with rectangles in an infinitely tall texture at this point.
@@ -2478,7 +2482,7 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     // 7. Allocate texture
     atlas->TexHeight = (atlas->Flags & ImFontAtlasFlags_NoPowerOfTwoHeight) ? (atlas->TexHeight + 1) : ImUpperPowerOfTwo(atlas->TexHeight);
     atlas->TexUvScale = ImVec2(1.0f / atlas->TexWidth, 1.0f / atlas->TexHeight);
-    atlas->TexPixelsAlpha8 = (unsigned char*)IM_ALLOC(atlas->TexWidth * atlas->TexHeight);
+    atlas->TexPixelsAlpha8 = (unsigned char*)IM_ALLOC(atlas->imgui, atlas->TexWidth * atlas->TexHeight);
     memset(atlas->TexPixelsAlpha8, 0, atlas->TexWidth * atlas->TexHeight);
     spc.pixels = atlas->TexPixelsAlpha8;
     spc.height = atlas->TexHeight;
@@ -2491,7 +2495,7 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
         if (src_tmp.GlyphsCount == 0)
             continue;
 
-        stbtt_PackFontRangesRenderIntoRects(&spc, &src_tmp.FontInfo, &src_tmp.PackRange, 1, src_tmp.Rects);
+        stbtt_PackFontRangesRenderIntoRects(atlas->imgui, &spc, &src_tmp.FontInfo, &src_tmp.PackRange, 1, src_tmp.Rects);
 
         // Apply multiply operator
         if (cfg.RasterizerMultiply != 1.0f)
@@ -2507,7 +2511,7 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     }
 
     // End packing
-    stbtt_PackEnd(&spc);
+    stbtt_PackEnd(atlas->imgui, &spc);
     buf_rects.clear();
 
     // 9. Setup ImFont and glyphs for runtime
@@ -2585,7 +2589,7 @@ void ImFontAtlasBuildPackCustomRects(ImFontAtlas* atlas, void* stbrp_context_opa
     ImVector<ImFontAtlasCustomRect>& user_rects = atlas->CustomRects;
     IM_ASSERT(user_rects.Size >= 1); // We expect at least the default custom rects to be registered, else something went wrong.
 
-    ImVector<stbrp_rect> pack_rects;
+    ImVector<stbrp_rect> pack_rects(atlas->imgui);
     pack_rects.resize(user_rects.Size);
     memset(pack_rects.Data, 0, (size_t)pack_rects.size_in_bytes());
     for (int i = 0; i < user_rects.Size; i++)
@@ -3073,7 +3077,10 @@ void ImFontGlyphRangesBuilder::BuildRanges(ImVector<ImWchar>* out_ranges)
 // [SECTION] ImFont
 //-----------------------------------------------------------------------------
 
-ImFont::ImFont()
+ImFont::ImFont(ImGui& imgui_)
+    : IndexAdvanceX(imgui_)
+    , IndexLookup(imgui_)
+    , Glyphs(imgui_)
 {
     FontSize = 0.0f;
     FallbackAdvanceX = 0.0f;

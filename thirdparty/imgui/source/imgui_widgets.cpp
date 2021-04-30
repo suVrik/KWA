@@ -4213,7 +4213,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 const int ib = state->HasSelection() ? ImMin(state->Stb.select_start, state->Stb.select_end) : 0;
                 const int ie = state->HasSelection() ? ImMax(state->Stb.select_start, state->Stb.select_end) : state->CurLenW;
                 const int clipboard_data_len = ImTextCountUtf8BytesFromStr(state->TextW.Data + ib, state->TextW.Data + ie) + 1;
-                char* clipboard_data = (char*)IM_ALLOC(clipboard_data_len * sizeof(char));
+                char* clipboard_data = (char*)IM_ALLOC(*this, clipboard_data_len * sizeof(char));
                 ImTextStrToUtf8(clipboard_data, clipboard_data_len, state->TextW.Data + ib, state->TextW.Data + ie);
                 SetClipboardText(clipboard_data);
                 MemFree(clipboard_data);
@@ -4232,7 +4232,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 // Filter pasted buffer
                 const int clipboard_len = (int)strlen(clipboard);
-                ImWchar* clipboard_filtered = (ImWchar*)IM_ALLOC((clipboard_len + 1) * sizeof(ImWchar));
+                ImWchar* clipboard_filtered = (ImWchar*)IM_ALLOC(*this, (clipboard_len + 1) * sizeof(ImWchar));
                 int clipboard_filtered_len = 0;
                 for (const char* s = clipboard; *s; )
                 {
@@ -4272,7 +4272,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
                 // Push records into the undo stack so we can CTRL+Z the revert operation itself
                 apply_new_text = state->InitialTextA.Data;
                 apply_new_text_length = state->InitialTextA.Size - 1;
-                ImVector<ImWchar> w_text;
+                ImVector<ImWchar> w_text(*this);
                 if (apply_new_text_length > 0)
                 {
                     w_text.resize(ImTextCountCharsFromUtf8(apply_new_text, apply_new_text + apply_new_text_length) + 1);
@@ -4926,10 +4926,10 @@ bool ImGui::ColorPicker3(const char* label, float col[3], ImGuiColorEditFlags fl
 static void RenderArrowsForVerticalBar(ImDrawList* draw_list, ImVec2 pos, ImVec2 half_sz, float bar_w, float alpha)
 {
     ImU32 alpha8 = IM_F32_TO_INT8_SAT(alpha);
-    ImGui::RenderArrowPointingAt(draw_list, ImVec2(pos.x + half_sz.x + 1,         pos.y), ImVec2(half_sz.x + 2, half_sz.y + 1), ImGuiDir_Right, IM_COL32(0,0,0,alpha8));
-    ImGui::RenderArrowPointingAt(draw_list, ImVec2(pos.x + half_sz.x,             pos.y), half_sz,                              ImGuiDir_Right, IM_COL32(255,255,255,alpha8));
-    ImGui::RenderArrowPointingAt(draw_list, ImVec2(pos.x + bar_w - half_sz.x - 1, pos.y), ImVec2(half_sz.x + 2, half_sz.y + 1), ImGuiDir_Left,  IM_COL32(0,0,0,alpha8));
-    ImGui::RenderArrowPointingAt(draw_list, ImVec2(pos.x + bar_w - half_sz.x,     pos.y), half_sz,                              ImGuiDir_Left,  IM_COL32(255,255,255,alpha8));
+    draw_list->imgui.RenderArrowPointingAt(draw_list, ImVec2(pos.x + half_sz.x + 1,         pos.y), ImVec2(half_sz.x + 2, half_sz.y + 1), ImGuiDir_Right, IM_COL32(0,0,0,alpha8));
+    draw_list->imgui.RenderArrowPointingAt(draw_list, ImVec2(pos.x + half_sz.x,             pos.y), half_sz,                              ImGuiDir_Right, IM_COL32(255,255,255,alpha8));
+    draw_list->imgui.RenderArrowPointingAt(draw_list, ImVec2(pos.x + bar_w - half_sz.x - 1, pos.y), ImVec2(half_sz.x + 2, half_sz.y + 1), ImGuiDir_Left,  IM_COL32(0,0,0,alpha8));
+    draw_list->imgui.RenderArrowPointingAt(draw_list, ImVec2(pos.x + bar_w - half_sz.x,     pos.y), half_sz,                              ImGuiDir_Left,  IM_COL32(255,255,255,alpha8));
 }
 
 // Note: ColorPicker4() only accesses 3 floats if ImGuiColorEditFlags_NoAlpha flag is set.
@@ -6249,7 +6249,7 @@ bool ImGui::ListBox(const char* label, int* current_item, bool (*items_getter)(v
     // Assume all items have even height (= 1 line of text). If you need items of different height,
     // you can create a custom version of ListBox() in your code without using the clipper.
     bool value_changed = false;
-    ImGuiListClipper clipper;
+    ImGuiListClipper clipper(*this);
     clipper.Begin(items_count, GetTextLineHeightWithSpacing()); // We know exactly our line height here so we pass it as a minor optimization, but generally you don't need to.
     while (clipper.Step())
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
@@ -6923,7 +6923,9 @@ struct ImGuiTabBarSection
     ImGuiTabBarSection() { memset(this, 0, sizeof(*this)); }
 };
 
-ImGuiTabBar::ImGuiTabBar()
+ImGuiTabBar::ImGuiTabBar(ImGui& imgui_)
+    : Tabs(imgui_)
+    , TabsNames(imgui_)
 {
     memset(this, 0, sizeof(*this));
     CurrFrameVisible = PrevFrameVisible = -1;
@@ -6970,7 +6972,7 @@ bool    ImGui::BeginTabBar(const char* str_id, ImGuiTabBarFlags flags)
         return false;
 
     ImGuiID id = window->GetID(str_id);
-    ImGuiTabBar* tab_bar = g.TabBars.GetOrAddByKey(id);
+    ImGuiTabBar* tab_bar = g.TabBars.GetOrAddByKey(id, *this);
     ImRect tab_bar_bb = ImRect(window->DC.CursorPos.x, window->DC.CursorPos.y, window->WorkRect.Max.x, window->DC.CursorPos.y + g.FontSize + g.Style.FramePadding.y * 2);
     tab_bar->ID = id;
     return BeginTabBarEx(tab_bar, tab_bar_bb, flags | ImGuiTabBarFlags_IsFocused);
@@ -7076,7 +7078,7 @@ void    ImGui::EndTabBar()
 
 // This is called only once a frame before by the first call to ItemTab()
 // The reason we're not calling it in BeginTabBar() is to leave a chance to the user to call the SetTabItemClosed() functions.
-static void ImGui::TabBarLayout(ImGuiTabBar* tab_bar)
+void ImGui::TabBarLayout(ImGuiTabBar* tab_bar)
 {
     ImGuiContext& g = *GImGui;
     tab_bar->WantLayout = false;
@@ -7305,7 +7307,7 @@ static void ImGui::TabBarLayout(ImGuiTabBar* tab_bar)
 }
 
 // Dockables uses Name/ID in the global namespace. Non-dockable items use the ID stack.
-static ImU32   ImGui::TabBarCalcTabID(ImGuiTabBar* tab_bar, const char* label)
+ImU32   ImGui::TabBarCalcTabID(ImGuiTabBar* tab_bar, const char* label)
 {
     if (tab_bar->Flags & ImGuiTabBarFlags_DockNode)
     {
@@ -7320,7 +7322,7 @@ static ImU32   ImGui::TabBarCalcTabID(ImGuiTabBar* tab_bar, const char* label)
     }
 }
 
-static float ImGui::TabBarCalcMaxTabWidth()
+float ImGui::TabBarCalcMaxTabWidth()
 {
     ImGuiContext& g = *GImGui;
     return g.FontSize * 20.0f;
@@ -7368,14 +7370,14 @@ void ImGui::TabBarCloseTab(ImGuiTabBar* tab_bar, ImGuiTabItem* tab)
     }
 }
 
-static float ImGui::TabBarScrollClamp(ImGuiTabBar* tab_bar, float scrolling)
+float ImGui::TabBarScrollClamp(ImGuiTabBar* tab_bar, float scrolling)
 {
     scrolling = ImMin(scrolling, tab_bar->WidthAllTabs - tab_bar->BarRect.GetWidth());
     return ImMax(scrolling, 0.0f);
 }
 
 // Note: we may scroll to tab that are not selected! e.g. using keyboard arrow keys
-static void ImGui::TabBarScrollToTab(ImGuiTabBar* tab_bar, ImGuiID tab_id, ImGuiTabBarSection* sections)
+void ImGui::TabBarScrollToTab(ImGuiTabBar* tab_bar, ImGuiID tab_id, ImGuiTabBarSection* sections)
 {
     ImGuiTabItem* tab = TabBarFindTabByID(tab_bar, tab_id);
     if (tab == NULL)
@@ -7444,7 +7446,7 @@ bool ImGui::TabBarProcessReorder(ImGuiTabBar* tab_bar)
     return true;
 }
 
-static ImGuiTabItem* ImGui::TabBarScrollingButtons(ImGuiTabBar* tab_bar)
+ImGuiTabItem* ImGui::TabBarScrollingButtons(ImGuiTabBar* tab_bar)
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
@@ -7505,7 +7507,7 @@ static ImGuiTabItem* ImGui::TabBarScrollingButtons(ImGuiTabBar* tab_bar)
     return tab_to_scroll_to;
 }
 
-static ImGuiTabItem* ImGui::TabBarTabListPopupButton(ImGuiTabBar* tab_bar)
+ImGuiTabItem* ImGui::TabBarTabListPopupButton(ImGuiTabBar* tab_bar)
 {
     ImGuiContext& g = *GImGui;
     ImGuiWindow* window = g.CurrentWindow;
