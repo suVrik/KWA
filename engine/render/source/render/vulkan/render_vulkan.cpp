@@ -277,7 +277,7 @@ void RenderVulkan::destroy_index_buffer(IndexBuffer index_buffer) {
 }
 
 VertexBuffer RenderVulkan::acquire_transient_vertex_buffer(const void* data, size_t size) {
-    return reinterpret_cast<VertexBuffer>(acquire_transient_buffer_vulkan(data, size, 1, BufferFlagsVulkan::NONE));
+    return reinterpret_cast<VertexBuffer>(acquire_transient_buffer_vulkan(data, size, 16, BufferFlagsVulkan::NONE));
 }
 
 IndexBuffer RenderVulkan::acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) {
