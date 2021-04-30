@@ -247,7 +247,14 @@ void FrameGraphVulkan::render() {
 
         if (m_swapchain == VK_NULL_HANDLE) {
             // Most likely the window is minimized.
+
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            for (RenderPassData& render_pass_data : m_render_pass_data) {
+                KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
+                render_pass_data.render_pass_delegate->skip();
+            }
+
             return;
         }
     }
@@ -274,6 +281,12 @@ void FrameGraphVulkan::render() {
         recreate_swapchain();
 
         // Semaphore wasn't signaled, so we'd need another acquire.
+
+        for (RenderPassData& render_pass_data : m_render_pass_data) {
+            KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
+            render_pass_data.render_pass_delegate->skip();
+        }
+
         return;
     } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
         VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
@@ -516,7 +529,7 @@ void FrameGraphVulkan::render() {
 
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-        RenderPassContextVulkan render_pass_context(*this, swapchain_image_index, command_buffer, thread_task_data.render_pass_index, thread_task_data.framebuffer_index);
+        RenderPassContextVulkan render_pass_context(*this, swapchain_image_index, command_buffer, thread_task_data.render_pass_index, thread_task_data.framebuffer_index, render_pass_data.framebuffer_width, render_pass_data.framebuffer_height);
 
         KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
         render_pass_data.render_pass_delegate->render(render_pass_context);
@@ -3553,13 +3566,16 @@ FrameGraphVulkan::RenderPassData::RenderPassData(RenderPassData&& other)
 }
 
 FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t swapchain_image_index,
-                                                                   VkCommandBuffer command_buffer, uint32_t render_pass_index, uint32_t attachment_index)
+                                                                   VkCommandBuffer command_buffer, uint32_t render_pass_index,
+                                                                   uint32_t attachment_index, uint32_t attachment_width, uint32_t attachment_height)
     : transfer_semaphore_value(0)
     , m_frame_graph(frame_graph)
     , m_swapchain_image_index(swapchain_image_index)
     , m_command_buffer(command_buffer)
     , m_render_pass_index(render_pass_index)
     , m_attachment_index(attachment_index)
+    , m_attachment_width(attachment_width)
+    , m_attachment_height(attachment_height)
     , m_graphics_pipeline_index(UINT32_MAX)
 {
     KW_ASSERT(render_pass_index < frame_graph.m_render_pass_data.size());
@@ -4027,6 +4043,14 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     //
 
     vkCmdDrawIndexed(m_command_buffer, descriptor.index_count, std::max(descriptor.instance_count, 1U), descriptor.index_offset, descriptor.vertex_offset, descriptor.instance_offset);
+}
+
+uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_width() const {
+    return m_attachment_width;
+}
+
+uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_height() const {
+    return m_attachment_height;
 }
 
 uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachemnt_index() const {

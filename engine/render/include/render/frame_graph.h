@@ -57,6 +57,9 @@ class RenderPassContext {
 public:
     virtual void draw(const DrawCallDescriptor& descriptor) = 0;
 
+    virtual uint32_t get_attachment_width() const = 0;
+    virtual uint32_t get_attachment_height() const = 0;
+
     // Attachment index may be different than 0 for render passes with attachments that have count greater than 1.
     virtual uint32_t get_attachemnt_index() const = 0;
 };
@@ -67,6 +70,10 @@ public:
 
     // This method must be overridden by the user.
     virtual void render(RenderPassContext& context) = 0;
+
+    // This method may be overridden by the user, called instead of `render` when window is minimized.
+    virtual void skip() {
+    }
 };
 
 enum class Semantic {

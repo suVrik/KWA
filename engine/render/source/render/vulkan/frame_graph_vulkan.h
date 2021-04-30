@@ -240,10 +240,13 @@ private:
     class RenderPassContextVulkan : public RenderPassContext {
     public:
         RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t swapchain_image_index,
-                                VkCommandBuffer command_buffer, uint32_t render_pass_index, uint32_t attachment_index);
+                                VkCommandBuffer command_buffer, uint32_t render_pass_index,
+                                uint32_t attachment_index, uint32_t attachment_width, uint32_t attachment_height);
 
         void draw(const DrawCallDescriptor& descriptor) override;
-        
+
+        uint32_t get_attachment_width() const override;
+        uint32_t get_attachment_height() const override;
         uint32_t get_attachemnt_index() const override;
 
         // Used for synchronization of transfer and graphics queues.
@@ -257,6 +260,8 @@ private:
         VkCommandBuffer m_command_buffer;
         uint32_t m_render_pass_index;
         uint32_t m_attachment_index;
+        uint32_t m_attachment_width;
+        uint32_t m_attachment_height;
         uint32_t m_graphics_pipeline_index;
     };
 
