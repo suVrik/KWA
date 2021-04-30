@@ -1,11 +1,15 @@
 #pragma once
 
-#include <core/string.h>
+namespace kw {
 
-namespace kw::ClipboardUtils {
+class MemoryResource;
 
-String get_clipboard_text(MemoryResource& memory_resource);
+namespace ClipboardUtils {
 
-void set_clipboard_text(const String& text);
+const char* get_clipboard_text(MemoryResource& memory_resource);
 
-} // namespace kw::ClipboardUtils
+void set_clipboard_text(const char* text);
+
+} // namespace ClipboardUtils
+
+} // namespace kw
