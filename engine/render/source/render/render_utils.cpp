@@ -498,8 +498,8 @@ static AABBox swap_le(const AABBox& bounds) {
     return result;
 }
 
-static GeometyData::Vertex swap_le(const GeometyData::Vertex& vertex) {
-    GeometyData::Vertex result = vertex;
+static KwgData::Vertex swap_le(const KwgData::Vertex& vertex) {
+    KwgData::Vertex result = vertex;
     swap_le_array(result.position.data, std::size(result.position.data));
     swap_le_array(result.normal.data, std::size(result.normal.data));
     swap_le_array(result.tangent.data, std::size(result.tangent.data));
@@ -661,8 +661,8 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
     return texture_descriptor;
 }
 
-GeometyData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
-    GeometyData result{};
+KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
+    KwgData result{};
 
     Parser parser(memory_resource, relative_path);
     
@@ -680,7 +680,7 @@ GeometyData load_kwg(MemoryResource& memory_resource, const String& relative_pat
             uint32_t* vertex_count = parser.read<uint32_t>();
             KW_ERROR(vertex_count != nullptr, "Failed to read geometry vertex count from \"%s\".", relative_path.c_str());
 
-            result.vertices = parser.read<GeometyData::Vertex>(*vertex_count);
+            result.vertices = parser.read<KwgData::Vertex>(*vertex_count);
             KW_ERROR(result.vertices != nullptr, "Failed to read geometry vertices from \"%s\".", relative_path.c_str());
 
             result.vertex_count = *vertex_count;

@@ -7,7 +7,7 @@
 
 namespace kw {
 
-struct GeometyData {
+struct KwgData {
     struct Vertex {
         float3 position;
         float3 normal;
@@ -31,7 +31,7 @@ namespace RenderUtils {
 
 TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path);
 
-GeometyData load_kwg(MemoryResource& memory_resource, const String& relative_path);
+KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path);
 
 } // namespace RenderUtils
 
