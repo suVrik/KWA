@@ -303,10 +303,6 @@ typedef signed   long long  ImS64;  // 64-bit signed integer (post C++11)
 typedef unsigned long long  ImU64;  // 64-bit unsigned integer (post C++11)
 #endif
 
-#ifndef GImGui
-extern IMGUI_API ImGuiContext* GImGui;  // Current implicit context pointer
-#endif
-
 //-------------------------------------------------------------------------
 // [SECTION] STB libraries includes
 //-------------------------------------------------------------------------
@@ -1161,8 +1157,6 @@ template<typename T> void IM_DELETE(ImGui& imgui, T* p);
 // - You generally do NOT need to care or use this ever. But we need to make it available in imgui.h because some of our public structures are relying on it.
 // - We use std-like naming convention here, which is a little unusual for this codebase.
 // - Important: clear() frees memory, resize(0) keep the allocated buffer. We use resize(0) a lot to intentionally recycle allocated buffers across frames and amortize our costs.
-// - Important: our implementation does NOT call C++ constructors/destructors, we treat everything as raw data! This is intentional but be extra mindful of that,
-//   Do NOT use this class as a std::vector replacement in your own code! Many of the structures used by dear imgui can be safely initialized by a zero-memset.
 //-----------------------------------------------------------------------------
 
 template<typename T>
@@ -1180,6 +1174,7 @@ struct ImVector
     typedef const value_type*   const_iterator;
 
     // Constructors, destructor
+
     inline ImVector(ImGui& imgui_)
         : imgui(imgui_)
     {
@@ -1187,49 +1182,184 @@ struct ImVector
         Data = NULL;
     }
 
-    inline ImVector(const ImVector<T>& src)                 { Size = Capacity = 0; Data = NULL; operator=(src); }
-    inline ImVector<T>& operator=(const ImVector<T>& src)   { clear(); resize(src.Size); memcpy(Data, src.Data, (size_t)Size * sizeof(T)); return *this; }
+    inline ImVector(const ImVector<T>& src)
+        : imgui(src.imgui)
+    {
+        Size = Capacity = 0;
+        Data = NULL;
+        operator=(src);
+    }
+
+    inline ImVector<T>& operator=(const ImVector<T>& src) {
+        clear();
+
+        if (src.Size > Capacity) {
+            reserve(_grow_capacity(src.Size));
+        }
+
+        Size = src.Size;
+
+        for (int n = 0; n < Size; n++) {
+            IM_PLACEMENT_NEW(&Data[n]) T(src.Data[n]);
+        }
+
+        return *this;
+    }
+
     ~ImVector();
 
-    inline bool         empty() const                       { return Size == 0; }
-    inline int          size() const                        { return Size; }
-    inline int          size_in_bytes() const               { return Size * (int)sizeof(T); }
-    inline int          max_size() const                    { return 0x7FFFFFFF / (int)sizeof(T); }
-    inline int          capacity() const                    { return Capacity; }
-    inline T&           operator[](int i)                   { IM_ASSERT(i >= 0 && i < Size); return Data[i]; }
-    inline const T&     operator[](int i) const             { IM_ASSERT(i >= 0 && i < Size); return Data[i]; }
+    inline bool     empty() const                { return Size == 0; }
+    inline int      size() const                 { return Size; }
+    inline int      size_in_bytes() const        { return Size * (int)sizeof(T); }
+    inline int      max_size() const             { return 0x7FFFFFFF / (int)sizeof(T); }
+    inline int      capacity() const             { return Capacity; }
+    inline T&       operator[](int i)            { IM_ASSERT(i >= 0 && i < Size); return Data[i]; }
+    inline const T& operator[](int i) const      { IM_ASSERT(i >= 0 && i < Size); return Data[i]; }
 
-    void                clear();
-    inline T*           begin()                             { return Data; }
-    inline const T*     begin() const                       { return Data; }
-    inline T*           end()                               { return Data + Size; }
-    inline const T*     end() const                         { return Data + Size; }
-    inline T&           front()                             { IM_ASSERT(Size > 0); return Data[0]; }
-    inline const T&     front() const                       { IM_ASSERT(Size > 0); return Data[0]; }
-    inline T&           back()                              { IM_ASSERT(Size > 0); return Data[Size - 1]; }
-    inline const T&     back() const                        { IM_ASSERT(Size > 0); return Data[Size - 1]; }
-    inline void         swap(ImVector<T>& rhs)              { int rhs_size = rhs.Size; rhs.Size = Size; Size = rhs_size; int rhs_cap = rhs.Capacity; rhs.Capacity = Capacity; Capacity = rhs_cap; T* rhs_data = rhs.Data; rhs.Data = Data; Data = rhs_data; }
+    void            clear();
+    inline T*       begin()                      { return Data; }
+    inline const T* begin() const                { return Data; }
+    inline T*       end()                        { return Data + Size; }
+    inline const T* end() const                  { return Data + Size; }
+    inline T&       front()                      { IM_ASSERT(Size > 0); return Data[0]; }
+    inline const T& front() const                { IM_ASSERT(Size > 0); return Data[0]; }
+    inline T&       back()                       { IM_ASSERT(Size > 0); return Data[Size - 1]; }
+    inline const T& back() const                 { IM_ASSERT(Size > 0); return Data[Size - 1]; }
+    inline void     swap(ImVector<T>& rhs)       { int rhs_size = rhs.Size; rhs.Size = Size; Size = rhs_size; int rhs_cap = rhs.Capacity; rhs.Capacity = Capacity; Capacity = rhs_cap; T* rhs_data = rhs.Data; rhs.Data = Data; Data = rhs_data; }
 
-    inline int          _grow_capacity(int sz) const        { int new_capacity = Capacity ? (Capacity + Capacity / 2) : 8; return new_capacity > sz ? new_capacity : sz; }
-    inline void         resize(int new_size)                { if (new_size > Capacity) reserve(_grow_capacity(new_size)); Size = new_size; }
-    inline void         resize(int new_size, const T& v)    { if (new_size > Capacity) reserve(_grow_capacity(new_size)); if (new_size > Size) for (int n = Size; n < new_size; n++) memcpy(&Data[n], &v, sizeof(v)); Size = new_size; }
-    inline void         shrink(int new_size)                { IM_ASSERT(new_size <= Size); Size = new_size; } // Resize a vector to a smaller size, guaranteed not to cause a reallocation
-    void                reserve(int new_capacity);
+    inline int      _grow_capacity(int sz) const { int new_capacity = Capacity ? (Capacity + Capacity / 2) : 8; return new_capacity > sz ? new_capacity : sz; }
+    
+    inline void resize(int new_size) {
+        if (new_size > Capacity) {
+            reserve(_grow_capacity(new_size));
+        }
+
+        if (new_size > Size) {
+            for (int n = Size; n < new_size; n++) {
+                IM_PLACEMENT_NEW(&Data[n]) T;
+            }
+        } else {
+            for (int n = new_size; n < Size; n++) {
+                Data[n].~T();
+            }
+        }
+
+        Size = new_size;
+    }
+    
+    inline void resize(int new_size, const T& v) {
+        if (new_size > Capacity) {
+            reserve(_grow_capacity(new_size));
+        }
+
+        if (new_size > Size) {
+            for (int n = Size; n < new_size; n++) {
+                IM_PLACEMENT_NEW(&Data[n]) T(v);
+            }
+        } else {
+            for (int n = new_size; n < Size; n++) {
+                Data[n].~T();
+            }
+        }
+        
+        Size = new_size;
+    }
+    
+    // Resize a vector to a smaller size, guaranteed not to cause a reallocation
+    inline void shrink(int new_size) {
+        IM_ASSERT(new_size <= Size);
+        for (int i = new_size; i < Size; i++) {
+            Data[i].~T();
+        }
+        Size = new_size;
+    }
+
+    void reserve(int new_capacity);
 
     // NB: It is illegal to call push_back/push_front/insert with a reference pointing inside the ImVector data itself! e.g. v.push_back(v[10]) is forbidden.
-    inline void         push_back(const T& v)               { if (Size == Capacity) reserve(_grow_capacity(Size + 1)); memcpy(&Data[Size], &v, sizeof(v)); Size++; }
-    inline void         pop_back()                          { IM_ASSERT(Size > 0); Size--; }
-    inline void         push_front(const T& v)              { if (Size == 0) push_back(v); else insert(Data, v); }
-    inline T*           erase(const T* it)                  { IM_ASSERT(it >= Data && it < Data + Size); const ptrdiff_t off = it - Data; memmove(Data + off, Data + off + 1, ((size_t)Size - (size_t)off - 1) * sizeof(T)); Size--; return Data + off; }
-    inline T*           erase(const T* it, const T* it_last){ IM_ASSERT(it >= Data && it < Data + Size && it_last > it && it_last <= Data + Size); const ptrdiff_t count = it_last - it; const ptrdiff_t off = it - Data; memmove(Data + off, Data + off + count, ((size_t)Size - (size_t)off - count) * sizeof(T)); Size -= (int)count; return Data + off; }
-    inline T*           erase_unsorted(const T* it)         { IM_ASSERT(it >= Data && it < Data + Size);  const ptrdiff_t off = it - Data; if (it < Data + Size - 1) memcpy(Data + off, Data + Size - 1, sizeof(T)); Size--; return Data + off; }
-    inline T*           insert(const T* it, const T& v)     { IM_ASSERT(it >= Data && it <= Data + Size); const ptrdiff_t off = it - Data; if (Size == Capacity) reserve(_grow_capacity(Size + 1)); if (off < (int)Size) memmove(Data + off + 1, Data + off, ((size_t)Size - (size_t)off) * sizeof(T)); memcpy(&Data[off], &v, sizeof(v)); Size++; return Data + off; }
-    inline bool         contains(const T& v) const          { const T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data++ == v) return true; return false; }
-    inline T*           find(const T& v)                    { T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data == v) break; else ++data; return data; }
-    inline const T*     find(const T& v) const              { const T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data == v) break; else ++data; return data; }
-    inline bool         find_erase(const T& v)              { const T* it = find(v); if (it < Data + Size) { erase(it); return true; } return false; }
-    inline bool         find_erase_unsorted(const T& v)     { const T* it = find(v); if (it < Data + Size) { erase_unsorted(it); return true; } return false; }
-    inline int          index_from_ptr(const T* it) const   { IM_ASSERT(it >= Data && it < Data + Size); const ptrdiff_t off = it - Data; return (int)off; }
+    inline void push_back(const T& v) {
+        if (Size == Capacity) {
+            reserve(_grow_capacity(Size + 1));
+        }
+        IM_PLACEMENT_NEW(&Data[Size]) T(v);
+        Size++;
+    }
+    
+    inline void pop_back() {
+        IM_ASSERT(Size > 0);
+        Size--;
+        Data[Size].~T();
+    }
+
+    inline void push_front(const T& v) {
+        if (Size == 0) {
+            push_back(v);
+        } else {
+            insert(Data, v);
+        }
+    }
+
+    inline T* erase(const T* it) {
+        IM_ASSERT(it >= Data && it < Data + Size);
+        const ptrdiff_t off = it - Data;
+        for (int i = off; i + 1 < Size; i++) {
+            Data[i] = Data[i + 1];
+        }
+        Size--;
+        Data[Size].~T();
+        return Data + off;
+    }
+
+    inline T* erase(const T* it, const T* it_last) {
+        IM_ASSERT(it >= Data && it < Data + Size && it_last > it && it_last <= Data + Size);
+        const ptrdiff_t count = it_last - it;
+        const ptrdiff_t off = it - Data;
+        for (int i = off, j = (int)(off + count); j < Size; i++, j++) {
+            Data[i] = Data[j];
+        }
+        for (int i = Size - (int)count; i < Size; i++) {
+            Data[i].~T();
+        }
+        Size -= (int)count;
+        return Data + off;
+    }
+
+    inline T* erase_unsorted(const T* it) {
+        IM_ASSERT(it >= Data && it < Data + Size);
+        const ptrdiff_t off = it - Data;
+        if (it < Data + Size - 1) {
+            Data[off] = Data[Size - 1];
+        }
+        Size--;
+        Data[Size].~T();
+        return Data + off;
+    }
+
+    inline T* insert(const T* it, const T& v) {
+        IM_ASSERT(it >= Data && it <= Data + Size);
+        const ptrdiff_t off = it - Data;
+        if (Size == Capacity) {
+            reserve(_grow_capacity(Size + 1));
+        }
+        if (off < (int)Size) {
+            IM_PLACEMENT_NEW(&Data[Size]) T(Data[Size - 1]);
+            for (int i = Size - 1; i > off; i--) {
+                Data[i] = Data[i - 1];
+            }
+            Data[off] = v;
+        } else {
+            IM_PLACEMENT_NEW(&Data[off]) T(v);
+        }
+        Size++;
+        return Data + off;
+    }
+    
+    inline bool     contains(const T& v) const        { const T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data++ == v) return true; return false; }
+    inline T*       find(const T& v)                  { T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data == v) break; else ++data; return data; }
+    inline const T* find(const T& v) const            { const T* data = Data;  const T* data_end = Data + Size; while (data < data_end) if (*data == v) break; else ++data; return data; }
+    inline bool     find_erase(const T& v)            { const T* it = find(v); if (it < Data + Size) { erase(it); return true; } return false; }
+    inline bool     find_erase_unsorted(const T& v)   { const T* it = find(v); if (it < Data + Size) { erase_unsorted(it); return true; } return false; }
+    inline int      index_from_ptr(const T* it) const { IM_ASSERT(it >= Data && it < Data + Size); const ptrdiff_t off = it - Data; return (int)off; }
 };
 
 //-----------------------------------------------------------------------------
@@ -1438,6 +1568,8 @@ struct ImGuiIO
 // - ImGuiInputTextFlags_CallbackResize:      Callback on buffer capacity changes request (beyond 'buf_size' parameter value), allowing the string to grow.
 struct ImGuiInputTextCallbackData
 {
+    ImGuiContext& context;
+
     ImGuiInputTextFlags EventFlag;      // One ImGuiInputTextFlags_Callback*    // Read-only
     ImGuiInputTextFlags Flags;          // What user passed to InputText()      // Read-only
     void*               UserData;       // What user passed to InputText()      // Read-only
@@ -1457,7 +1589,7 @@ struct ImGuiInputTextCallbackData
 
     // Helper functions for text manipulation.
     // Use those function to benefit from the CallbackResize behaviors. Calling those function reset the selection.
-    IMGUI_API ImGuiInputTextCallbackData();
+    IMGUI_API ImGuiInputTextCallbackData(ImGuiContext& context_);
     IMGUI_API void      DeleteChars(int pos, int bytes_count);
     IMGUI_API void      InsertChars(int pos, const char* text, const char* text_end = NULL);
     void                SelectAll()             { SelectionStart = 0; SelectionEnd = BufTextLen; }
@@ -1703,8 +1835,14 @@ struct ImGuiListClipper
      // [removed in 1.79]
     inline ImGuiListClipper(ImGui& imgui_, int items_count, float items_height = -1.0f)
         : imgui(imgui_)
+        , DisplayStart{}
+        , DisplayEnd{}
+        , ItemsCount{}
+        , StepNo{}
+        , ItemsFrozen{}
+        , ItemsHeight{}
+        , StartPosY{}
     {
-        memset(this, 0, sizeof(*this));
         ItemsCount = -1;
         Begin(items_count, items_height);
     }
@@ -1844,9 +1982,10 @@ struct ImDrawListSplitter
     ImVector<ImDrawChannel>     _Channels;   // Draw channels (not resized down so _Count might be < Channels.Size)
 
     inline ImDrawListSplitter(ImGui& imgui_)
-        : _Channels(imgui_)
+        : _Current(0)
+        , _Count(0)
+        , _Channels(imgui_)
     {
-        memset(this, 0, sizeof(*this));
     }
 
     inline ~ImDrawListSplitter() { ClearFreeMemory(); }
@@ -1926,13 +2065,19 @@ struct ImDrawList
         , CmdBuffer(imgui_)
         , IdxBuffer(imgui_)
         , VtxBuffer(imgui_)
+        , Flags(0)
+        , _VtxCurrentIdx(0)
+        , _Data(shared_data)
+        , _OwnerName(NULL)
+        , _VtxWritePtr(NULL)
+        , _IdxWritePtr(NULL)
         , _ClipRectStack(imgui_)
         , _TextureIdStack(imgui_)
         , _Path(imgui_)
+        , _CmdHeader{}
         , _Splitter(imgui_)
+        , _FringeScale(0.f)
     {
-        memset(this, 0, sizeof(*this));
-        _Data = shared_data;
     }
 
     ~ImDrawList() { _ClearFreeMemory(); }
@@ -2057,7 +2202,18 @@ struct ImDrawData
         Clear();
     }
 
-    void Clear()    { memset(this, 0, sizeof(*this)); }     // The ImDrawList are owned by ImGuiContext!
+    // The ImDrawList are owned by ImGuiContext!
+    void Clear() {
+        Valid = false;
+        CmdListsCount = 0;
+        TotalIdxCount = 0;
+        TotalVtxCount = 0;
+        CmdLists = NULL;
+        DisplayPos = ImVec2();
+        DisplaySize = ImVec2();
+        FramebufferScale = ImVec2();
+    }
+
     IMGUI_API void  DeIndexAllBuffers();                    // Helper to convert all buffers from indexed to non-indexed, in case you cannot render indexed. Note: this is slow and most likely a waste of resources. Always prefer indexed rendering!
     IMGUI_API void  ScaleClipRects(const ImVec2& fb_scale); // Helper to scale the ClipRect field of each ImDrawCmd. Use if your final output buffer is at a different scale than Dear ImGui expects, or if there is a difference between your window resolution and framebuffer resolution.
 };
@@ -2651,6 +2807,12 @@ struct IMGUI_API ImBitArray
 struct IMGUI_API ImBitVector
 {
     ImVector<ImU32> Storage;
+
+    ImBitVector(ImGui& imgui_)
+        : Storage(imgui_)
+    {
+    }
+
     void            Create(int sz)              { Storage.resize((sz + 31) >> 5); memset(Storage.Data, 0, (size_t)Storage.Size * sizeof(Storage.Data[0])); }
     void            Clear()                     { Storage.clear(); }
     bool            TestBit(int n) const        { IM_ASSERT(n < (Storage.Size << 5)); return ImBitArrayTestBit(Storage.Data, n); }
@@ -2716,7 +2878,12 @@ typedef int ImPoolIdx;
 template<typename T>
 struct IMGUI_API ImPool
 {
-    ImVector<T>     Buf;        // Contiguous data
+    // We don't want ImVector to call constructors and destructors for us.
+    struct Dummy {
+        char data[sizeof(T)];
+    };
+
+    ImVector<Dummy> Buf;        // Contiguous data
     ImGuiStorage    Map;        // ID->Index
     ImPoolIdx       FreeIdx;    // Next free idx to use
 
@@ -2728,21 +2895,21 @@ struct IMGUI_API ImPool
     }
 
     ~ImPool()   { Clear(); }
-    T*          GetByKey(ImGuiID key)               { int idx = Map.GetInt(key, -1); return (idx != -1) ? &Buf[idx] : NULL; }
-    T*          GetByIndex(ImPoolIdx n)             { return &Buf[n]; }
-    ImPoolIdx   GetIndex(const T* p) const          { IM_ASSERT(p >= Buf.Data && p < Buf.Data + Buf.Size); return (ImPoolIdx)(p - Buf.Data); }
+    T*          GetByKey(ImGuiID key)               { int idx = Map.GetInt(key, -1); return (idx != -1) ? (T*)&Buf[idx] : NULL; }
+    T*          GetByIndex(ImPoolIdx n)             { return (T*)&Buf[n]; }
+    ImPoolIdx   GetIndex(const T* p) const          { IM_ASSERT(p >= (T*)Buf.Data && p < (T*)Buf.Data + Buf.Size); return (ImPoolIdx)(p - (T*)Buf.Data); }
     
     template <typename... Args>
-    T*          GetOrAddByKey(ImGuiID key, Args&&... args)          { int* p_idx = Map.GetIntRef(key, -1); if (*p_idx != -1) return &Buf[*p_idx]; *p_idx = FreeIdx; return Add(std::forward<Args>(args)...); }
+    T*          GetOrAddByKey(ImGuiID key, Args&&... args)          { int* p_idx = Map.GetIntRef(key, -1); if (*p_idx != -1) return (T*)&Buf[*p_idx]; *p_idx = FreeIdx; return Add(std::forward<Args>(args)...); }
 
-    bool        Contains(const T* p) const          { return (p >= Buf.Data && p < Buf.Data + Buf.Size); }
-    void        Clear()                             { for (int n = 0; n < Map.Data.Size; n++) { int idx = Map.Data[n].val_i; if (idx != -1) Buf[idx].~T(); } Map.Clear(); Buf.clear(); FreeIdx = 0; }
+    bool        Contains(const T* p) const          { return (p >= (T*)Buf.Data && p < (T*)Buf.Data + Buf.Size); }
+    void        Clear()                             { for (int n = 0; n < Map.Data.Size; n++) { int idx = Map.Data[n].val_i; if (idx != -1) ((T*)&Buf[idx])->~T(); } Map.Clear(); Buf.clear(); FreeIdx = 0; }
     
     template <typename... Args>
-    T*          Add(Args&&... args)                 { int idx = FreeIdx; if (idx == Buf.Size) { Buf.resize(Buf.Size + 1); FreeIdx++; } else { FreeIdx = *(int*)&Buf[idx]; } IM_PLACEMENT_NEW(&Buf[idx]) T(std::forward<Args>(args)...); return &Buf[idx]; }
+    T*          Add(Args&&... args)                 { int idx = FreeIdx; if (idx == Buf.Size) { Buf.resize(Buf.Size + 1); FreeIdx++; } else { FreeIdx = *(int*)&Buf[idx]; } IM_PLACEMENT_NEW(&Buf[idx]) T(std::forward<Args>(args)...); return (T*)&Buf[idx]; }
 
     void        Remove(ImGuiID key, const T* p)     { Remove(key, GetIndex(p)); }
-    void        Remove(ImGuiID key, ImPoolIdx idx)  { Buf[idx].~T(); *(int*)&Buf[idx] = FreeIdx; FreeIdx = idx; Map.SetInt(key, -1); }
+    void        Remove(ImGuiID key, ImPoolIdx idx)  { ((T*)&Buf[idx])->~T(); *(int*)&Buf[idx] = FreeIdx; FreeIdx = idx; Map.SetInt(key, -1); }
     void        Reserve(int capacity)               { Buf.reserve(capacity); Map.Data.reserve(capacity); }
     int         GetSize() const                     { return Buf.Size; }
 };
@@ -3149,14 +3316,28 @@ struct IMGUI_API ImGuiInputTextState
         : TextW(imgui_)
         , TextA(imgui_)
         , InitialTextA(imgui_)
+        , Stb{}
     {
-        memset(this, 0, sizeof(*this));
+        ID = 0;
+        CurLenW = 0;
+        CurLenA = 0;
+        TextAIsValid = false;
+        BufCapacityA = 0;
+        ScrollX = 0.f;
+        CursorAnim = 0.f;
+        CursorFollow = false;
+        SelectedAllMouseLock = false;
+        Edited = false;
+        UserFlags = 0;
+        UserCallback = NULL;
+        UserCallbackData = NULL;
     }
+
     void        ClearText()                 { CurLenW = CurLenA = 0; TextW[0] = 0; TextA[0] = 0; CursorClamp(); }
     void        ClearFreeMemory()           { TextW.clear(); TextA.clear(); InitialTextA.clear(); }
     int         GetUndoAvailCount() const   { return Stb.undostate.undo_point; }
     int         GetRedoAvailCount() const   { return STB_TEXTEDIT_UNDOSTATECOUNT - Stb.undostate.redo_point; }
-    void        OnKeyPressed(int key);      // Cannot be inline because we call in code in stb_textedit.h implementation
+    void        OnKeyPressed(ImGuiContext& g, int key); // Cannot be inline because we call in code in stb_textedit.h implementation
 
     // Cursor & Selection
     void        CursorAnimReset()           { CursorAnim = -0.30f; }                                   // After a user-input the cursor stays on for a while without blinking
@@ -3318,10 +3499,24 @@ struct ImGuiOldColumns
     ImDrawListSplitter  Splitter;
 
     ImGuiOldColumns(ImGui& imgui_)
-        : Columns(imgui_)
+        : ID(0)
+        , Flags(0)
+        , IsFirstFrame(false)
+        , IsBeingResized(false)
+        , Current(0)
+        , Count(0)
+        , OffMinX(0.f)
+        , OffMaxX(0.f)
+        , LineMinY(0.f)
+        , LineMaxY(0.f)
+        , HostCursorPosY(0.f)
+        , HostCursorMaxPosX(0.f)
+        , HostInitialClipRect{}
+        , HostBackupClipRect{}
+        , HostBackupParentWorkRect{}
+        , Columns(imgui_)
         , Splitter(imgui_)
     {
-        memset(this, 0, sizeof(*this));
     }
 };
 
@@ -3438,6 +3633,8 @@ struct ImGuiMetricsConfig
 
 struct IMGUI_API ImGuiStackSizes
 {
+    ImGui& imgui;
+
     short   SizeOfIDStack;
     short   SizeOfColorStack;
     short   SizeOfStyleVarStack;
@@ -3446,7 +3643,18 @@ struct IMGUI_API ImGuiStackSizes
     short   SizeOfGroupStack;
     short   SizeOfBeginPopupStack;
 
-    ImGuiStackSizes() { memset(this, 0, sizeof(*this)); }
+    ImGuiStackSizes(ImGui& imgui_)
+        : imgui(imgui_)
+        , SizeOfIDStack(0)
+        , SizeOfColorStack(0)
+        , SizeOfStyleVarStack(0)
+        , SizeOfFontStack(0)
+        , SizeOfFocusScopeStack(0)
+        , SizeOfGroupStack(0)
+        , SizeOfBeginPopupStack(0)
+    {
+    }
+
     void SetToCurrentState();
     void CompareWithCurrentState();
 };
@@ -3891,24 +4099,31 @@ public:
 
     // We don't use g.FontSize because the window may be != g.CurrentWidow.
     ImRect      Rect() const            { return ImRect(Pos.x, Pos.y, Pos.x + Size.x, Pos.y + Size.y); }
-    float       CalcFontSize() const    { ImGuiContext& g = *GImGui; float scale = g.FontBaseSize * FontWindowScale; if (ParentWindow) scale *= ParentWindow->FontWindowScale; return scale; }
-    float       TitleBarHeight() const  { ImGuiContext& g = *GImGui; return (Flags & ImGuiWindowFlags_NoTitleBar) ? 0.0f : CalcFontSize() + g.Style.FramePadding.y * 2.0f; }
+    float       CalcFontSize() const;
+    float       TitleBarHeight() const;
     ImRect      TitleBarRect() const    { return ImRect(Pos, ImVec2(Pos.x + SizeFull.x, Pos.y + TitleBarHeight())); }
-    float       MenuBarHeight() const   { ImGuiContext& g = *GImGui; return (Flags & ImGuiWindowFlags_MenuBar) ? DC.MenuBarOffset.y + CalcFontSize() + g.Style.FramePadding.y * 2.0f : 0.0f; }
+    float       MenuBarHeight() const;
     ImRect      MenuBarRect() const     { float y1 = Pos.y + TitleBarHeight(); return ImRect(Pos.x, y1, Pos.x + SizeFull.x, y1 + MenuBarHeight()); }
 };
 
 // Backup and restore just enough data to be able to use IsItemHovered() on item A after another B in the same window has overwritten the data.
 struct ImGuiLastItemDataBackup
 {
+    ImGui& imgui;
+
     ImGuiID                 LastItemId;
     ImGuiItemStatusFlags    LastItemStatusFlags;
     ImRect                  LastItemRect;
     ImRect                  LastItemDisplayRect;
 
-    ImGuiLastItemDataBackup() { Backup(); }
-    void Backup()           { ImGuiWindow* window = GImGui->CurrentWindow; LastItemId = window->DC.LastItemId; LastItemStatusFlags = window->DC.LastItemStatusFlags; LastItemRect = window->DC.LastItemRect; LastItemDisplayRect = window->DC.LastItemDisplayRect; }
-    void Restore() const    { ImGuiWindow* window = GImGui->CurrentWindow; window->DC.LastItemId = LastItemId; window->DC.LastItemStatusFlags = LastItemStatusFlags; window->DC.LastItemRect = LastItemRect; window->DC.LastItemDisplayRect = LastItemDisplayRect; }
+    ImGuiLastItemDataBackup(ImGui& imgui_)
+        : imgui(imgui_)
+    {
+        Backup();
+    }
+
+    void Backup();
+    void Restore() const;
 };
 
 //-----------------------------------------------------------------------------
@@ -4193,11 +4408,118 @@ struct ImGuiTable
 
     IMGUI_API ImGuiTable(ImGui& imgui_)
         : imgui(imgui_)
+        , ID(0)
+        , Flags(0)
+        , RawData(NULL)
+        , Columns{}
+        , DisplayOrderToIndex{}
+        , RowCellData{}
+        , EnabledMaskByDisplayOrder(0)
+        , EnabledMaskByIndex(0)
+        , VisibleMaskByIndex(0)
+        , RequestOutputMaskByIndex(0)
+        , SettingsLoadedFlags(0)
+        , SettingsOffset(0)
+        , LastFrameActive(0)
+        , ColumnsCount(0)
+        , CurrentRow(0)
+        , CurrentColumn(0)
+        , InstanceCurrent(0)
+        , InstanceInteracted(0)
+        , RowPosY1(0)
+        , RowPosY2(0)
+        , RowMinHeight(0)
+        , RowTextBaseline(0)
+        , RowIndentOffsetX(0)
+        , RowFlags(0)
+        , LastRowFlags(0)
+        , RowBgColorCounter(0)
+        , RowBgColor{ 0, 0 }
+        , BorderColorStrong(0)
+        , BorderColorLight(0)
+        , BorderX1(0)
+        , BorderX2(0)
+        , HostIndentX(0)
+        , MinColumnWidth(0)
+        , OuterPaddingX(0)
+        , CellPaddingX(0)
+        , CellPaddingY(0)
+        , CellSpacingX1(0)
+        , CellSpacingX2(0)
+        , LastOuterHeight(0)
+        , LastFirstRowHeight(0)
+        , InnerWidth(0)
+        , ColumnsGivenWidth(0)
+        , ColumnsAutoFitWidth(0)
+        , ResizedColumnNextWidth(0)
+        , ResizeLockMinContentsX2(0)
+        , RefScale(0)
+        , OuterRect{}
+        , InnerRect{}
+        , WorkRect{}
+        , InnerClipRect{}
+        , BgClipRect{}
+        , Bg0ClipRectForDrawCmd{}
+        , Bg2ClipRectForDrawCmd{}
+        , HostClipRect{}
+        , HostBackupWorkRect{}
+        , HostBackupParentWorkRect{}
+        , HostBackupInnerClipRect{}
+        , HostBackupPrevLineSize{}
+        , HostBackupCurrLineSize{}
+        , HostBackupCursorMaxPos{}
+        , UserOuterSize{}
+        , HostBackupColumnsOffset(0)
+        , HostBackupItemWidth(0)
+        , HostBackupItemWidthStackSize(0)
+        , OuterWindow(NULL)
+        , InnerWindow(NULL)
         , ColumnsNames(imgui_)
         , DrawSplitter(imgui_)
+        , SortSpecsSingle{}
         , SortSpecsMulti(imgui_)
+        , SortSpecs{}
+        , SortSpecsCount(0)
+        , ColumnsEnabledCount(0)
+        , ColumnsEnabledFixedCount(0)
+        , DeclColumnsCount(0)
+        , HoveredColumnBody(0)
+        , HoveredColumnBorder(0)
+        , AutoFitSingleColumn(0)
+        , ResizedColumn(0)
+        , LastResizedColumn(0)
+        , HeldHeaderColumn(0)
+        , ReorderColumn(0)
+        , ReorderColumnDir(0)
+        , LeftMostEnabledColumn(0)
+        , RightMostEnabledColumn(0)
+        , LeftMostStretchedColumn(0)
+        , RightMostStretchedColumn(0)
+        , ContextPopupColumn(0)
+        , FreezeRowsRequest(0)
+        , FreezeRowsCount(0)
+        , FreezeColumnsRequest(0)
+        , FreezeColumnsCount(0)
+        , RowCellDataCurrent(0)
+        , DummyDrawChannel(0)
+        , Bg2DrawChannelCurrent(0)
+        , Bg2DrawChannelUnfrozen(0)
+        , IsLayoutLocked(false)
+        , IsInsideRow(false)
+        , IsInitializing(false)
+        , IsSortSpecsDirty(false)
+        , IsUsingHeaders(false)
+        , IsContextPopupOpen(false)
+        , IsSettingsRequestLoad(false)
+        , IsSettingsDirty(false)
+        , IsDefaultDisplayOrder(false)
+        , IsResetAllRequest(false)
+        , IsResetDisplayOrderRequest(false)
+        , IsUnfrozenRows(false)
+        , IsDefaultSizingPolicy(false)
+        , MemoryCompacted(false)
+        , HostSkipItems(false)
     {
-        memset(this, 0, sizeof(*this));
         LastFrameActive = -1;
     }
 
@@ -4251,14 +4573,8 @@ struct ImGuiTableSettings
 
 struct ImGui
 {
-    // Context creation and access
-    // - Each context create its own ImFontAtlas by default. You may instance one yourself and pass it to CreateContext() to share a font atlas between contexts.
-    // - DLL users: heaps and globals are not shared across DLL boundaries! You will need to call SetCurrentContext() + SetAllocatorFunctions()
-    //   for each static/DLL boundary you are calling from. Read "Context and Memory Allocators" section of imgui.cpp for details.
-    IMGUI_API ImGuiContext* CreateContext(ImFontAtlas* shared_font_atlas = NULL);
-    IMGUI_API void          DestroyContext(ImGuiContext* ctx = NULL);   // NULL = destroy current context
-    IMGUI_API ImGuiContext* GetCurrentContext();
-    IMGUI_API void          SetCurrentContext(ImGuiContext* ctx);
+    ImGui(ImFontAtlas* shared_font_atlas = NULL);
+    ~ImGui();
 
     // Main
     IMGUI_API ImGuiIO&      GetIO();                                    // access the IO structure (mouse/keyboard/gamepad inputs, time, various configuration options/flags)
@@ -4979,8 +5295,8 @@ struct ImGui
     // If this ever crash because g.CurrentWindow is NULL it means that either
     // - ImGui::NewFrame() has never been called, which is illegal.
     // - You are calling ImGui functions after ImGui::EndFrame()/ImGui::Render() and before the next ImGui::NewFrame(), which is also illegal.
-    inline    ImGuiWindow*  GetCurrentWindowRead()      { ImGuiContext& g = *GImGui; return g.CurrentWindow; }
-    inline    ImGuiWindow*  GetCurrentWindow()          { ImGuiContext& g = *GImGui; g.CurrentWindow->WriteAccessed = true; return g.CurrentWindow; }
+    inline    ImGuiWindow*  GetCurrentWindowRead()      { ImGuiContext& g = GImGui; return g.CurrentWindow; }
+    inline    ImGuiWindow*  GetCurrentWindow()          { ImGuiContext& g = GImGui; g.CurrentWindow->WriteAccessed = true; return g.CurrentWindow; }
     IMGUI_API ImGuiWindow*  FindWindowByID(ImGuiID id);
     IMGUI_API ImGuiWindow*  FindWindowByName(const char* name);
     IMGUI_API void          UpdateWindowParentAndRootLinks(ImGuiWindow* window, ImGuiWindowFlags flags, ImGuiWindow* parent_window);
@@ -5003,14 +5319,10 @@ struct ImGui
 
     // Fonts, drawing
     IMGUI_API void          SetCurrentFont(ImFont* font);
-    inline ImFont*          GetDefaultFont() { ImGuiContext& g = *GImGui; return g.IO.FontDefault ? g.IO.FontDefault : g.IO.Fonts->Fonts[0]; }
+    inline ImFont*          GetDefaultFont() { ImGuiContext& g = GImGui; return g.IO.FontDefault ? g.IO.FontDefault : g.IO.Fonts->Fonts[0]; }
     inline ImDrawList*      GetForegroundDrawList(ImGuiWindow* window) { IM_UNUSED(window); return GetForegroundDrawList(); } // This seemingly unnecessary wrapper simplifies compatibility between the 'master' and 'docking' branches.
     IMGUI_API ImDrawList*   GetBackgroundDrawList(ImGuiViewport* viewport);                     // get background draw list for the given viewport. this draw list will be the first rendering one. Useful to quickly draw shapes/text behind dear imgui contents.
     IMGUI_API ImDrawList*   GetForegroundDrawList(ImGuiViewport* viewport);                     // get foreground draw list for the given viewport. this draw list will be the last rendered one. Useful to quickly draw shapes/text over dear imgui contents.
-
-    // Init
-    IMGUI_API void          Initialize(ImGuiContext* context);
-    IMGUI_API void          Shutdown(ImGuiContext* context);    // Since 1.60 this is a _private_ function. You can call DestroyContext() to destroy the context created by CreateContext().
 
     // NewFrame
     IMGUI_API void          UpdateHoveredWindowAndCaptureFlags();
@@ -5041,11 +5353,11 @@ struct ImGui
     IMGUI_API ImVec2        ScrollToBringRectIntoView(ImGuiWindow* window, const ImRect& item_rect);
 
     // Basic Accessors
-    inline ImGuiID          GetItemID()     { ImGuiContext& g = *GImGui; return g.CurrentWindow->DC.LastItemId; }   // Get ID of last item (~~ often same ImGui::GetID(label) beforehand)
-    inline ImGuiItemStatusFlags GetItemStatusFlags() { ImGuiContext& g = *GImGui; return g.CurrentWindow->DC.LastItemStatusFlags; }
-    inline ImGuiID          GetActiveID()   { ImGuiContext& g = *GImGui; return g.ActiveId; }
-    inline ImGuiID          GetFocusID()    { ImGuiContext& g = *GImGui; return g.NavId; }
-    inline ImGuiItemFlags   GetItemsFlags() { ImGuiContext& g = *GImGui; return g.CurrentWindow->DC.ItemFlags; }
+    inline ImGuiID          GetItemID()     { ImGuiContext& g = GImGui; return g.CurrentWindow->DC.LastItemId; }   // Get ID of last item (~~ often same ImGui::GetID(label) beforehand)
+    inline ImGuiItemStatusFlags GetItemStatusFlags() { ImGuiContext& g = GImGui; return g.CurrentWindow->DC.LastItemStatusFlags; }
+    inline ImGuiID          GetActiveID()   { ImGuiContext& g = GImGui; return g.ActiveId; }
+    inline ImGuiID          GetFocusID()    { ImGuiContext& g = GImGui; return g.NavId; }
+    inline ImGuiItemFlags   GetItemsFlags() { ImGuiContext& g = GImGui; return g.CurrentWindow->DC.ItemFlags; }
     IMGUI_API void          SetActiveID(ImGuiID id, ImGuiWindow* window);
     IMGUI_API void          SetFocusID(ImGuiID id, ImGuiWindow* window);
     IMGUI_API void          ClearActiveID();
@@ -5109,18 +5421,18 @@ struct ImGui
     // patterns generally need to react (e.g. clear selection) when landing on an item of the set.
     IMGUI_API void          PushFocusScope(ImGuiID id);
     IMGUI_API void          PopFocusScope();
-    inline ImGuiID          GetFocusedFocusScope()          { ImGuiContext& g = *GImGui; return g.NavFocusScopeId; }                            // Focus scope which is actually active
-    inline ImGuiID          GetFocusScope()                 { ImGuiContext& g = *GImGui; return g.CurrentWindow->DC.NavFocusScopeIdCurrent; }   // Focus scope we are outputting into, set by PushFocusScope()
+    inline ImGuiID          GetFocusedFocusScope()          { ImGuiContext& g = GImGui; return g.NavFocusScopeId; }                            // Focus scope which is actually active
+    inline ImGuiID          GetFocusScope()                 { ImGuiContext& g = GImGui; return g.CurrentWindow->DC.NavFocusScopeIdCurrent; }   // Focus scope we are outputting into, set by PushFocusScope()
 
     // Inputs
     // FIXME: Eventually we should aim to move e.g. IsActiveIdUsingKey() into IsKeyXXX functions.
     IMGUI_API void          SetItemUsingMouseWheel();
-    inline bool             IsActiveIdUsingNavDir(ImGuiDir dir)                         { ImGuiContext& g = *GImGui; return (g.ActiveIdUsingNavDirMask & (1 << dir)) != 0; }
-    inline bool             IsActiveIdUsingNavInput(ImGuiNavInput input)                { ImGuiContext& g = *GImGui; return (g.ActiveIdUsingNavInputMask & (1 << input)) != 0; }
-    inline bool             IsActiveIdUsingKey(ImGuiKey key)                            { ImGuiContext& g = *GImGui; IM_ASSERT(key < 64); return (g.ActiveIdUsingKeyInputMask & ((ImU64)1 << key)) != 0; }
+    inline bool             IsActiveIdUsingNavDir(ImGuiDir dir)                         { ImGuiContext& g = GImGui; return (g.ActiveIdUsingNavDirMask & (1 << dir)) != 0; }
+    inline bool             IsActiveIdUsingNavInput(ImGuiNavInput input)                { ImGuiContext& g = GImGui; return (g.ActiveIdUsingNavInputMask & (1 << input)) != 0; }
+    inline bool             IsActiveIdUsingKey(ImGuiKey key)                            { ImGuiContext& g = GImGui; IM_ASSERT(key < 64); return (g.ActiveIdUsingKeyInputMask & ((ImU64)1 << key)) != 0; }
     IMGUI_API bool          IsMouseDragPastThreshold(ImGuiMouseButton button, float lock_threshold = -1.0f);
-    inline bool             IsKeyPressedMap(ImGuiKey key, bool repeat = true)           { ImGuiContext& g = *GImGui; const int key_index = g.IO.KeyMap[key]; return (key_index >= 0) ? IsKeyPressed(key_index, repeat) : false; }
-    inline bool             IsNavInputDown(ImGuiNavInput n)                             { ImGuiContext& g = *GImGui; return g.IO.NavInputs[n] > 0.0f; }
+    inline bool             IsKeyPressedMap(ImGuiKey key, bool repeat = true)           { ImGuiContext& g = GImGui; const int key_index = g.IO.KeyMap[key]; return (key_index >= 0) ? IsKeyPressed(key_index, repeat) : false; }
+    inline bool             IsNavInputDown(ImGuiNavInput n)                             { ImGuiContext& g = GImGui; return g.IO.NavInputs[n] > 0.0f; }
     inline bool             IsNavInputTest(ImGuiNavInput n, ImGuiInputReadMode rm)      { return (GetNavInputAmount(n, rm) > 0.0f); }
     IMGUI_API ImGuiKeyModFlags GetMergedKeyModFlags();
 
@@ -5152,7 +5464,7 @@ struct ImGui
     IMGUI_API void          TablePopBackgroundChannel();
 
     // Tables: Internals
-    inline    ImGuiTable*   GetCurrentTable() { ImGuiContext& g = *GImGui; return g.CurrentTable; }
+    inline    ImGuiTable*   GetCurrentTable() { ImGuiContext& g = GImGui; return g.CurrentTable; }
     IMGUI_API ImGuiTable*   TableFindByID(ImGuiID id);
     IMGUI_API bool          BeginTableEx(const char* name, ImGuiID id, int columns_count, ImGuiTableFlags flags = 0, const ImVec2& outer_size = ImVec2(0, 0), float inner_width = 0.0f);
     IMGUI_API void          TableBeginInitMemory(ImGuiTable* table, int columns_count);
@@ -5280,8 +5592,8 @@ struct ImGui
     IMGUI_API bool          InputTextEx(const char* label, const char* hint, char* buf, int buf_size, const ImVec2& size_arg, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback = NULL, void* user_data = NULL);
     IMGUI_API bool          TempInputText(const ImRect& bb, ImGuiID id, const char* label, char* buf, int buf_size, ImGuiInputTextFlags flags);
     IMGUI_API bool          TempInputScalar(const ImRect& bb, ImGuiID id, const char* label, ImGuiDataType data_type, void* p_data, const char* format, const void* p_clamp_min = NULL, const void* p_clamp_max = NULL);
-    inline bool             TempInputIsActive(ImGuiID id)       { ImGuiContext& g = *GImGui; return (g.ActiveId == id && g.TempInputId == id); }
-    inline ImGuiInputTextState* GetInputTextState(ImGuiID id)   { ImGuiContext& g = *GImGui; return (g.InputTextState.ID == id) ? &g.InputTextState : NULL; } // Get input text state if active
+    inline bool             TempInputIsActive(ImGuiID id)       { ImGuiContext& g = GImGui; return (g.ActiveId == id && g.TempInputId == id); }
+    inline ImGuiInputTextState* GetInputTextState(ImGuiID id)   { ImGuiContext& g = GImGui; return (g.InputTextState.ID == id) ? &g.InputTextState : NULL; } // Get input text state if active
 
     // Color
     IMGUI_API void          ColorTooltip(const char* text, const float* col, ImGuiColorEditFlags flags);
@@ -5302,8 +5614,8 @@ struct ImGui
 
     // Debug Tools
     IMGUI_API void          ErrorCheckEndFrameRecover(ImGuiErrorLogCallback log_callback, void* user_data = NULL);
-    inline void             DebugDrawItemRect(ImU32 col = IM_COL32(255,0,0,255))    { ImGuiContext& g = *GImGui; ImGuiWindow* window = g.CurrentWindow; GetForegroundDrawList(window)->AddRect(window->DC.LastItemRect.Min, window->DC.LastItemRect.Max, col); }
-    inline void             DebugStartItemPicker()                                  { ImGuiContext& g = *GImGui; g.DebugItemPickerActive = true; }
+    inline void             DebugDrawItemRect(ImU32 col = IM_COL32(255,0,0,255))    { ImGuiContext& g = GImGui; ImGuiWindow* window = g.CurrentWindow; GetForegroundDrawList(window)->AddRect(window->DC.LastItemRect.Min, window->DC.LastItemRect.Max, col); }
+    inline void             DebugStartItemPicker()                                  { ImGuiContext& g = GImGui; g.DebugItemPickerActive = true; }
 
     IMGUI_API void          DebugNodeColumns(ImGuiOldColumns* columns);
     IMGUI_API void          DebugNodeDrawList(ImGuiWindow* window, const ImDrawList* draw_list, const char* label);
@@ -5318,6 +5630,7 @@ struct ImGui
     IMGUI_API void          DebugNodeViewport(ImGuiViewportP* viewport);
     IMGUI_API void          DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb);
 
+    ImGuiContext GImGui;
 };
 
 //-----------------------------------------------------------------------------
@@ -5367,13 +5680,18 @@ extern void         ImGuiTestEngineHook_Log(ImGuiContext* ctx, const char* fmt, 
 template<typename T>
 void IM_DELETE(ImGui& imgui, T* p) {
     if (p) {
-        p->~T(); imgui.MemFree(p);
+        p->~T();
+        imgui.MemFree(p);
     }
 }
 
 template<typename T>
 inline ImVector<T>::~ImVector() {
     if (Data) {
+        for (int n = 0; n < Size; n++) {
+            Data[n].~T();
+        }
+
         IM_FREE(imgui, Data);
     }
 }
@@ -5381,6 +5699,10 @@ inline ImVector<T>::~ImVector() {
 template<typename T>
 inline void ImVector<T>::clear() {
     if (Data) {
+        for (int n = 0; n < Size; n++) {
+            Data[n].~T();
+        }
+
         Size = Capacity = 0;
         IM_FREE(imgui, Data);
         Data = NULL;
@@ -5396,7 +5718,12 @@ inline void ImVector<T>::reserve(int new_capacity) {
     T* new_data = (T*)IM_ALLOC(imgui, (size_t)new_capacity * sizeof(T));
     
     if (Data) {
-        memcpy(new_data, Data, (size_t)Size * sizeof(T));
+        for (int n = 0; n < Size; n++) {
+            IM_PLACEMENT_NEW(&new_data[n]) T(Data[n]);
+        }
+        for (int n = 0; n < Size; n++) {
+            Data[n].~T();
+        }
         IM_FREE(imgui, Data);
     }
 
@@ -5610,6 +5937,39 @@ inline ImGuiContext::ImGuiContext(ImGui& imgui_, ImFontAtlas* shared_font_atlas)
 
 inline ImGuiTable::~ImGuiTable() {
     IM_FREE(imgui, RawData);
+}
+
+inline float ImGuiWindow::CalcFontSize() const {
+    ImGuiContext& g = imgui.GImGui;
+    float scale = g.FontBaseSize * FontWindowScale;
+    if (ParentWindow) scale *= ParentWindow->FontWindowScale;
+    return scale;
+}
+
+inline float ImGuiWindow::TitleBarHeight() const {
+    ImGuiContext& g = imgui.GImGui;
+    return (Flags & ImGuiWindowFlags_NoTitleBar) ? 0.0f : CalcFontSize() + g.Style.FramePadding.y * 2.0f;
+}
+
+inline float ImGuiWindow::MenuBarHeight() const {
+    ImGuiContext& g = imgui.GImGui;
+    return (Flags & ImGuiWindowFlags_MenuBar) ? DC.MenuBarOffset.y + CalcFontSize() + g.Style.FramePadding.y * 2.0f : 0.0f;
+}
+
+inline void ImGuiLastItemDataBackup::Backup() {
+    ImGuiWindow* window = imgui.GImGui.CurrentWindow;
+    LastItemId = window->DC.LastItemId;
+    LastItemStatusFlags = window->DC.LastItemStatusFlags;
+    LastItemRect = window->DC.LastItemRect;
+    LastItemDisplayRect = window->DC.LastItemDisplayRect;
+}
+
+inline void ImGuiLastItemDataBackup::Restore() const {
+    ImGuiWindow* window = imgui.GImGui.CurrentWindow;
+    window->DC.LastItemId = LastItemId;
+    window->DC.LastItemStatusFlags = LastItemStatusFlags;
+    window->DC.LastItemRect = LastItemRect;
+    window->DC.LastItemDisplayRect = LastItemDisplayRect;
 }
 
 #if defined(__clang__)

@@ -256,10 +256,6 @@ static void ShowDemoWindowMisc(ImGui& imgui_);
 // You may then search for keywords in the code when you are interested by a specific feature.
 void ImGui::ShowDemoWindow(bool* p_open)
 {
-    // Exceptionally add an extra assert here for people confused about initial Dear ImGui setup
-    // Most ImGui functions would normally just crash if the context is missing.
-    IM_ASSERT(GetCurrentContext() != NULL && "Missing dear imgui context. Refer to examples app!");
-
     // Examples Apps (accessible from the "Examples" menu)
     static bool show_app_main_menu_bar = false;
     static bool show_app_documents = false;

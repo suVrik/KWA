@@ -1640,9 +1640,14 @@ void ImDrawListSplitter::ClearFreeMemory()
     for (int i = 0; i < _Channels.Size; i++)
     {
         if (i == _Current)
+        {
             memset(&_Channels[i], 0, sizeof(_Channels[i]));  // Current channel is a copy of CmdBuffer/IdxBuffer, don't destruct again
-        _Channels[i]._CmdBuffer.clear();
-        _Channels[i]._IdxBuffer.clear();
+        }
+        else
+        {
+            _Channels[i]._CmdBuffer.clear();
+            _Channels[i]._IdxBuffer.clear();
+        }
     }
     _Current = 0;
     _Count = 1;
@@ -1657,25 +1662,14 @@ void ImDrawListSplitter::Split(ImDrawList* draw_list, int channels_count)
     if (old_channels_count < channels_count)
     {
         _Channels.reserve(channels_count); // Avoid over reserving since this is likely to stay stable
-        _Channels.resize(channels_count);
+        _Channels.resize(channels_count, ImDrawChannel{ ImVector<ImDrawCmd>(draw_list->imgui), ImVector<ImDrawIdx>(draw_list->imgui) });
     }
     _Count = channels_count;
 
-    // Channels[] (24/32 bytes each) hold storage that we'll swap with draw_list->_CmdBuffer/_IdxBuffer
-    // The content of Channels[0] at this point doesn't matter. We clear it to make state tidy in a debugger but we don't strictly need to.
-    // When we switch to the next channel, we'll copy draw_list->_CmdBuffer/_IdxBuffer into Channels[0] and then Channels[1] into draw_list->CmdBuffer/_IdxBuffer
-    memset(&_Channels[0], 0, sizeof(ImDrawChannel));
-    for (int i = 1; i < channels_count; i++)
+    for (int i = 0; i < channels_count; i++)
     {
-        if (i >= old_channels_count)
-        {
-            IM_PLACEMENT_NEW(&_Channels[i]) ImDrawChannel { ImVector<ImDrawCmd>(draw_list->imgui), ImVector<ImDrawIdx>(draw_list->imgui) };
-        }
-        else
-        {
-            _Channels[i]._CmdBuffer.resize(0);
-            _Channels[i]._IdxBuffer.resize(0);
-        }
+        _Channels[i]._CmdBuffer.resize(0);
+        _Channels[i]._IdxBuffer.resize(0);
     }
 }
 
@@ -1757,11 +1751,11 @@ void ImDrawListSplitter::SetCurrentChannel(ImDrawList* draw_list, int idx)
         return;
 
     // Overwrite ImVector (12/16 bytes), four times. This is merely a silly optimization instead of doing .swap()
-    memcpy(&_Channels.Data[_Current]._CmdBuffer, &draw_list->CmdBuffer, sizeof(draw_list->CmdBuffer));
-    memcpy(&_Channels.Data[_Current]._IdxBuffer, &draw_list->IdxBuffer, sizeof(draw_list->IdxBuffer));
+    _Channels.Data[_Current]._CmdBuffer.swap(draw_list->CmdBuffer);
+    _Channels.Data[_Current]._IdxBuffer.swap(draw_list->IdxBuffer);
     _Current = idx;
-    memcpy(&draw_list->CmdBuffer, &_Channels.Data[idx]._CmdBuffer, sizeof(draw_list->CmdBuffer));
-    memcpy(&draw_list->IdxBuffer, &_Channels.Data[idx]._IdxBuffer, sizeof(draw_list->IdxBuffer));
+    draw_list->CmdBuffer.swap(_Channels.Data[idx]._CmdBuffer);
+    draw_list->IdxBuffer.swap(_Channels.Data[idx]._IdxBuffer);
     draw_list->_IdxWritePtr = draw_list->IdxBuffer.Data + draw_list->IdxBuffer.Size;
 
     // If current command is used with different settings we need to add a new command
@@ -1935,11 +1929,27 @@ static const ImVec2 FONT_ATLAS_DEFAULT_TEX_CURSOR_DATA[ImGuiMouseCursor_COUNT][3
 
 ImFontAtlas::ImFontAtlas(ImGui& imgui_)
     : imgui(imgui_)
+    , Flags{}
+    , TexID{}
+    , TexDesiredWidth{}
+    , TexGlyphPadding{}
+    , Locked{}
+    , TexPixelsUseColors{}
+    , TexPixelsAlpha8{}
+    , TexPixelsRGBA32{}
+    , TexWidth{}
+    , TexHeight{}
+    , TexUvScale{}
+    , TexUvWhitePixel{}
     , Fonts(imgui_)
     , CustomRects(imgui_)
     , ConfigData(imgui_)
+    , TexUvLines{}
+    , FontBuilderIO{}
+    , FontBuilderFlags{}
+    , PackIdMouseCursors{}
+    , PackIdLines{}
 {
-    memset(this, 0, sizeof(*this));
     TexGlyphPadding = 1;
     PackIdMouseCursors = PackIdLines = -1;
 }
@@ -2271,6 +2281,20 @@ void    ImFontAtlasBuildMultiplyRectAlpha8(const unsigned char table[256], unsig
 // (C++03 doesn't allow instancing ImVector<> with function-local types so we declare the type here.)
 struct ImFontBuildSrcData
 {
+    ImFontBuildSrcData(ImGui& imgui_)
+        : FontInfo{}
+        , PackRange{}
+        , Rects{}
+        , PackedChars{}
+        , SrcRanges{}
+        , DstIndex{}
+        , GlyphsHighest{}
+        , GlyphsCount{}
+        , GlyphsSet(imgui_)
+        , GlyphsList(imgui_)
+    {
+    }
+
     stbtt_fontinfo      FontInfo;
     stbtt_pack_range    PackRange;          // Hold the list of codepoints to pack (essentially points to Codepoints.Data)
     stbrp_rect*         Rects;              // Rectangle to pack. We first fill in their size and the packer will give us their position.
@@ -2286,6 +2310,14 @@ struct ImFontBuildSrcData
 // Temporary data for one destination ImFont* (multiple source fonts can be merged into one destination ImFont)
 struct ImFontBuildDstData
 {
+    ImFontBuildDstData(ImGui& imgui_)
+        : SrcCount{}
+        , GlyphsHighest{}
+        , GlyphsCount{}
+        , GlyphsSet(imgui_)
+    {
+    }
+
     int                 SrcCount;           // Number of source fonts targeting this destination font.
     int                 GlyphsHighest;
     int                 GlyphsCount;
@@ -2320,10 +2352,8 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
     // Temporary storage for building
     ImVector<ImFontBuildSrcData> src_tmp_array(atlas->imgui);
     ImVector<ImFontBuildDstData> dst_tmp_array(atlas->imgui);
-    src_tmp_array.resize(atlas->ConfigData.Size);
-    dst_tmp_array.resize(atlas->Fonts.Size);
-    memset(src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());
-    memset(dst_tmp_array.Data, 0, (size_t)dst_tmp_array.size_in_bytes());
+    src_tmp_array.resize(atlas->ConfigData.Size, ImFontBuildSrcData(atlas->imgui));
+    dst_tmp_array.resize(atlas->Fonts.Size, ImFontBuildDstData(atlas->imgui));
 
     // 1. Initialize font loading structure, check font data validity
     for (int src_i = 0; src_i < atlas->ConfigData.Size; src_i++)
@@ -2549,11 +2579,8 @@ static bool ImFontAtlasBuildWithStbTruetype(ImFontAtlas* atlas)
         }
     }
 
-    // Cleanup temporary (ImVector doesn't honor destructor)
-    for (int src_i = 0; src_i < src_tmp_array.Size; src_i++)
-        src_tmp_array[src_i].~ImFontBuildSrcData();
-
     ImFontAtlasBuildFinish(atlas);
+
     return true;
 }
 

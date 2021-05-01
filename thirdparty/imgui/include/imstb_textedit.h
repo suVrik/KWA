@@ -127,7 +127,7 @@
 //                                      typically this is a wrapper object with other data you need
 //
 //    STB_TEXTEDIT_STRINGLEN(obj)       the length of the string (ideally O(1))
-//    STB_TEXTEDIT_LAYOUTROW(&r,obj,n)  returns the results of laying out a line of characters
+//    STB_TEXTEDIT_LAYOUTROW(g, &r,obj,n)  returns the results of laying out a line of characters
 //                                        starting from character #n (see discussion below)
 //    STB_TEXTEDIT_GETWIDTH(obj,n,i)    returns the pixel delta from the xpos of the i'th character
 //                                        to the xpos of the i+1'th char for a line of characters
@@ -395,7 +395,7 @@ typedef struct
 //
 
 // traverse the layout to locate the nearest character to a display position
-static int stb_text_locate_coord(STB_TEXTEDIT_STRING *str, float x, float y)
+static int stb_text_locate_coord(ImGuiContext& g, STB_TEXTEDIT_STRING *str, float x, float y)
 {
    StbTexteditRow r;
    int n = STB_TEXTEDIT_STRINGLEN(str);
@@ -408,7 +408,7 @@ static int stb_text_locate_coord(STB_TEXTEDIT_STRING *str, float x, float y)
 
    // search rows to find one that straddles 'y'
    while (i < n) {
-      STB_TEXTEDIT_LAYOUTROW(&r, str, i);
+      STB_TEXTEDIT_LAYOUTROW(g, &r, str, i);
       if (r.num_chars <= 0)
          return n;
 
@@ -435,7 +435,7 @@ static int stb_text_locate_coord(STB_TEXTEDIT_STRING *str, float x, float y)
       // search characters in row for one that straddles 'x'
       prev_x = r.x0;
       for (k=0; k < r.num_chars; ++k) {
-         float w = STB_TEXTEDIT_GETWIDTH(str, i, k);
+         float w = STB_TEXTEDIT_GETWIDTH(g, str, i, k);
          if (x < prev_x+w) {
             if (x < prev_x+w/2)
                return k+i;
@@ -455,25 +455,25 @@ static int stb_text_locate_coord(STB_TEXTEDIT_STRING *str, float x, float y)
 }
 
 // API click: on mouse down, move the cursor to the clicked location, and reset the selection
-static void stb_textedit_click(STB_TEXTEDIT_STRING *str, STB_TexteditState *state, float x, float y)
+static void stb_textedit_click(ImGuiContext& g, STB_TEXTEDIT_STRING *str, STB_TexteditState *state, float x, float y)
 {
    // In single-line mode, just always make y = 0. This lets the drag keep working if the mouse
    // goes off the top or bottom of the text
    if( state->single_line )
    {
       StbTexteditRow r;
-      STB_TEXTEDIT_LAYOUTROW(&r, str, 0);
+      STB_TEXTEDIT_LAYOUTROW(g, &r, str, 0);
       y = r.ymin;
    }
 
-   state->cursor = stb_text_locate_coord(str, x, y);
+   state->cursor = stb_text_locate_coord(g, str, x, y);
    state->select_start = state->cursor;
    state->select_end = state->cursor;
    state->has_preferred_x = 0;
 }
 
 // API drag: on mouse drag, move the cursor and selection endpoint to the clicked location
-static void stb_textedit_drag(STB_TEXTEDIT_STRING *str, STB_TexteditState *state, float x, float y)
+static void stb_textedit_drag(ImGuiContext& g, STB_TEXTEDIT_STRING *str, STB_TexteditState *state, float x, float y)
 {
    int p = 0;
 
@@ -482,14 +482,14 @@ static void stb_textedit_drag(STB_TEXTEDIT_STRING *str, STB_TexteditState *state
    if( state->single_line )
    {
       StbTexteditRow r;
-      STB_TEXTEDIT_LAYOUTROW(&r, str, 0);
+      STB_TEXTEDIT_LAYOUTROW(g, &r, str, 0);
       y = r.ymin;
    }
 
    if (state->select_start == state->select_end)
       state->select_start = state->cursor;
 
-   p = stb_text_locate_coord(str, x, y);
+   p = stb_text_locate_coord(g, str, x, y);
    state->cursor = state->select_end = p;
 }
 
@@ -515,7 +515,7 @@ typedef struct
 
 // find the x/y location of a character, and remember info about the previous row in
 // case we get a move-up event (for page up, we'll have to rescan)
-static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *str, int n, int single_line)
+static void stb_textedit_find_charpos(ImGuiContext& g, StbFindState *find, STB_TEXTEDIT_STRING *str, int n, int single_line)
 {
    StbTexteditRow r;
    int prev_start = 0;
@@ -526,7 +526,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
       // if it's at the end, then find the last line -- simpler than trying to
       // explicitly handle this case in the regular code
       if (single_line) {
-         STB_TEXTEDIT_LAYOUTROW(&r, str, 0);
+         STB_TEXTEDIT_LAYOUTROW(g, &r, str, 0);
          find->y = 0;
          find->first_char = 0;
          find->length = z;
@@ -537,7 +537,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
          find->x = 0;
          find->height = 1;
          while (i < z) {
-            STB_TEXTEDIT_LAYOUTROW(&r, str, i);
+            STB_TEXTEDIT_LAYOUTROW(g, &r, str, i);
             prev_start = i;
             i += r.num_chars;
          }
@@ -552,7 +552,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
    find->y = 0;
 
    for(;;) {
-      STB_TEXTEDIT_LAYOUTROW(&r, str, i);
+      STB_TEXTEDIT_LAYOUTROW(g, &r, str, i);
       if (n < i + r.num_chars)
          break;
       prev_start = i;
@@ -568,7 +568,7 @@ static void stb_textedit_find_charpos(StbFindState *find, STB_TEXTEDIT_STRING *s
    // now scan to find xpos
    find->x = r.x0;
    for (i=0; first+i < n; ++i)
-      find->x += STB_TEXTEDIT_GETWIDTH(str, first, i);
+      find->x += STB_TEXTEDIT_GETWIDTH(g, str, first, i);
 }
 
 #define STB_TEXT_HAS_SELECTION(s)   ((s)->select_start != (s)->select_end)
@@ -727,7 +727,7 @@ static int stb_textedit_paste_internal(STB_TEXTEDIT_STRING *str, STB_TexteditSta
 #endif
 
 // API key: process a keyboard input
-static void stb_textedit_key(STB_TEXTEDIT_STRING *str, STB_TexteditState *state, STB_TEXTEDIT_KEYTYPE key)
+static void stb_textedit_key(ImGuiContext& g, STB_TEXTEDIT_STRING *str, STB_TexteditState *state, STB_TEXTEDIT_KEYTYPE key)
 {
 retry:
    switch (key) {
@@ -879,7 +879,7 @@ retry:
 
          // compute current position of cursor point
          stb_textedit_clamp(str, state);
-         stb_textedit_find_charpos(&find, str, state->cursor, state->single_line);
+         stb_textedit_find_charpos(g, &find, str, state->cursor, state->single_line);
 
          for (j = 0; j < row_count; ++j) {
             float x, goal_x = state->has_preferred_x ? state->preferred_x : find.x;
@@ -895,10 +895,10 @@ retry:
 
             // now find character position down a row
             state->cursor = start;
-            STB_TEXTEDIT_LAYOUTROW(&row, str, state->cursor);
+            STB_TEXTEDIT_LAYOUTROW(g, &row, str, state->cursor);
             x = row.x0;
             for (i=0; i < row.num_chars; ++i) {
-               float dx = STB_TEXTEDIT_GETWIDTH(str, start, i);
+               float dx = STB_TEXTEDIT_GETWIDTH(g, str, start, i);
                #ifdef STB_TEXTEDIT_GETWIDTH_NEWLINE
                if (dx == STB_TEXTEDIT_GETWIDTH_NEWLINE)
                   break;
@@ -946,7 +946,7 @@ retry:
 
          // compute current position of cursor point
          stb_textedit_clamp(str, state);
-         stb_textedit_find_charpos(&find, str, state->cursor, state->single_line);
+         stb_textedit_find_charpos(g, &find, str, state->cursor, state->single_line);
 
          for (j = 0; j < row_count; ++j) {
             float  x, goal_x = state->has_preferred_x ? state->preferred_x : find.x;
@@ -957,10 +957,10 @@ retry:
 
             // now find character position up a row
             state->cursor = find.prev_first;
-            STB_TEXTEDIT_LAYOUTROW(&row, str, state->cursor);
+            STB_TEXTEDIT_LAYOUTROW(g, &row, str, state->cursor);
             x = row.x0;
             for (i=0; i < row.num_chars; ++i) {
-               float dx = STB_TEXTEDIT_GETWIDTH(str, find.prev_first, i);
+               float dx = STB_TEXTEDIT_GETWIDTH(g, str, find.prev_first, i);
                #ifdef STB_TEXTEDIT_GETWIDTH_NEWLINE
                if (dx == STB_TEXTEDIT_GETWIDTH_NEWLINE)
                   break;
