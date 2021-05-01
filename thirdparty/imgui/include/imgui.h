@@ -4571,9 +4571,15 @@ struct ImGuiTableSettings
 // (Note that ImGui:: being a namespace, you can add extra ImGui:: functions in your own separate file. Please don't modify imgui source files!)
 //-----------------------------------------------------------------------------
 
+struct ImGuiAllocator {
+    ImGuiMemAllocFunc AllocFunc;
+    ImGuiMemFreeFunc  FreeFunc;
+    void*             UserData;
+};
+
 struct ImGui
 {
-    ImGui(ImFontAtlas* shared_font_atlas = NULL);
+    ImGui(const ImGuiAllocator& allocator, ImFontAtlas* shared_font_atlas = NULL);
     ~ImGui();
 
     // Main
@@ -5184,12 +5190,7 @@ struct ImGui
     // Debug Utilities
     IMGUI_API bool          DebugCheckVersionAndDataLayout(const char* version_str, size_t sz_io, size_t sz_style, size_t sz_vec2, size_t sz_vec4, size_t sz_drawvert, size_t sz_drawidx); // This is called by IMGUI_CHECKVERSION() macro.
 
-    // Memory Allocators
-    // - Those functions are not reliant on the current context.
-    // - DLL users: heaps and globals are not shared across DLL boundaries! You will need to call SetCurrentContext() + SetAllocatorFunctions()
-    //   for each static/DLL boundary you are calling from. Read "Context and Memory Allocators" section of imgui.cpp for more details.
-    IMGUI_API void          SetAllocatorFunctions(ImGuiMemAllocFunc alloc_func, ImGuiMemFreeFunc free_func, void* user_data = NULL);
-    IMGUI_API void          GetAllocatorFunctions(ImGuiMemAllocFunc* p_alloc_func, ImGuiMemFreeFunc* p_free_func, void** p_user_data);
+    // Memory Allocation
     IMGUI_API void*         MemAlloc(size_t size);
     IMGUI_API void          MemFree(void* ptr);
 
@@ -5629,8 +5630,11 @@ struct ImGui
     IMGUI_API void          DebugNodeWindowsList(ImVector<ImGuiWindow*>* windows, const char* label);
     IMGUI_API void          DebugNodeViewport(ImGuiViewportP* viewport);
     IMGUI_API void          DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* viewport, const ImRect& bb);
-
-    ImGuiContext GImGui;
+    
+    ImGuiMemAllocFunc GImAllocatorAllocFunc;
+    ImGuiMemFreeFunc  GImAllocatorFreeFunc;
+    void*             GImAllocatorUserData;
+    ImGuiContext      GImGui;
 };
 
 //-----------------------------------------------------------------------------

@@ -900,9 +900,6 @@ static void    FreeWrapper(void* ptr, void* user_data)        { IM_UNUSED(user_d
 static void*   MallocWrapper(size_t size, void* user_data)    { IM_UNUSED(user_data); IM_UNUSED(size); IM_ASSERT(0); return NULL; }
 static void    FreeWrapper(void* ptr, void* user_data)        { IM_UNUSED(user_data); IM_UNUSED(ptr); IM_ASSERT(0); }
 #endif
-static ImGuiMemAllocFunc    GImAllocatorAllocFunc = MallocWrapper;
-static ImGuiMemFreeFunc     GImAllocatorFreeFunc = FreeWrapper;
-static void*                GImAllocatorUserData = NULL;
 
 //-----------------------------------------------------------------------------
 // [SECTION] USER FACING STRUCTURES (ImGuiStyle, ImGuiIO)
@@ -3446,23 +3443,11 @@ const char* ImGui::GetVersion()
     return IMGUI_VERSION;
 }
 
-void ImGui::SetAllocatorFunctions(ImGuiMemAllocFunc alloc_func, ImGuiMemFreeFunc free_func, void* user_data)
-{
-    GImAllocatorAllocFunc = alloc_func;
-    GImAllocatorFreeFunc = free_func;
-    GImAllocatorUserData = user_data;
-}
-
-// This is provided to facilitate copying allocators from one static/DLL boundary to another (e.g. retrieve default allocator of your executable address space)
-void ImGui::GetAllocatorFunctions(ImGuiMemAllocFunc* p_alloc_func, ImGuiMemFreeFunc* p_free_func, void** p_user_data)
-{
-    *p_alloc_func = GImAllocatorAllocFunc;
-    *p_free_func = GImAllocatorFreeFunc;
-    *p_user_data = GImAllocatorUserData;
-}
-
-ImGui::ImGui(ImFontAtlas* shared_font_atlas)
-    : GImGui(*this, shared_font_atlas)
+ImGui::ImGui(const ImGuiAllocator& allocator, ImFontAtlas* shared_font_atlas)
+    : GImAllocatorAllocFunc(allocator.AllocFunc)
+    , GImAllocatorFreeFunc(allocator.FreeFunc)
+    , GImAllocatorUserData(allocator.UserData)
+    , GImGui(*this, shared_font_atlas)
 {
     ImGuiContext& g = GImGui;
     IM_ASSERT(!g.Initialized && !g.SettingsLoaded);
