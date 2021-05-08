@@ -266,6 +266,18 @@ constexpr float2 reflect(const float2& vector, const float2& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
 }
 
+constexpr float2 abs(const float2& vector) {
+    return float2(std::abs(vector.x), std::abs(vector.y));
+}
+
+constexpr float2 min(const float2& lhs, const float2& rhs) {
+    return float2(std::fmin(lhs.x, rhs.x), std::fmin(lhs.y, rhs.y));
+}
+
+constexpr float2 max(const float2& lhs, const float2& rhs) {
+    return float2(std::fmax(lhs.x, rhs.x), std::fmax(lhs.y, rhs.y));
+}
+
 constexpr bool equal(const float2& lhs, const float2& rhs, float epsilon = EPSILON) {
     return equal(lhs.x, rhs.x, epsilon) && equal(lhs.y, rhs.y, epsilon);
 }
@@ -483,6 +495,18 @@ constexpr float3 clamp(const float3& value, const float3& min, const float3& max
 
 constexpr float3 reflect(const float3& vector, const float3& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
+}
+
+constexpr float3 abs(const float3& vector) {
+    return float3(std::abs(vector.x), std::abs(vector.y), std::abs(vector.z));
+}
+
+constexpr float3 min(const float3& lhs, const float3& rhs) {
+    return float3(std::fmin(lhs.x, rhs.x), std::fmin(lhs.y, rhs.y), std::fmin(lhs.z, rhs.z));
+}
+
+constexpr float3 max(const float3& lhs, const float3& rhs) {
+    return float3(std::fmax(lhs.x, rhs.x), std::fmax(lhs.y, rhs.y), std::fmax(lhs.z, rhs.z));
 }
 
 constexpr bool equal(const float3& lhs, const float3& rhs, float epsilon = EPSILON) {
@@ -739,6 +763,18 @@ constexpr float4 clamp(const float4& value, const float4& min, const float4& max
 
 constexpr float4 reflect(const float4& vector, const float4& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
+}
+
+constexpr float4 abs(const float4& vector) {
+    return float4(std::abs(vector.x), std::abs(vector.y), std::abs(vector.z), std::abs(vector.w));
+}
+
+constexpr float4 min(const float4& lhs, const float4& rhs) {
+    return float4(std::fmin(lhs.x, rhs.x), std::fmin(lhs.y, rhs.y), std::fmin(lhs.z, rhs.z), std::fmin(lhs.w, rhs.w));
+}
+
+constexpr float4 max(const float4& lhs, const float4& rhs) {
+    return float4(std::fmax(lhs.x, rhs.x), std::fmax(lhs.y, rhs.y), std::fmax(lhs.z, rhs.z), std::fmax(lhs.w, rhs.w));
 }
 
 constexpr bool equal(const float4& lhs, const float4& rhs, float epsilon = EPSILON) {
