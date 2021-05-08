@@ -6,6 +6,58 @@
 
 namespace kw::FilesystemUtils {
 
+bool file_exists(const String& relative_path) {
+    TCHAR executable_directory[MAX_PATH];
+
+    if (GetModuleFileName(NULL, executable_directory, MAX_PATH) >= MAX_PATH) {
+        return false;
+    }
+
+    if (PathRemoveFileSpec(executable_directory) == FALSE) {
+        return false;
+    }
+
+    TCHAR file_relative[MAX_PATH];
+
+    if (MultiByteToWideChar(CP_UTF8, 0, relative_path.c_str(), -1, file_relative, MAX_PATH) <= 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < MAX_PATH; i++) {
+        if (file_relative[i] == '/') {
+            file_relative[i] = '\\';
+        }
+    }
+
+    TCHAR file_absolute[MAX_PATH];
+
+    if (PathCombine(file_absolute, executable_directory, file_relative) == NULL) {
+        return false;
+    }
+
+    if (PathFileExists(file_absolute) == FALSE) {
+        return false;
+    }
+
+    HANDLE file = CreateFile(file_absolute, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    DWORD bytes_total = GetFileSize(file, NULL);
+
+    if (bytes_total == INVALID_FILE_SIZE) {
+        return false;
+    }
+
+    if (CloseHandle(file) == FALSE) {
+        return false;
+    }
+    
+    return true;
+}
+
 Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relative_path) {
     TCHAR executable_directory[MAX_PATH];
 
@@ -70,6 +122,11 @@ Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relativ
     KW_ERROR(
         bytes_read == bytes_total,
         "File \"%s\" size mismatch.", relative_path.c_str()
+    );
+
+    KW_ERROR(
+        CloseHandle(file) == TRUE,
+        "Failed to close file \"%s\".", relative_path.c_str()
     );
 
     return result;
