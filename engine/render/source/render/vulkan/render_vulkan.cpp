@@ -265,7 +265,9 @@ VertexBuffer RenderVulkan::create_vertex_buffer(const BufferDescriptor& buffer_d
 }
 
 void RenderVulkan::destroy_vertex_buffer(VertexBuffer vertex_buffer) {
-    destroy_buffer_vulkan(const_cast<BufferVulkan*>(reinterpret_cast<const BufferVulkan*>(vertex_buffer)));
+    if (vertex_buffer != nullptr) {
+        destroy_buffer_vulkan(const_cast<BufferVulkan*>(reinterpret_cast<const BufferVulkan*>(vertex_buffer)));
+    }
 }
 
 IndexBuffer RenderVulkan::create_index_buffer(const BufferDescriptor& buffer_descriptor) {
@@ -273,7 +275,9 @@ IndexBuffer RenderVulkan::create_index_buffer(const BufferDescriptor& buffer_des
 }
 
 void RenderVulkan::destroy_index_buffer(IndexBuffer index_buffer) {
-    destroy_buffer_vulkan(const_cast<BufferVulkan*>(reinterpret_cast<const BufferVulkan*>(index_buffer)));
+    if (index_buffer != nullptr) {
+        destroy_buffer_vulkan(const_cast<BufferVulkan*>(reinterpret_cast<const BufferVulkan*>(index_buffer)));
+    }
 }
 
 VertexBuffer RenderVulkan::acquire_transient_vertex_buffer(const void* data, size_t size) {
@@ -298,7 +302,9 @@ Texture RenderVulkan::create_texture(const TextureDescriptor& texture_descriptor
 }
 
 void RenderVulkan::destroy_texture(Texture texture) {
-    destroy_texture_vulkan(const_cast<TextureVulkan*>(reinterpret_cast<const TextureVulkan*>(texture)));
+    if (texture != nullptr) {
+        destroy_texture_vulkan(const_cast<TextureVulkan*>(reinterpret_cast<const TextureVulkan*>(texture)));
+    }
 }
 
 void RenderVulkan::flush() {
