@@ -1718,10 +1718,14 @@ inline bool isfinite(const float4x4& value) {
 class quaternion {
 public:
     static quaternion rotation(const float3& axis, float angle);
+    
     static quaternion shortest_arc(const float3& from, const float3& to, const float3& spin_axis);
-    static quaternion from_matrix(const float3x3& matrix);
-    static quaternion from_matrix(const float4x4& matrix);
-    static float4x4 to_matrix(const quaternion& quaternion);
+    
+    static quaternion from_float3x3(const float3x3& matrix);
+    static quaternion from_float4x4(const float4x4& matrix);
+
+    static float3x3 to_float3x3(const quaternion& quaternion);
+    static float4x4 to_float4x4(const quaternion& quaternion);
 
     constexpr quaternion() 
         : x(0.f), y(0.f), z(0.f), w(1.f)
@@ -1769,10 +1773,10 @@ public:
         float g = (w + y) * (rhs.w - rhs.z);
         float h = (w - y) * (rhs.w + rhs.z);
 
-        return quaternion( b + (-e - f + g + h) * 0.5f,
-                           a - ( e + f + g + h) * 0.5f,
+        return quaternion( a - ( e + f + g + h) * 0.5f,
                           -c + ( e - f + g - h) * 0.5f,
-                          -d + ( e - f - g + h) * 0.5f);
+                          -d + ( e - f - g + h) * 0.5f,
+                           b + (-e - f + g + h) * 0.5f);
     }
 
     constexpr quaternion& operator*=(const quaternion& value) {
@@ -1785,10 +1789,10 @@ public:
         float g = (w + y) * (value.w - value.z);
         float h = (w - y) * (value.w + value.z);
 
-        x =  b + (-e - f + g + h) * 0.5f;
-        y =  a - ( e + f + g + h) * 0.5f;
-        z = -c + ( e - f + g - h) * 0.5f;
-        w = -d + ( e - f - g + h) * 0.5f;
+        x =  a - ( e + f + g + h) * 0.5f;
+        y = -c + ( e - f + g - h) * 0.5f;
+        z = -d + ( e - f - g + h) * 0.5f;
+        w =  b + (-e - f + g + h) * 0.5f;
 
         return *this;
     }

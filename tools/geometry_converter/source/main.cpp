@@ -572,10 +572,10 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
         }
         
         if (node.rotation.size() == 4) {
-            local_transform *= quaternion::to_matrix(quaternion(static_cast<float>(node.rotation[0]),
-                                                                static_cast<float>(node.rotation[1]),
-                                                                static_cast<float>(node.rotation[2]),
-                                                                static_cast<float>(node.rotation[3])));
+            local_transform *= quaternion::to_float4x4(quaternion(static_cast<float>(node.rotation[0]),
+                                                                  static_cast<float>(node.rotation[1]),
+                                                                  static_cast<float>(node.rotation[2]),
+                                                                  static_cast<float>(node.rotation[3])));
         }
 
         if (node.translation.size() == 3) {

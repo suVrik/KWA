@@ -197,7 +197,7 @@ quaternion quaternion::shortest_arc(const float3& from, const float3& to, const 
     }
 }
 
-quaternion quaternion::from_matrix(const float3x3& matrix) {
+quaternion quaternion::from_float3x3(const float3x3& matrix) {
     assert(isfinite(matrix));
 
     float a = matrix._11 - matrix._22 - matrix._33;
@@ -252,15 +252,15 @@ quaternion quaternion::from_matrix(const float3x3& matrix) {
     }
 }
 
-quaternion quaternion::from_matrix(const float4x4& matrix) {
+quaternion quaternion::from_float4x4(const float4x4& matrix) {
     assert(isfinite(matrix));
 
-    return from_matrix(float3x3(matrix._11, matrix._12, matrix._13,
-                                matrix._21, matrix._22, matrix._23,
-                                matrix._31, matrix._32, matrix._33));
+    return from_float3x3(float3x3(matrix._11, matrix._12, matrix._13,
+                                  matrix._21, matrix._22, matrix._23,
+                                  matrix._31, matrix._32, matrix._33));
 }
 
-float4x4 quaternion::to_matrix(const quaternion& quaternion) {
+float3x3 quaternion::to_float3x3(const quaternion& quaternion) {
     assert(isfinite(quaternion));
 
     float xx = quaternion.x * quaternion.x;
@@ -273,10 +273,13 @@ float4x4 quaternion::to_matrix(const quaternion& quaternion) {
     float zz = quaternion.z * quaternion.z;
     float zw = quaternion.z * quaternion.w;
 
-    return float4x4(1.f - 2.f * (yy + zz), 2.f * (xy + zw),       2.f * (xz - yw),       0.f,
-                    2.f * (xy - zw),       1.f - 2.f * (xx + zz), 2.f * (yz + xw),       0.f,
-                    2.f * (xz + yw),       2.f * (yz - xw),       1.f - 2.f * (xx + yy), 0.f,
-                    0.f,                   0.f,                   0.f,                   1.f);
+    return float3x3(1.f - 2.f * (yy + zz), 2.f * (xy + zw),       2.f * (xz - yw),
+                    2.f * (xy - zw),       1.f - 2.f * (xx + zz), 2.f * (yz + xw),
+                    2.f * (xz + yw),       2.f * (yz - xw),       1.f - 2.f * (xx + yy));
+}
+
+float4x4 quaternion::to_float4x4(const quaternion& quaternion) {
+    return float4x4(to_float3x3(quaternion));
 }
 
 float4x4 transform::to_float4x4(const transform& transform) {
