@@ -262,7 +262,7 @@ constexpr float2 clamp(const float2& value, const float2& min, const float2& max
     return float2(clamp(value.x, min.x, max.x), clamp(value.y, min.y, max.y));
 }
 
-inline float2 reflect(const float2& vector, const float2& normal) {
+constexpr float2 reflect(const float2& vector, const float2& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
 }
 
@@ -443,7 +443,7 @@ constexpr float dot(const float3& lhs, const float3& rhs) {
 }
 
 constexpr float3 cross(const float3& lhs, const float3& rhs) {
-    return float3(lhs.y * rhs.z - rhs.y * lhs.z, 
+    return float3(lhs.y * rhs.z - lhs.z * rhs.y,
                   lhs.z * rhs.x - lhs.x * rhs.z, 
                   lhs.x * rhs.y - lhs.y * rhs.x);
 }
@@ -481,7 +481,7 @@ constexpr float3 clamp(const float3& value, const float3& min, const float3& max
     return float3(clamp(value.x, min.x, max.x), clamp(value.y, min.y, max.y), clamp(value.z, min.z, max.z));
 }
 
-inline float3 reflect(const float3& vector, const float3& normal) {
+constexpr float3 reflect(const float3& vector, const float3& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
 }
 
@@ -737,7 +737,7 @@ constexpr float4 clamp(const float4& value, const float4& min, const float4& max
                   clamp(value.w, min.w, max.w));
 }
 
-inline float4 reflect(const float4& vector, const float4& normal) {
+constexpr float4 reflect(const float4& vector, const float4& normal) {
     return vector - 2.f * dot(vector, normal) * normal;
 }
 
@@ -1864,28 +1864,207 @@ inline bool isfinite(const quaternion& value) {
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z) && std::isfinite(value.w);
 }
 
-class AABBox {
+class transform {
 public:
-    AABBox()
-        : min(float3(0.f, 0.f, 0.f))
-        , max(float3(0.f, 0.f, 0.f))
+    static float4x4 to_float4x4(const transform& value);
+
+    constexpr transform()
+        : translation()
+        , rotation()
+        , scale(1.f, 1.f, 1.f)
     {
     }
 
-    AABBox(const float3& min, const float3& max)
-        : min(min)
-        , max(max)
+    constexpr transform(const float3& translation)
+        : translation(translation)
+        , rotation()
+        , scale(1.f, 1.f, 1.f)
     {
+    }
+
+    constexpr transform(const float3& translation, const quaternion& rotation, const float3& scale)
+        : translation(translation)
+        , rotation(rotation)
+        , scale(scale)
+    {
+    }
+
+    constexpr float* begin() {
+        return data;
+    }
+
+    constexpr const float* begin() const {
+        return data;
+    }
+
+    constexpr float* end() {
+        return data + 10;
+    }
+
+    constexpr const float* end() const {
+        return data + 10;
+    }
+
+    constexpr transform operator*(const transform& rhs) const {
+        return transform(
+            translation * rhs.rotation * rhs.scale + rhs.translation,
+            rotation * rhs.rotation,
+            scale * rhs.scale
+        );
+    }
+
+    constexpr transform& operator*=(const transform& value) {
+        translation = translation * value.rotation * value.scale + value.translation;
+        rotation = rotation * value.rotation,
+        scale = scale * value.scale;
+
+        return *this;
+    }
+
+    constexpr bool operator==(const transform& value) const {
+        return translation == value.translation && rotation == value.rotation && scale == value.scale;
+    }
+
+    constexpr bool operator!=(const transform& value) const {
+        return translation != value.translation || rotation != value.rotation || scale != value.scale;
+    }
+
+    constexpr float* operator&() {
+        return data;
+    }
+
+    constexpr const float* operator&() const {
+        return data;
+    }
+
+    friend constexpr float4 operator*(const float4& lhs, const transform& rhs) {
+        return float4(float3(lhs.x, lhs.y, lhs.z) * rhs.scale * rhs.rotation + rhs.translation * lhs.w, 1.f);
+    }
+
+    friend constexpr float3 operator*(const float3& lhs, const transform& rhs) {
+        return lhs * rhs.scale * rhs.rotation + rhs.translation;
     }
 
     union {
         struct {
-            float3 min;
-            float3 max;
+            float3 translation;
+            quaternion rotation;
+            float3 scale;
+        };
+
+        float data[10];
+    };
+};
+
+constexpr transform inverse(const transform& value) {
+    quaternion inverse_rotation = inverse(value.rotation);
+    float3 inverse_scale = float3(1.f / value.scale.x, 1.f / value.scale.y, 1.f / value.scale.z);
+
+    return transform(
+        -value.translation * inverse_scale * inverse_rotation,
+        inverse_rotation,
+        inverse_scale
+    );
+}
+
+constexpr bool equal(const transform& lhs, const transform& rhs, float epsilon = EPSILON) {
+    return equal(lhs.translation, rhs.translation, epsilon) &&
+           equal(lhs.rotation, rhs.rotation, epsilon) &&
+           equal(lhs.scale, rhs.scale, epsilon);
+}
+
+inline bool isfinite(const transform& value) {
+    return isfinite(value.translation) && isfinite(value.rotation) && isfinite(value.scale);
+}
+
+// This representation works very well for aabbox VS frustum intersection test, but worse for every other operation.
+class aabbox {
+public:
+    static constexpr aabbox from_min_max(const float3& min, const float3& max) {
+        return aabbox((min + max) / 2.f, (max - min) / 2.f);
+    }
+
+    constexpr aabbox()
+        : center()
+        , extent()
+    {
+    }
+
+    constexpr aabbox(const float3& center, const float3& extent)
+        : center(center)
+        , extent(extent)
+    {
+    }
+
+    aabbox operator*(const float4x4& rhs) const;
+    aabbox operator*(const transform& rhs) const;
+
+    constexpr aabbox operator+(const float3& rhs) const {
+        float3 min_ = min(center - extent, rhs);
+        float3 max_ = max(center + extent, rhs);
+
+        return from_min_max(min_, max_);
+    }
+
+    constexpr aabbox operator+(const aabbox& rhs) const {
+        float3 min_ = min(center - extent, rhs.center - rhs.extent);
+        float3 max_ = max(center + extent, rhs.center + rhs.extent);
+
+        return from_min_max(min_, max_);
+    }
+
+    inline aabbox& operator*=(const float4x4& rhs) {
+        return *this = *this * rhs;
+    }
+
+    inline aabbox& operator*=(const transform& rhs) {
+        return *this = *this * rhs;
+    }
+
+    constexpr aabbox& operator+=(const float3& value) {
+        return *this = *this + value;
+    }
+
+    constexpr aabbox& operator+=(const aabbox& value) {
+        return *this = *this + value;
+    }
+
+    constexpr bool operator==(const aabbox& value) const {
+        return center == value.center && extent == value.extent;
+    }
+
+    constexpr bool operator!=(const aabbox& value) const {
+        return center != value.center || extent != value.extent;
+    }
+
+    union {
+        struct {
+            float3 center;
+            float3 extent;
         };
 
         float data[6];
     };
 };
+
+inline bool intersect(const float3& lhs, const aabbox& rhs) {
+    return std::abs(rhs.center.x - lhs.x) <= rhs.extent.x &&
+           std::abs(rhs.center.y - lhs.y) <= rhs.extent.y &&
+           std::abs(rhs.center.z - lhs.z) <= rhs.extent.z;
+}
+
+inline bool intersect(const aabbox& lhs, const aabbox& rhs) {
+    return std::abs(lhs.center.x - rhs.center.x) <= lhs.extent.x + rhs.extent.x &&
+           std::abs(lhs.center.y - rhs.center.y) <= lhs.extent.y + rhs.extent.y &&
+           std::abs(lhs.center.z - rhs.center.z) <= lhs.extent.z + rhs.extent.z;
+}
+
+constexpr bool equal(const aabbox& lhs, const aabbox& rhs, float epsilon = EPSILON) {
+    return equal(lhs.center, rhs.center, epsilon) && equal(lhs.extent, rhs.extent, epsilon);
+}
+
+inline bool isfinite(const aabbox& value) {
+    return isfinite(value.center) && isfinite(value.extent);
+}
 
 } // namespace kw

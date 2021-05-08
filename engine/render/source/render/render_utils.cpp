@@ -492,8 +492,8 @@ static void swap_le_array(T* values, size_t count) {
     }
 }
 
-static AABBox swap_le(const AABBox& bounds) {
-    AABBox result = bounds;
+static aabbox swap_le(const aabbox& bounds) {
+    aabbox result = bounds;
     swap_le_array(result.data, std::size(result.data));
     return result;
 }
@@ -718,7 +718,7 @@ KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
         case ChunkType::BOUNDS: {
             KW_ERROR(result.bounds == nullptr, "Geomtry bounds specified twice in \"%s\".", relative_path.c_str());
 
-            result.bounds = parser.read<AABBox>();
+            result.bounds = parser.read<aabbox>();
             KW_ERROR(result.bounds != nullptr, "Failed to read geometry bounds from \"%s\".", relative_path.c_str());
 
             break;

@@ -24,7 +24,7 @@ struct KwgData {
     const uint32_t* indices32;
     size_t index32_count;
 
-    const AABBox* bounds;
+    const aabbox* bounds;
 };
 
 namespace RenderUtils {

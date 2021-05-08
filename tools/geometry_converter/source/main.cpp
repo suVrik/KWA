@@ -26,7 +26,7 @@ struct Geometry {
 
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    AABBox bounds;
+    aabbox bounds;
 };
 
 enum class Attributes {
@@ -129,7 +129,7 @@ static bool save_result(const std::string& output_filename) {
 
     {
         write<uint16_t>(stream, ChunkType::BOUNDS);
-        write<uint32_t>(stream, sizeof(AABBox));
+        write<uint32_t>(stream, sizeof(aabbox));
 
         write<float>(stream, result.bounds.data, std::size(result.bounds.data));
     }
@@ -427,12 +427,11 @@ static bool load_primitive(const tinygltf::Primitive& primitive, const float4x4&
         result.vertices[vertex_offset + i].normal = normal;
         result.vertices[vertex_offset + i].tangent = float4(tangent, bitangent_factor);
 
-        result.bounds.min.x = std::min(result.bounds.min.x, position.x);
-        result.bounds.min.y = std::min(result.bounds.min.y, position.y);
-        result.bounds.min.z = std::min(result.bounds.min.z, position.z);
-        result.bounds.max.x = std::max(result.bounds.max.x, position.x);
-        result.bounds.max.y = std::max(result.bounds.max.y, position.y);
-        result.bounds.max.z = std::max(result.bounds.max.z, position.z);
+        if (i == 0) {
+            result.bounds = aabbox(position, float3());
+        } else {
+            result.bounds += position;
+        }
     }
 
     if (primitive.indices < 0 || primitive.indices >= model.accessors.size()) {

@@ -279,4 +279,72 @@ float4x4 quaternion::to_matrix(const quaternion& quaternion) {
                     0.f,                   0.f,                   0.f,                   1.f);
 }
 
+float4x4 transform::to_float4x4(const transform& transform) {
+    float xx = transform.rotation.x * transform.rotation.x;
+    float xy = transform.rotation.x * transform.rotation.y;
+    float xz = transform.rotation.x * transform.rotation.z;
+    float xw = transform.rotation.x * transform.rotation.w;
+    float yy = transform.rotation.y * transform.rotation.y;
+    float yz = transform.rotation.y * transform.rotation.z;
+    float yw = transform.rotation.y * transform.rotation.w;
+    float zz = transform.rotation.z * transform.rotation.z;
+    float zw = transform.rotation.z * transform.rotation.w;
+
+    return float4x4(transform.scale.x * (1.f - 2.f * (yy + zz)), 2.f * transform.scale.x * (xy + zw),         2.f * transform.scale.x * (xz - yw),         0.f,
+                    2.f * transform.scale.y * (xy - zw),         transform.scale.y * (1.f - 2.f * (xx + zz)), 2.f * transform.scale.y * (yz + xw),         0.f,
+                    2.f * transform.scale.z * (xz + yw),         2.f * transform.scale.z * (yz - xw),         transform.scale.z * (1.f - 2.f * (xx + yy)), 0.f,
+                    transform.translation.x,                     transform.translation.y,                     transform.translation.z,                     1.f);
+}
+
+// Transforming Axis-Aligned Bounding Boxes by Jim Arvo from "Graphics Gems", Academic Press, 1990.
+aabbox aabbox::operator*(const float4x4& rhs) const {
+    float3 old_min = center - extent;
+    float3 old_max = center + extent;
+
+    float3 new_min(rhs[3][0], rhs[3][1], rhs[3][2]);
+    float3 new_max(rhs[3][0], rhs[3][1], rhs[3][2]);
+        
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            float a = rhs[i][j] * old_min[i];
+            float b = rhs[i][j] * old_max[i];
+            if (a < b) {
+                new_min[j] += a;
+                new_max[j] += b;
+            } else {
+                new_min[j] += b;
+                new_max[j] += a;
+            }
+        }
+    }
+
+    return from_min_max(new_min, new_max);
+}
+
+aabbox aabbox::operator*(const transform& rhs) const {
+    float3 old_min = (center - extent) * rhs.scale;
+    float3 old_max = (center + extent) * rhs.scale;
+
+    float3 new_min = rhs.translation;
+    float3 new_max = rhs.translation;
+
+    float3x3 rotation = quaternion::to_float3x3(rhs.rotation);
+
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            float a = rotation[i][j] * old_min[i];
+            float b = rotation[i][j] * old_max[i];
+            if (a < b) {
+                new_min[j] += a;
+                new_max[j] += b;
+            } else {
+                new_min[j] += b;
+                new_max[j] += a;
+            }
+        }
+    }
+
+    return from_min_max(new_min, new_max);
+}
+
 } // namespace kw
