@@ -1,6 +1,6 @@
 #include "render/buddy_allocator.h"
 
-#include <memory/memory_resource.h>
+#include <core/memory/memory_resource.h>
 
 #include <debug/assert.h>
 

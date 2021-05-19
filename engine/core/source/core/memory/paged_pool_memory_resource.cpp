@@ -1,4 +1,4 @@
-#include "memory/paged_pool_memory_resource.h"
+#include "core/memory/paged_pool_memory_resource.h"
 
 #include <debug/assert.h>
 

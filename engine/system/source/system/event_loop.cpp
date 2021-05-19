@@ -2,8 +2,7 @@
 #include <system/window.h>
 
 #include <core/error.h>
-
-#include <memory/memory_resource.h>
+#include <core/memory/memory_resource.h>
 
 #include <debug/assert.h>
 

@@ -1,4 +1,4 @@
-#include "memory/linear_memory_resource.h"
+#include "core/memory/linear_memory_resource.h"
 
 #include <debug/assert.h>
 

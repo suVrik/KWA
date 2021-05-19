@@ -5,11 +5,10 @@
 
 #include <system/window.h>
 
+#include <core/concurrency/thread_pool.h>
 #include <core/crc_utils.h>
 #include <core/filesystem_utils.h>
 #include <core/math.h>
-
-#include <concurrency/thread_pool.h>
 
 #include <debug/assert.h>
 #include <debug/log.h>

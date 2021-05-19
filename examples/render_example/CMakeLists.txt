@@ -8,7 +8,6 @@ set_target_properties(render_example PROPERTIES FOLDER "examples")
 target_add_resources(render_example)
 
 target_link_libraries(render_example PRIVATE debug_)
-target_link_libraries(render_example PRIVATE memory)
 target_link_libraries(render_example PRIVATE core)
 target_link_libraries(render_example PRIVATE system)
 target_link_libraries(render_example PRIVATE render)

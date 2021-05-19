@@ -1,4 +1,4 @@
-#include "memory/buddy_memory_resource.h"
+#include "core/memory/buddy_memory_resource.h"
 
 #include <debug/assert.h>
 

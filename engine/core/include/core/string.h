@@ -1,6 +1,6 @@
 #pragma once
 
-#include <memory/memory_resource.h>
+#include "core/memory/memory_resource.h"
 
 #include <string>
 

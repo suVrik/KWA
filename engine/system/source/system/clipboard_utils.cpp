@@ -1,6 +1,6 @@
 #include "system/clipboard_utils.h"
 
-#include <memory/memory_resource.h>
+#include <core/memory/memory_resource.h>
 
 #include <SDL2/SDL_clipboard.h>
 
