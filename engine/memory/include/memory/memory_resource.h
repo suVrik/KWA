@@ -24,12 +24,14 @@ public:
     using value_type = T;
 
     MemoryResourceAllocator(MemoryResource& memory_resource_)
-        : memory_resource(memory_resource_) {
+        : memory_resource(memory_resource_)
+    {
     }
 
     template <typename U>
     MemoryResourceAllocator(const MemoryResourceAllocator<U>& allocator)
-        : memory_resource(allocator.memory_resource) {
+        : memory_resource(allocator.memory_resource)
+    {
     }
 
     T* allocate(size_t count) {
