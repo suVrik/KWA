@@ -1,4 +1,4 @@
-#include "core/crc_utils.h"
+#include "core/utils/crc_utils.h"
 #include "core/debug/assert.h"
 
 namespace kw::CrcUtils {

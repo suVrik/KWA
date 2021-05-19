@@ -3,8 +3,8 @@
 #include <core/containers/string.h>
 #include <core/containers/unordered_map.h>
 #include <core/containers/vector.h>
-#include <core/enum.h>
 #include <core/memory/linear_memory_resource.h>
+#include <core/utils/enum_utils.h>
 
 #include <vulkan/vulkan.h>
 

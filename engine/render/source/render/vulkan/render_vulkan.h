@@ -6,7 +6,7 @@
 #include <core/concurrency/spinlock.h>
 #include <core/containers/queue.h>
 #include <core/containers/vector.h>
-#include <core/enum.h>
+#include <core/utils/enum_utils.h>
 
 #include <vulkan/vulkan.h>
 

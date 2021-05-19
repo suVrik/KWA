@@ -2,7 +2,7 @@
 #include "render/vulkan/render_vulkan.h"
 
 #include <core/error.h>
-#include <core/math.h>
+#include <core/math/scalar.h>
 
 #include <array>
 

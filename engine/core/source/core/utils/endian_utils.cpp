@@ -1,4 +1,4 @@
-#include "core/endian_utils.h"
+#include "core/utils/endian_utils.h"
 
 namespace kw::EndianUtils {
 

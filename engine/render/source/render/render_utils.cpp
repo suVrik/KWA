@@ -1,9 +1,9 @@
 #include "render/render_utils.h"
 
 #include <core/debug/log.h>
-#include <core/endian_utils.h>
 #include <core/error.h>
-#include <core/filesystem_utils.h>
+#include <core/utils/endian_utils.h>
+#include <core/utils/filesystem_utils.h>
 
 #include <map>
 #include <type_traits>

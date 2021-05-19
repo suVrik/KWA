@@ -6,11 +6,11 @@
 #include <system/window.h>
 
 #include <core/concurrency/thread_pool.h>
-#include <core/crc_utils.h>
 #include <core/debug/assert.h>
 #include <core/debug/log.h>
-#include <core/filesystem_utils.h>
-#include <core/math.h>
+#include <core/math/scalar.h>
+#include <core/utils/crc_utils.h>
+#include <core/utils/filesystem_utils.h>
 
 #include <SDL2/SDL_vulkan.h>
 

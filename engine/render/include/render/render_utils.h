@@ -2,7 +2,8 @@
 
 #include "render/render.h"
 
-#include <core/math.h>
+#include <core/math/aabbox.h>
+#include <core/math/float4.h>
 
 namespace kw {
 

@@ -4,7 +4,7 @@
 
 #include <core/debug/assert.h>
 #include <core/debug/log.h>
-#include <core/math.h>
+#include <core/math/scalar.h>
 
 #include <SDL2/SDL_vulkan.h>
 

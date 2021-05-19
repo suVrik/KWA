@@ -1,8 +1,8 @@
-#include <core/endian_utils.h>
-#include <core/enum.h>
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
 #include <core/math/quaternion.h>
+#include <core/utils/endian_utils.h>
+#include <core/utils/enum_utils.h>
 
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
