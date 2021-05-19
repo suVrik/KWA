@@ -12,7 +12,7 @@ namespace kw {
 
 class Parser {
 public:
-    Parser(MemoryResource& memory_resource, const String& relative_path)
+    Parser(MemoryResource& memory_resource, const char* relative_path)
         : m_data(FilesystemUtils::read_file(memory_resource, relative_path))
         , m_end(m_data.data() + m_data.size())
         , m_position(m_data.data())
@@ -510,33 +510,33 @@ static KwgData::Vertex swap_le(const KwgData::Vertex& vertex) {
 
 namespace RenderUtils {
 
-TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path) {
+TextureDescriptor load_dds(MemoryResource& memory_resource, const char* relative_path) {
     Parser parser(memory_resource, relative_path);
 
     const auto* magic = parser.read<uint32_t>();
-    KW_ERROR(magic != nullptr, "Failed to read DDS_SIGNATURE from \"%s\".", relative_path.c_str());
-    KW_ERROR(*magic == DDS_SIGNATURE, "Invalid DDS_SIGNATURE in \"%s\".", relative_path.c_str());
+    KW_ERROR(magic != nullptr, "Failed to read DDS_SIGNATURE from \"%s\".", relative_path);
+    KW_ERROR(*magic == DDS_SIGNATURE, "Invalid DDS_SIGNATURE in \"%s\".", relative_path);
 
     //
     // Validate header.
     //
 
     const auto* header = parser.read<DDS_HEADER>();
-    KW_ERROR(header != nullptr, "Failed to read DDS_HEADER from \"%s\".", relative_path.c_str());
-    KW_ERROR(header->dwSize == sizeof(DDS_HEADER), "Invalid DDS_HEADER size in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwFlags & DDSD_REQUIRED_FLAGS) == DDSD_REQUIRED_FLAGS, "DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH and DDSD_PIXELFORMAT flags are not specified in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwCaps & DDSCAPS_TEXTURE) == DDSCAPS_TEXTURE, "DDSCAPS_TEXTURE cap is not specified in \"%s\".", relative_path.c_str());
-    KW_ERROR(header->dwWidth != 0 && header->dwHeight != 0, "Invalid texture size in \"%s\".", relative_path.c_str());
-    KW_ERROR(((header->dwFlags & DDSD_MIPMAPCOUNT) != 0) == ((header->dwCaps & DDSCAPS_MIPMAP) != 0), "DDSCAPS_MIPMAP is specified, but DDSD_MIPMAPCOUNT is not in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwCaps & DDSCAPS_MIPMAP) == 0 || header->dwMipMapCount != 0, "DDSCAPS_MIPMAP is specified, but dwMipMapCount is equal to 0 in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwCaps & DDSCAPS_MIPMAP) == 0 || header->dwMipMapCount <= 16, "dwMipMapCount is too large in \"%s\".", relative_path.c_str());
-    KW_ERROR(((header->dwFlags & DDSD_DEPTH) != 0) == ((header->dwCaps2 & DDSCAPS2_VOLUME) != 0), "DDSCAPS2_VOLUME is specified, but DDSD_DEPTH is not specified in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwFlags & DDSD_DEPTH) == 0 || header->dwDepth != 0, "DDSD_DEPTH is specified, but dwDepth is equal to 0 in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwCaps2 & DDSCAPS2_CUBEMAP) == 0 || (header->dwCaps2 & DDSCAPS2_VOLUME) == 0, "DDSCAPS2_CUBEMAP is incompatible with DDSCAPS2_VOLUME in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->dwCaps2 & DDSCAPS2_CUBEMAP) == 0 || (header->dwCaps2 & DDSCAPS2_CUBEMAP_ALLFACES) == DDSCAPS2_CUBEMAP_ALLFACES, "Incomplete cubemap in \"%s\".", relative_path.c_str());
-    KW_ERROR(header->ddspf.dwSize == sizeof(DDS_PIXELFORMAT), "Invalid DDS_PIXELFORMAT size in \"%s\".", relative_path.c_str());
-    KW_ERROR((header->ddspf.dwFlags & (DDPF_ALPHA | DDPF_YUV)) == 0, "DDPF_ALPHA and DDPF_YUV pixel format flags are not supported in \"%s\".", relative_path.c_str());
-    KW_ERROR(((header->ddspf.dwFlags & DDPF_RGB) != 0) != ((header->ddspf.dwFlags & DDPF_FOURCC) != 0), "Both DDPF_RGB and DDPF_FOURCC are specified in \"%s\".", relative_path.c_str());
+    KW_ERROR(header != nullptr, "Failed to read DDS_HEADER from \"%s\".", relative_path);
+    KW_ERROR(header->dwSize == sizeof(DDS_HEADER), "Invalid DDS_HEADER size in \"%s\".", relative_path);
+    KW_ERROR((header->dwFlags & DDSD_REQUIRED_FLAGS) == DDSD_REQUIRED_FLAGS, "DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH and DDSD_PIXELFORMAT flags are not specified in \"%s\".", relative_path);
+    KW_ERROR((header->dwCaps & DDSCAPS_TEXTURE) == DDSCAPS_TEXTURE, "DDSCAPS_TEXTURE cap is not specified in \"%s\".", relative_path);
+    KW_ERROR(header->dwWidth != 0 && header->dwHeight != 0, "Invalid texture size in \"%s\".", relative_path);
+    KW_ERROR(((header->dwFlags & DDSD_MIPMAPCOUNT) != 0) == ((header->dwCaps & DDSCAPS_MIPMAP) != 0), "DDSCAPS_MIPMAP is specified, but DDSD_MIPMAPCOUNT is not in \"%s\".", relative_path);
+    KW_ERROR((header->dwCaps & DDSCAPS_MIPMAP) == 0 || header->dwMipMapCount != 0, "DDSCAPS_MIPMAP is specified, but dwMipMapCount is equal to 0 in \"%s\".", relative_path);
+    KW_ERROR((header->dwCaps & DDSCAPS_MIPMAP) == 0 || header->dwMipMapCount <= 16, "dwMipMapCount is too large in \"%s\".", relative_path);
+    KW_ERROR(((header->dwFlags & DDSD_DEPTH) != 0) == ((header->dwCaps2 & DDSCAPS2_VOLUME) != 0), "DDSCAPS2_VOLUME is specified, but DDSD_DEPTH is not specified in \"%s\".", relative_path);
+    KW_ERROR((header->dwFlags & DDSD_DEPTH) == 0 || header->dwDepth != 0, "DDSD_DEPTH is specified, but dwDepth is equal to 0 in \"%s\".", relative_path);
+    KW_ERROR((header->dwCaps2 & DDSCAPS2_CUBEMAP) == 0 || (header->dwCaps2 & DDSCAPS2_VOLUME) == 0, "DDSCAPS2_CUBEMAP is incompatible with DDSCAPS2_VOLUME in \"%s\".", relative_path);
+    KW_ERROR((header->dwCaps2 & DDSCAPS2_CUBEMAP) == 0 || (header->dwCaps2 & DDSCAPS2_CUBEMAP_ALLFACES) == DDSCAPS2_CUBEMAP_ALLFACES, "Incomplete cubemap in \"%s\".", relative_path);
+    KW_ERROR(header->ddspf.dwSize == sizeof(DDS_PIXELFORMAT), "Invalid DDS_PIXELFORMAT size in \"%s\".", relative_path);
+    KW_ERROR((header->ddspf.dwFlags & (DDPF_ALPHA | DDPF_YUV)) == 0, "DDPF_ALPHA and DDPF_YUV pixel format flags are not supported in \"%s\".", relative_path);
+    KW_ERROR(((header->ddspf.dwFlags & DDPF_RGB) != 0) != ((header->ddspf.dwFlags & DDPF_FOURCC) != 0), "Both DDPF_RGB and DDPF_FOURCC are specified in \"%s\".", relative_path);
 
     //
     // Calculate format.
@@ -547,21 +547,21 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
     const DDS_HEADER_DXT10* header10 = nullptr;
     if (header->ddspf.dwFlags == DDPF_FOURCC && header->ddspf.dwFourCC == DDPF_FOURCC_DX10) {
         header10 = parser.read<DDS_HEADER_DXT10>();
-        KW_ERROR(header10 != nullptr, "Failed to read DDS_HEADER_DXT10 from \"%s\".", relative_path.c_str());
-        KW_ERROR(header10->resourceDimension >= D3D10_RESOURCE_DIMENSION_BUFFER && header10->resourceDimension <= D3D10_RESOURCE_DIMENSION_TEXTURE3D, "Invalid resourceDimension in \"%s\".", relative_path.c_str());
-        KW_ERROR((header10->resourceDimension == D3D10_RESOURCE_DIMENSION_TEXTURE3D) == ((header->dwCaps2 & DDSCAPS2_VOLUME) != 0), "Inconsistent 3D texture in \"%s\".", relative_path.c_str());
-        KW_ERROR(((header10->miscFlag & DDS_RESOURCE_MISC_TEXTURECUBE) != 0) == ((header->dwCaps2 & DDSCAPS2_CUBEMAP) != 0), "Inconsistent cube texture in \"%s\".", relative_path.c_str());
-        KW_ERROR(header10->arraySize != 0, "Array size must be at least 1 in \"%s\".", relative_path.c_str());
-        KW_ERROR(header10->resourceDimension != D3D10_RESOURCE_DIMENSION_TEXTURE3D || header10->arraySize == 1, "An array of 3D textures is not supported in \"%s\".", relative_path.c_str());
+        KW_ERROR(header10 != nullptr, "Failed to read DDS_HEADER_DXT10 from \"%s\".", relative_path);
+        KW_ERROR(header10->resourceDimension >= D3D10_RESOURCE_DIMENSION_BUFFER && header10->resourceDimension <= D3D10_RESOURCE_DIMENSION_TEXTURE3D, "Invalid resourceDimension in \"%s\".", relative_path);
+        KW_ERROR((header10->resourceDimension == D3D10_RESOURCE_DIMENSION_TEXTURE3D) == ((header->dwCaps2 & DDSCAPS2_VOLUME) != 0), "Inconsistent 3D texture in \"%s\".", relative_path);
+        KW_ERROR(((header10->miscFlag & DDS_RESOURCE_MISC_TEXTURECUBE) != 0) == ((header->dwCaps2 & DDSCAPS2_CUBEMAP) != 0), "Inconsistent cube texture in \"%s\".", relative_path);
+        KW_ERROR(header10->arraySize != 0, "Array size must be at least 1 in \"%s\".", relative_path);
+        KW_ERROR(header10->resourceDimension != D3D10_RESOURCE_DIMENSION_TEXTURE3D || header10->arraySize == 1, "An array of 3D textures is not supported in \"%s\".", relative_path);
 
         auto it = DXGI_MAPPING.find(header10->dxgiFormat);
-        KW_ERROR(it != DXGI_MAPPING.end(), "Unsupported DXGI format in \"%s\".", relative_path.c_str());
+        KW_ERROR(it != DXGI_MAPPING.end(), "Unsupported DXGI format in \"%s\".", relative_path);
 
         format = it->second;
     } else {
         if (header->ddspf.dwFlags == DDPF_FOURCC) {
             auto it = FOURCC_MAPPING.find(header->ddspf.dwFourCC);
-            KW_ERROR(it != FOURCC_MAPPING.end(), "Unsupported FOURCC format in \"%s\".", relative_path.c_str());
+            KW_ERROR(it != FOURCC_MAPPING.end(), "Unsupported FOURCC format in \"%s\".", relative_path);
 
             format = it->second;
         } else {
@@ -575,7 +575,7 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
             };
 
             auto it = MASK_MAPPING.find(key);
-            KW_ERROR(it != MASK_MAPPING.end(), "Unsupported MASK format in \"%s\".", relative_path.c_str());
+            KW_ERROR(it != MASK_MAPPING.end(), "Unsupported MASK format in \"%s\".", relative_path);
 
             format = it->second;
         }
@@ -606,7 +606,7 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
     size_t* offsets = memory_resource.allocate<size_t>(array_size * side_count * mip_levels);
 
     TextureDescriptor texture_descriptor{};
-    texture_descriptor.name = relative_path.c_str();
+    texture_descriptor.name = relative_path;
     texture_descriptor.data = nullptr;
     texture_descriptor.size = 0;
     texture_descriptor.type = texture_type;
@@ -644,7 +644,7 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
             offsets[array_index * texture_descriptor.mip_levels + mip_index] = texture_descriptor.size;
 
             const uint8_t* data = parser.read(bytes_count);
-            KW_ERROR(data != nullptr, "Failed to read a texture \"%s\".", relative_path.c_str());
+            KW_ERROR(data != nullptr, "Failed to read a texture \"%s\".", relative_path);
 
             if (texture_descriptor.data == nullptr) {
                 texture_descriptor.data = data;
@@ -660,65 +660,65 @@ TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relati
     return texture_descriptor;
 }
 
-KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
+KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path) {
     KwgData result{};
 
     Parser parser(memory_resource, relative_path);
     
     while (!parser.is_eof()) {
         ChunkType* chunk_type = parser.read<ChunkType>();
-        KW_ERROR(chunk_type != nullptr, "Failed to read geometry chunk type from \"%s\".", relative_path.c_str());
+        KW_ERROR(chunk_type != nullptr, "Failed to read geometry chunk type from \"%s\".", relative_path);
 
         uint32_t* chunk_size = parser.read<uint32_t>();
-        KW_ERROR(chunk_size != nullptr, "Failed to read geometry chunk size from \"%s\".", relative_path.c_str());
+        KW_ERROR(chunk_size != nullptr, "Failed to read geometry chunk size from \"%s\".", relative_path);
 
         switch (*chunk_type) {
         case ChunkType::VERTICES: {
-            KW_ERROR(result.vertices == nullptr, "Geomtry vertices specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.vertices == nullptr, "Geomtry vertices specified twice in \"%s\".", relative_path);
 
             uint32_t* vertex_count = parser.read<uint32_t>();
-            KW_ERROR(vertex_count != nullptr, "Failed to read geometry vertex count from \"%s\".", relative_path.c_str());
+            KW_ERROR(vertex_count != nullptr, "Failed to read geometry vertex count from \"%s\".", relative_path);
 
             result.vertices = parser.read<KwgData::Vertex>(*vertex_count);
-            KW_ERROR(result.vertices != nullptr, "Failed to read geometry vertices from \"%s\".", relative_path.c_str());
+            KW_ERROR(result.vertices != nullptr, "Failed to read geometry vertices from \"%s\".", relative_path);
 
             result.vertex_count = *vertex_count;
 
             break;
         }
         case ChunkType::INDICES16: {
-            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
-            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
+            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
 
             uint32_t* index_count = parser.read<uint32_t>();
-            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path.c_str());
+            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path);
 
             result.indices16 = parser.read<uint16_t>(*index_count);
-            KW_ERROR(result.indices16 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices16 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path);
 
             result.index16_count = *index_count;
 
             break;
         }
         case ChunkType::INDICES32: {
-            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
-            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
+            KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
 
             uint32_t* index_count = parser.read<uint32_t>();
-            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path.c_str());
+            KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path);
 
             result.indices32 = parser.read<uint32_t>(*index_count);
-            KW_ERROR(result.indices32 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path.c_str());
+            KW_ERROR(result.indices32 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path);
 
             result.index32_count = *index_count;
 
             break;
         }
         case ChunkType::BOUNDS: {
-            KW_ERROR(result.bounds == nullptr, "Geomtry bounds specified twice in \"%s\".", relative_path.c_str());
+            KW_ERROR(result.bounds == nullptr, "Geomtry bounds specified twice in \"%s\".", relative_path);
 
             result.bounds = parser.read<aabbox>();
-            KW_ERROR(result.bounds != nullptr, "Failed to read geometry bounds from \"%s\".", relative_path.c_str());
+            KW_ERROR(result.bounds != nullptr, "Failed to read geometry bounds from \"%s\".", relative_path);
 
             break;
         }
@@ -726,7 +726,7 @@ KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path) {
             Log::print("[WARNING] Unknown KWG chunk %u.", static_cast<uint32_t>(*chunk_type));
             
             uint8_t* data = parser.read(*chunk_size);
-            KW_ERROR(data != nullptr, "Failed to skip geometry chunk in \"%s\".", relative_path.c_str());
+            KW_ERROR(data != nullptr, "Failed to skip geometry chunk in \"%s\".", relative_path);
         }
         }
     }

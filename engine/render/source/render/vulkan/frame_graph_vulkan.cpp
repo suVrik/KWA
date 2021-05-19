@@ -1688,7 +1688,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
         String relative_path(graphics_pipeline_descriptor.vertex_shader_filename, create_context.graphics_pipeline_memory_resource);
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path);
+        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path.c_str());
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &vertex_shader_reflection, &spv_allocator),
@@ -1705,7 +1705,7 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
         String relative_path(graphics_pipeline_descriptor.fragment_shader_filename, create_context.graphics_pipeline_memory_resource);
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path);
+        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path.c_str());
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &fragment_shader_reflection, &spv_allocator),

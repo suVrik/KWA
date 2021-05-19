@@ -28,9 +28,9 @@ struct KwgData {
 
 namespace RenderUtils {
 
-TextureDescriptor load_dds(MemoryResource& memory_resource, const String& relative_path);
+TextureDescriptor load_dds(MemoryResource& memory_resource, const char* relative_path);
 
-KwgData load_kwg(MemoryResource& memory_resource, const String& relative_path);
+KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path);
 
 } // namespace RenderUtils
 
