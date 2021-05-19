@@ -1,6 +1,8 @@
 #include <core/endian_utils.h>
 #include <core/enum.h>
-#include <core/math.h>
+#include <core/math/aabbox.h>
+#include <core/math/float4x4.h>
+#include <core/math/quaternion.h>
 
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
@@ -572,10 +574,10 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
         }
         
         if (node.rotation.size() == 4) {
-            local_transform *= quaternion::to_float4x4(quaternion(static_cast<float>(node.rotation[0]),
-                                                                  static_cast<float>(node.rotation[1]),
-                                                                  static_cast<float>(node.rotation[2]),
-                                                                  static_cast<float>(node.rotation[3])));
+            local_transform *= float4x4(quaternion(static_cast<float>(node.rotation[0]),
+                                                   static_cast<float>(node.rotation[1]),
+                                                   static_cast<float>(node.rotation[2]),
+                                                   static_cast<float>(node.rotation[3])));
         }
 
         if (node.translation.size() == 3) {
