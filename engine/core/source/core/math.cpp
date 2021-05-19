@@ -299,6 +299,28 @@ float4x4 transform::to_float4x4(const transform& transform) {
                     transform.translation.x,                     transform.translation.y,                     transform.translation.z,                     1.f);
 }
 
+transform transform::from_float4x4(const float4x4& value) {
+    transform result;
+    
+    result.translation = float3(value[3][0], value[3][1], value[3][2]);
+
+    result.scale = float3(
+        length(float3(value[0][0], value[0][1], value[0][2])),
+        length(float3(value[1][0], value[1][1], value[1][2])),
+        length(float3(value[2][0], value[2][1], value[2][2]))
+    );
+
+    float4x4 without_scale(value);
+    for (size_t i = 0; i < 3; i++) {
+        without_scale[0][i] /= result.scale.x;
+        without_scale[1][i] /= result.scale.y;
+        without_scale[2][i] /= result.scale.z;
+    }
+    result.rotation = quaternion::from_float4x4(without_scale);
+
+    return result;
+}
+
 // Transforming Axis-Aligned Bounding Boxes by Jim Arvo from "Graphics Gems", Academic Press, 1990.
 aabbox aabbox::operator*(const float4x4& rhs) const {
     float3 old_min = center - extent;

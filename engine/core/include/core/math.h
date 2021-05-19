@@ -1907,6 +1907,7 @@ inline bool isfinite(const quaternion& value) {
 class transform {
 public:
     static float4x4 to_float4x4(const transform& value);
+    static transform from_float4x4(const float4x4& value);
 
     constexpr transform()
         : translation()
