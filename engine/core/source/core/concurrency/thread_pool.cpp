@@ -1,8 +1,7 @@
 #include "core/concurrency/thread_pool.h"
 #include "core/concurrency/concurrency_utils.h"
 #include "core/concurrency/semaphore.h"
-
-#include <debug/assert.h>
+#include "core/debug/assert.h"
 
 namespace kw {
 

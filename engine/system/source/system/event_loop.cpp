@@ -1,10 +1,9 @@
 #include <system/event_loop.h>
 #include <system/window.h>
 
+#include <core/debug/assert.h>
 #include <core/error.h>
 #include <core/memory/memory_resource.h>
-
-#include <debug/assert.h>
 
 #include <SDL2/SDL.h>
 

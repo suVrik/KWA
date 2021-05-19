@@ -1,7 +1,6 @@
 #include "core/error.h"
+#include "core/debug/debug_utils.h"
 #include "core/resource.h"
-
-#include <debug/debug_utils.h>
 
 #include <cstdarg>
 #include <cstdio>
@@ -22,14 +21,14 @@ static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, 
     switch (message) {
     case WM_INITDIALOG:
         MessageBeep(MB_ICONERROR);
-        SetWindowTextA(GetDlgItem(hwnd, IDC_MESSAGE), dialog_buffer);
+        SetWindowTextA(GetDlgItem(hwnd, IDC_ERROR_MESSAGE), dialog_buffer);
         return TRUE;
     case WM_COMMAND:
         switch (wparam) {
-        case IDC_BREAK:
+        case IDC_ERROR_BREAK:
             EndDialog(hwnd, 0);
             return TRUE;
-        case IDC_COPY_MESSAGE:
+        case IDC_ERROR_COPY_MESSAGE:
             if (IsClipboardFormatAvailable(CF_TEXT)) {
                 if (OpenClipboard(nullptr)) {
                     if (EmptyClipboard()) {

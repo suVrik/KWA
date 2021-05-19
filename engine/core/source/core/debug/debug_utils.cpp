@@ -1,5 +1,5 @@
-#include "debug/debug_utils.h"
-#include "debug/resource.h"
+#include "core/debug/debug_utils.h"
+#include "core/resource.h"
 
 #include <csignal>
 #include <cstdio>
@@ -87,20 +87,20 @@ static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, 
     switch (message) {
     case WM_INITDIALOG:
         MessageBeep(MB_ICONERROR);
-        SetWindowTextA(GetDlgItem(hwnd, IDC_MESSAGE), dialog_buffer);
+        SetWindowTextA(GetDlgItem(hwnd, IDC_ASSERT_MESSAGE), dialog_buffer);
         return TRUE;
     case WM_COMMAND:
         switch (wparam) {
-        case IDC_BREAK:
+        case IDC_ASSERT_BREAK:
             EndDialog(hwnd, BREAK);
             return TRUE;
-        case IDC_SKIP:
+        case IDC_ASSERT_SKIP:
             EndDialog(hwnd, SKIP);
             return TRUE;
-        case IDC_SKIP_FOREVER:
+        case IDC_ASSERT_SKIP_FOREVER:
             EndDialog(hwnd, SKIP_FOREVER);
             return TRUE;
-        case IDC_COPY_MESSAGE:
+        case IDC_ASSERT_COPY_MESSAGE:
             if (IsClipboardFormatAvailable(CF_TEXT)) {
                 if (OpenClipboard(nullptr)) {
                     if (EmptyClipboard()) {

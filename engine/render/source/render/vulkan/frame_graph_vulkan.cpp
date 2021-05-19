@@ -7,11 +7,10 @@
 
 #include <core/concurrency/thread_pool.h>
 #include <core/crc_utils.h>
+#include <core/debug/assert.h>
+#include <core/debug/log.h>
 #include <core/filesystem_utils.h>
 #include <core/math.h>
-
-#include <debug/assert.h>
-#include <debug/log.h>
 
 #include <SDL2/SDL_vulkan.h>
 

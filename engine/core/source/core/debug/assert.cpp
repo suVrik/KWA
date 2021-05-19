@@ -1,5 +1,5 @@
-#include "debug/assert.h"
-#include "debug/debug_utils.h"
+#include "core/debug/assert.h"
+#include "core/debug/debug_utils.h"
 
 #include <cstdarg>
 #include <cstdio>

@@ -1,4 +1,4 @@
-#include "debug/log.h"
+#include "core/debug/log.h"
 
 #include <cstdio>
 #include <Windows.h>

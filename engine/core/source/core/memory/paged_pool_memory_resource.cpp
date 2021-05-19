@@ -1,6 +1,5 @@
 #include "core/memory/paged_pool_memory_resource.h"
-
-#include <debug/assert.h>
+#include "core/debug/assert.h"
 
 #include <cstddef>
 #include <cstring>
