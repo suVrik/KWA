@@ -4,9 +4,9 @@
 #include "render/render.h"
 
 #include <core/concurrency/spinlock.h>
+#include <core/containers/queue.h>
+#include <core/containers/vector.h>
 #include <core/enum.h>
-#include <core/queue.h>
-#include <core/vector.h>
 
 #include <vulkan/vulkan.h>
 

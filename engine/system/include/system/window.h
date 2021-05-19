@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/string.h>
+#include <core/containers/string.h>
 
 struct SDL_Cursor;
 struct SDL_Window;

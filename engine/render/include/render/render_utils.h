@@ -3,7 +3,6 @@
 #include "render/render.h"
 
 #include <core/math.h>
-#include <core/string.h>
 
 namespace kw {
 
