@@ -9,7 +9,6 @@ target_add_resources(render_example)
 
 target_link_libraries(render_example PRIVATE debug_)
 target_link_libraries(render_example PRIVATE memory)
-target_link_libraries(render_example PRIVATE concurrency)
 target_link_libraries(render_example PRIVATE core)
 target_link_libraries(render_example PRIVATE system)
 target_link_libraries(render_example PRIVATE render)

@@ -1,6 +1,6 @@
-#include "concurrency/thread_pool.h"
-#include "concurrency/concurrency_utils.h"
-#include "concurrency/semaphore.h"
+#include "core/concurrency/thread_pool.h"
+#include "core/concurrency/concurrency_utils.h"
+#include "core/concurrency/semaphore.h"
 
 #include <debug/assert.h>
 

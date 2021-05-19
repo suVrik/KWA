@@ -25,7 +25,6 @@ target_include_directories(render PUBLIC "include")
 target_include_directories(render PRIVATE "source")
 
 target_link_libraries(render PRIVATE debug_)
-target_link_libraries(render PRIVATE concurrency)
 target_link_libraries(render PRIVATE system)
 target_link_libraries(render PRIVATE SDL2::SDL2)
 target_link_libraries(render PRIVATE Vulkan::Vulkan)

@@ -1,4 +1,4 @@
-#include "concurrency/semaphore.h"
+#include "core/concurrency/semaphore.h"
 
 namespace kw {
 

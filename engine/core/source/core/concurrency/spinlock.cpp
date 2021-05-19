@@ -1,4 +1,4 @@
-#include "concurrency/spinlock.h"
+#include "core/concurrency/spinlock.h"
 
 namespace kw {
 

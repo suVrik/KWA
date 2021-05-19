@@ -3,11 +3,10 @@
 #include "render/buddy_allocator.h"
 #include "render/render.h"
 
+#include <core/concurrency/spinlock.h>
 #include <core/enum.h>
 #include <core/queue.h>
 #include <core/vector.h>
-
-#include <concurrency/spinlock.h>
 
 #include <vulkan/vulkan.h>
 
