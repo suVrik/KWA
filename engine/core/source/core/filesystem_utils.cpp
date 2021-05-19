@@ -6,7 +6,7 @@
 
 namespace kw::FilesystemUtils {
 
-bool file_exists(const String& relative_path) {
+bool file_exists(const char* relative_path) {
     TCHAR executable_directory[MAX_PATH];
 
     if (GetModuleFileName(NULL, executable_directory, MAX_PATH) >= MAX_PATH) {
@@ -19,7 +19,7 @@ bool file_exists(const String& relative_path) {
 
     TCHAR file_relative[MAX_PATH];
 
-    if (MultiByteToWideChar(CP_UTF8, 0, relative_path.c_str(), -1, file_relative, MAX_PATH) <= 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, relative_path, -1, file_relative, MAX_PATH) <= 0) {
         return false;
     }
 
@@ -58,7 +58,7 @@ bool file_exists(const String& relative_path) {
     return true;
 }
 
-Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relative_path) {
+Vector<uint8_t> read_file(MemoryResource& memory_resource, const char* relative_path) {
     TCHAR executable_directory[MAX_PATH];
 
     KW_ERROR(
@@ -74,8 +74,8 @@ Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relativ
     TCHAR file_relative[MAX_PATH];
 
     KW_ERROR(
-        MultiByteToWideChar(CP_UTF8, 0, relative_path.c_str(), -1, file_relative, MAX_PATH) > 0,
-        "Failed to convert file \"%s\" relative path to UNICODE.", relative_path.c_str()
+        MultiByteToWideChar(CP_UTF8, 0, relative_path, -1, file_relative, MAX_PATH) > 0,
+        "Failed to convert file \"%s\" relative path to UNICODE.", relative_path
     );
 
     for (size_t i = 0; i < MAX_PATH; i++) {
@@ -88,26 +88,26 @@ Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relativ
 
     KW_ERROR(
         PathCombine(file_absolute, executable_directory, file_relative) != NULL,
-        "Failed to combine executable directory and file \"%s\" relative path.", relative_path.c_str()
+        "Failed to combine executable directory and file \"%s\" relative path.", relative_path
     );
 
     KW_ERROR(
         PathFileExists(file_absolute) == TRUE,
-        "File \"%s\" doesn't exist.", relative_path.c_str()
+        "File \"%s\" doesn't exist.", relative_path
     );
 
     HANDLE file = CreateFile(file_absolute, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     
     KW_ERROR(
         file != INVALID_HANDLE_VALUE,
-        "Failed to open file \"%s\".", relative_path.c_str()
+        "Failed to open file \"%s\".", relative_path
     );
 
     DWORD bytes_total = GetFileSize(file, NULL);
 
     KW_ERROR(
         bytes_total != INVALID_FILE_SIZE,
-        "Failed to query file \"%s\" size", relative_path.c_str()
+        "Failed to query file \"%s\" size", relative_path
     );
 
     Vector<uint8_t> result(bytes_total, memory_resource);
@@ -116,17 +116,17 @@ Vector<uint8_t> read_file(MemoryResource& memory_resource, const String& relativ
     
     KW_ERROR(
         ReadFile(file, result.data(), bytes_total, &bytes_read, NULL) == TRUE,
-        "Failed to read from file \"%s\".", relative_path.c_str()
+        "Failed to read from file \"%s\".", relative_path
     );
 
     KW_ERROR(
         bytes_read == bytes_total,
-        "File \"%s\" size mismatch.", relative_path.c_str()
+        "File \"%s\" size mismatch.", relative_path
     );
 
     KW_ERROR(
         CloseHandle(file) == TRUE,
-        "Failed to close file \"%s\".", relative_path.c_str()
+        "Failed to close file \"%s\".", relative_path
     );
 
     return result;
