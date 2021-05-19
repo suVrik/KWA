@@ -1948,15 +1948,15 @@ public:
     constexpr transform operator*(const transform& rhs) const {
         return transform(
             translation * rhs.rotation * rhs.scale + rhs.translation,
-            rotation * rhs.rotation,
-            scale * rhs.scale
+            rhs.rotation * rotation,
+            rhs.scale * scale
         );
     }
 
     constexpr transform& operator*=(const transform& value) {
         translation = translation * value.rotation * value.scale + value.translation;
-        rotation = rotation * value.rotation,
-        scale = scale * value.scale;
+        rotation = value.rotation * rotation;
+        scale = value.scale * scale;
 
         return *this;
     }
@@ -2017,7 +2017,6 @@ inline bool isfinite(const transform& value) {
     return isfinite(value.translation) && isfinite(value.rotation) && isfinite(value.scale);
 }
 
-// This representation works very well for aabbox VS frustum intersection test, but worse for every other operation.
 class aabbox {
 public:
     static constexpr aabbox from_min_max(const float3& min, const float3& max) {

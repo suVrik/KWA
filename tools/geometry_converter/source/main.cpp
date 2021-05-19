@@ -585,7 +585,7 @@ static bool load_node(const tinygltf::Node& node, const float4x4& parent_transfo
         }
     }
 
-    float4x4 transform = parent_transform * local_transform;
+    float4x4 transform = local_transform * parent_transform;
 
     if (node.mesh >= 0) {
         if (node.mesh >= model.meshes.size()) {
