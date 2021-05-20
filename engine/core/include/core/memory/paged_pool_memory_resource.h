@@ -17,6 +17,8 @@ public:
     void* reallocate(void* memory, size_t size, size_t alignment) override;
     void deallocate(void* memory) override;
 
+    using MemoryResource::allocate;
+
 private:
     void allocate_new_page(void* previous_page);
 

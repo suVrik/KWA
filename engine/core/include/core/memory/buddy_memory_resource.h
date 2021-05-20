@@ -17,6 +17,8 @@ public:
     void* reallocate(void* memory, size_t size, size_t alignment) override;
     void deallocate(void* memory) override;
 
+    using MemoryResource::allocate;
+
 private:
     static constexpr uint32_t END = 0x07FFFFFF;
     static constexpr uint32_t BUSY = 0x07FFFFFE;

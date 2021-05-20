@@ -19,6 +19,8 @@ public:
     void* reallocate(void* memory, size_t size, size_t alignment) override;
     void deallocate(void* memory) override;
 
+    using MemoryResource::allocate;
+
     void reset();
 
 private:
