@@ -4,15 +4,25 @@
 namespace kw {
 
 LinearMemoryResource::LinearMemoryResource(MemoryResource& memory_resource, size_t capacity)
-    : m_memory_resource(memory_resource)
+    : m_memory_resource(&memory_resource)
 {
     m_begin = memory_resource.allocate(capacity, 1);
     m_current = m_begin;
     m_end = static_cast<uint8_t*>(m_begin) + capacity;
 }
 
+LinearMemoryResource::LinearMemoryResource(void* data, size_t capacity)
+    : m_memory_resource(nullptr)
+    , m_begin(data)
+    , m_current(data)
+    , m_end(static_cast<uint8_t*>(data) + capacity)
+{
+}
+
 LinearMemoryResource::~LinearMemoryResource() {
-    m_memory_resource.deallocate(m_begin);
+    if (m_memory_resource != nullptr) {
+        m_memory_resource->deallocate(m_begin);
+    }
 }
 
 void* LinearMemoryResource::allocate(size_t size, size_t alignment) {

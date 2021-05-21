@@ -9,6 +9,7 @@ namespace kw {
 class LinearMemoryResource : public MemoryResource {
 public:
     LinearMemoryResource(MemoryResource& memory_resource, size_t capacity);
+    LinearMemoryResource(void* data, size_t capacity);
     LinearMemoryResource(const LinearMemoryResource& other) = delete;
     LinearMemoryResource(LinearMemoryResource&& other) = delete;
     ~LinearMemoryResource() override;
@@ -24,7 +25,7 @@ public:
     void reset();
 
 private:
-    MemoryResource& m_memory_resource;
+    MemoryResource* m_memory_resource;
 
     void* m_begin;
     std::atomic<void*> m_current;
