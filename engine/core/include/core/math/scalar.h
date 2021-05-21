@@ -43,11 +43,13 @@ constexpr T align_down(T value, T alignment) {
     return value & ~(alignment - 1);
 }
 
+// False positive for 0.
 template <typename T>
 constexpr bool is_pow2(T value) {
     return (value & (value - 1)) == 0;
 }
 
+// Doesn't work for 0.
 constexpr uint32_t next_pow2(uint32_t value) {
     value--;
     value |= value >> 1;
@@ -59,12 +61,38 @@ constexpr uint32_t next_pow2(uint32_t value) {
     return value;
 }
 
+// Doesn't work for 0.
+constexpr uint64_t next_pow2(uint64_t value) {
+    value--;
+    value |= value >> 1;
+    value |= value >> 2;
+    value |= value >> 4;
+    value |= value >> 8;
+    value |= value >> 16;
+    value |= value >> 32;
+    value++;
+    return value;
+}
+
+// Doesn't work for 0.
 constexpr uint32_t previous_pow2(uint32_t value) {
     value |= value >> 1;
     value |= value >> 2;
     value |= value >> 4;
     value |= value >> 8;
     value |= value >> 16;
+    value = value ^ (value >> 1);
+    return value;
+}
+
+// Doesn't work for 0.
+constexpr uint64_t previous_pow2(uint64_t value) {
+    value |= value >> 1;
+    value |= value >> 2;
+    value |= value >> 4;
+    value |= value >> 8;
+    value |= value >> 16;
+    value |= value >> 32;
     value = value ^ (value >> 1);
     return value;
 }
