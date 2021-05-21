@@ -35,4 +35,7 @@ void Task::add_dependencies(MemoryResource& transient_memory_resource, Task** in
     }
 }
 
+void NoopTask::run() {
+}
+
 } // namespace kw
