@@ -1,6 +1,8 @@
 #include "core/utils/filesystem_utils.h"
 #include "core/error.h"
 
+#define NOMINMAX
+
 #include <Windows.h>
 #include <Shlwapi.h>
 
@@ -59,6 +61,10 @@ bool file_exists(const char* relative_path) {
 }
 
 Vector<uint8_t> read_file(MemoryResource& memory_resource, const char* relative_path) {
+    return read_file(memory_resource, relative_path, SIZE_MAX);
+}
+
+Vector<uint8_t> read_file(MemoryResource& memory_resource, const char* relative_path, size_t max_size) {
     TCHAR executable_directory[MAX_PATH];
 
     KW_ERROR(
@@ -109,6 +115,8 @@ Vector<uint8_t> read_file(MemoryResource& memory_resource, const char* relative_
         bytes_total != INVALID_FILE_SIZE,
         "Failed to query file \"%s\" size", relative_path
     );
+
+    bytes_total = std::min(bytes_total, static_cast<DWORD>(max_size));
 
     Vector<uint8_t> result(bytes_total, memory_resource);
 
