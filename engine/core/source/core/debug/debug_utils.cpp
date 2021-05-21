@@ -3,6 +3,7 @@
 
 #include <csignal>
 #include <cstdio>
+#include <mutex>
 
 // Wingows.h must be included before DbgHelp.h
 #include <Windows.h>
@@ -12,12 +13,15 @@ namespace kw::DebugUtils {
 
 #ifdef KW_DEBUG
 
-constexpr size_t MAX_NAME_LENGTH = 255;
+constexpr size_t STACKTRACE_LENGTH = 4096;
+constexpr size_t MAX_NAME_LENGTH   = 255;
 
-static char stacktrace_buffer[4096];
-static char symbol_buffer[sizeof(IMAGEHLP_SYMBOL64) + MAX_NAME_LENGTH];
+// `SymInitialize` crashes when called from multiple threads.
+static std::mutex stacktrace_mutex;
 
-const char* get_stacktrace(uint32_t hide_calls) {
+char* get_stacktrace(uint32_t hide_calls) {
+    std::lock_guard<std::mutex> lock(stacktrace_mutex);
+
     HANDLE process = GetCurrentProcess();
     HANDLE thread  = GetCurrentThread();
 
@@ -36,9 +40,14 @@ const char* get_stacktrace(uint32_t hide_calls) {
     frame.AddrStack.Offset = context.Rsp;
     frame.AddrStack.Mode   = AddrModeFlat;
 
-    char* current_stacktrace = stacktrace_buffer;
+    void* symbol_buffer = malloc(sizeof(IMAGEHLP_SYMBOL64) + MAX_NAME_LENGTH);
 
-    hide_calls++; // Hide `get_stacktrace` call in the stacktrace too.
+    char* stacktrace_begin = static_cast<char*>(malloc(STACKTRACE_LENGTH));
+    char* stacktrace_end = stacktrace_begin + STACKTRACE_LENGTH;
+    char* stacktrace = stacktrace_begin;
+
+    hide_calls++; // Hide `get_stacktrace` call in the stacktrace.
+
     while (StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr, SymFunctionTableAccess64, SymGetModuleBase64, nullptr)) {
         if (hide_calls > 0) {
             hide_calls--;
@@ -50,8 +59,8 @@ const char* get_stacktrace(uint32_t hide_calls) {
         DWORD line_number  = 0;
         DWORD displacement = 0;
 
-        auto* symbol = reinterpret_cast<IMAGEHLP_SYMBOL64*>(symbol_buffer);
-        symbol->SizeOfStruct  = sizeof(symbol_buffer);
+        IMAGEHLP_SYMBOL64* symbol = reinterpret_cast<IMAGEHLP_SYMBOL64*>(symbol_buffer);
+        symbol->SizeOfStruct  = sizeof(IMAGEHLP_SYMBOL64) + MAX_NAME_LENGTH;
         symbol->MaxNameLength = MAX_NAME_LENGTH;
 
         if (SymGetSymFromAddr64(process, frame.AddrPC.Offset, nullptr, symbol)) {
@@ -66,28 +75,40 @@ const char* get_stacktrace(uint32_t hide_calls) {
             line_number = line.LineNumber;
         }
 
-        // Avoid some weird looking stacktrace lines such as `:0 (in BaseThreadInitThunk)` or `:0 (in RtlUserThreadStart)`.
+        // Avoid some weird looking stacktrace lines like `:0 (in BaseThreadInitThunk)` or `:0 (in RtlUserThreadStart)`.
         if (line_number > 0) {
-            current_stacktrace += snprintf(current_stacktrace, sizeof(stacktrace_buffer) - (current_stacktrace - stacktrace_buffer), "%s:%d (in %s)\r\n", file_name, line_number, symbol_name);
+            int length = snprintf(stacktrace, stacktrace_end - stacktrace, "%s:%d (in %s)\r\n", file_name, line_number, symbol_name);
+            if (length >= 0) {
+                if (length >= stacktrace_end - stacktrace) {
+                    size_t offset = stacktrace - stacktrace_begin;
+                    size_t new_size = (stacktrace_end - stacktrace_begin) * 2;
+
+                    stacktrace_begin = static_cast<char*>(realloc(stacktrace_begin, new_size));
+                    stacktrace_end = stacktrace_begin + new_size;
+                    stacktrace = stacktrace_begin + offset;
+                }
+
+                stacktrace += length;
+            }
         }
     }
 
+    free(symbol_buffer);
+
     SymCleanup(process);
 
-    return stacktrace_buffer;
+    return stacktrace_begin;
 }
 
-constexpr INT_PTR BREAK = 0;
-constexpr INT_PTR SKIP = 1;
+constexpr INT_PTR BREAK        = 0;
+constexpr INT_PTR SKIP         = 1;
 constexpr INT_PTR SKIP_FOREVER = 2;
-
-static char dialog_buffer[4096];
 
 static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_INITDIALOG:
         MessageBeep(MB_ICONERROR);
-        SetWindowTextA(GetDlgItem(hwnd, IDC_ASSERT_MESSAGE), dialog_buffer);
+        SetWindowTextA(GetDlgItem(hwnd, IDC_ASSERT_MESSAGE), reinterpret_cast<char*>(lparam));
         return TRUE;
     case WM_COMMAND:
         switch (wparam) {
@@ -104,20 +125,23 @@ static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, 
             if (IsClipboardFormatAvailable(CF_TEXT)) {
                 if (OpenClipboard(nullptr)) {
                     if (EmptyClipboard()) {
-                        size_t length = strnlen(dialog_buffer, sizeof(dialog_buffer));
-                        // Extra byte for null terminator.
-                        HGLOBAL memory = GlobalAlloc(GHND, length + 1);
-                        if (memory != nullptr) {
-                            LPVOID text = GlobalLock(memory);
-                            if (text != nullptr) {
-                                memcpy_s(text, length, dialog_buffer, length);
-                                GlobalUnlock(memory);
-                                // `SetClipboardData` takes ownership of memory, so free is not needed.
-                                if (!SetClipboardData(CF_TEXT, memory)) {
+                        int length = GetWindowTextLengthA(GetDlgItem(hwnd, IDC_ASSERT_MESSAGE));
+                        if (length > 0) {
+                            HGLOBAL memory = GlobalAlloc(GHND, static_cast<size_t>(length) + 1);
+                            if (memory != nullptr) {
+                                LPVOID text = GlobalLock(memory);
+                                if (text != nullptr) {
+                                    GetWindowTextA(GetDlgItem(hwnd, IDC_ASSERT_MESSAGE), static_cast<LPSTR>(text), length + 1);
+
+                                    GlobalUnlock(memory);
+
+                                    // `SetClipboardData` takes ownership of memory, so free is not needed.
+                                    if (!SetClipboardData(CF_TEXT, memory)) {
+                                        GlobalFree(memory);
+                                    }
+                                } else {
                                     GlobalFree(memory);
                                 }
-                            } else {
-                                GlobalFree(memory);
                             }
                         }
                     }
@@ -134,23 +158,36 @@ static INT_PTR CALLBACK dialog_callback(HWND hwnd, UINT message, WPARAM wparam, 
 }
 
 bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
-    // Hide `show_assert_window` calls in stacktrace too.
-    const char* stacktrace = DebugUtils::get_stacktrace(hide_calls + 1);
+    bool result = true;
 
-    snprintf(dialog_buffer, sizeof(dialog_buffer), "%s\r\nStacktrace:\r\n%s", message, stacktrace);
-
-    switch (DialogBox(nullptr, MAKEINTRESOURCE(IDD_ASSERT), nullptr, dialog_callback)) {
-    case BREAK:
-        return true;
-    case SKIP_FOREVER:
-        if (skip != nullptr) {
-            *skip = true;
+    char* stacktrace = DebugUtils::get_stacktrace(hide_calls + 1); // Hide `show_assert_window` call.
+    if (stacktrace != nullptr) {
+        int length = snprintf(nullptr, 0, "%s\r\nStacktrace:\r\n%s", message, stacktrace);
+        if (length >= 0) {
+            char* buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 1));
+            if (buffer != nullptr) {
+                if (snprintf(buffer, static_cast<size_t>(length) + 1, "%s\r\nStacktrace:\r\n%s", message, stacktrace) >= 0) {
+                    switch (DialogBoxParam(nullptr, MAKEINTRESOURCE(IDD_ASSERT), nullptr, dialog_callback, reinterpret_cast<LPARAM>(buffer))) {
+                    case BREAK:
+                        result = true;
+                        break;
+                    case SKIP_FOREVER:
+                        if (skip != nullptr) {
+                            *skip = true;
+                        }
+                        [[fallthrough]];
+                    case SKIP:
+                    default:
+                        result = false;
+                    }
+                }
+                free(buffer);
+            }
         }
-        [[fallthrough]];
-    case SKIP:
-    default:
-        return false;
+        free(stacktrace);
     }
+
+    return result;
 }
 
 static void signal_handler(int signal) {

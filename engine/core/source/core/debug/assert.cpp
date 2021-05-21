@@ -3,29 +3,58 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 
 namespace kw::assert_details {
 
 #ifdef KW_DEBUG
 
-static char assert_buffer[2048];
-
 bool assert_handler(const char* expression, bool& skip) {
-    snprintf(assert_buffer, sizeof(assert_buffer), "Expression: %s", expression);
-    return DebugUtils::show_assert_window(assert_buffer, &skip, 1); // Hide `assert_handler` call.
+    bool result = true;
+
+    int length = snprintf(nullptr, 0, "Expression: %s", expression);
+    if (length >= 0) {
+        char* buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 1));
+        if (buffer != nullptr) {
+            if (snprintf(buffer, static_cast<size_t>(length) + 1, "Expression: %s", expression) > 0) {
+                result = DebugUtils::show_assert_window(buffer, &skip, 1); // Hide `assert_handler` call.
+            }
+            free(buffer);
+        }
+    }
+
+    return result;
 }
 
-static char message_buffer[1024];
-
 bool assert_handler(const char* expression, bool& skip, const char* format, ...) {
+    bool result = true;
+
     va_list args;
     va_start(args, format);
-    vsnprintf(message_buffer, sizeof(message_buffer), format, args);
+
+    int format_length = vsnprintf(nullptr, 0, format, args);
+    if (format_length >= 0) {
+        char* format_buffer = static_cast<char*>(malloc(static_cast<size_t>(format_length) + 1));
+        if (format_buffer != nullptr) {
+            if (vsnprintf(format_buffer, static_cast<size_t>(format_length) + 1, format, args) > 0) {
+                int length = snprintf(nullptr, 0, "Expression: %s\r\nMessage: %s", expression, format_buffer);
+                if (length >= 0) {
+                    char* buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 1));
+                    if (buffer != nullptr) {
+                        if (snprintf(buffer, static_cast<size_t>(length) + 1, "Expression: %s\r\nMessage: %s", expression, format_buffer) > 0) {
+                            result = DebugUtils::show_assert_window(buffer, &skip, 1); // Hide `assert_handler` call.
+                        }
+                        free(buffer);
+                    }
+                }
+            }
+            free(format_buffer);
+        }
+    }
+
     va_end(args);
 
-    snprintf(assert_buffer, sizeof(assert_buffer), "Expression: %s\r\nMessage: %s", expression, message_buffer);
-
-    return DebugUtils::show_assert_window(assert_buffer, &skip, 1); // Hide `assert_handler` call.
+    return result;
 }
 
 #else

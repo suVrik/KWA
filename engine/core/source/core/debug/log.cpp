@@ -5,23 +5,31 @@
 
 namespace kw::Log {
 
-static char log_buffer[4096];
-
 void print(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    vsnprintf(log_buffer, sizeof(log_buffer), format, args);
+    print_va(format, args);
     va_end(args);
-
-    OutputDebugStringA(log_buffer);
-    OutputDebugStringA("\n");
 }
 
 void print_va(const char* format, va_list args) {
-    vsnprintf(log_buffer, sizeof(log_buffer), format, args);
+    char buffer[128];
 
-    OutputDebugStringA(log_buffer);
-    OutputDebugStringA("\n");
+    int length = vsnprintf(buffer, sizeof(buffer), format, args);
+    if (length >= 0) {
+        if (length < sizeof(buffer)) {
+            OutputDebugStringA(buffer);
+        } else {
+            char* large_buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 1));
+            if (large_buffer != nullptr) {
+                if (vsnprintf(large_buffer, static_cast<size_t>(length) + 1, format, args) >= 0) {
+                    OutputDebugStringA(large_buffer);
+                }
+                free(large_buffer);
+            }
+        }
+        OutputDebugStringA("\n");
+    }
 }
 
 } // namespace kw::Log
