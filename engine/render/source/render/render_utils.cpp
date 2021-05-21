@@ -2,56 +2,9 @@
 
 #include <core/debug/log.h>
 #include <core/error.h>
-#include <core/utils/endian_utils.h>
-#include <core/utils/filesystem_utils.h>
-
-#include <map>
-#include <type_traits>
+#include <core/utils/parser_utils.h>
 
 namespace kw {
-
-class Parser {
-public:
-    Parser(MemoryResource& memory_resource, const char* relative_path)
-        : m_data(FilesystemUtils::read_file(memory_resource, relative_path))
-        , m_end(m_data.data() + m_data.size())
-        , m_position(m_data.data())
-    {
-    }
-
-    uint8_t* read(size_t size) {
-        if (m_position + size <= m_end) {
-            uint8_t* result = m_position;
-            m_position += size;
-            return result;
-        }
-        return nullptr;
-    }
-
-    template <typename T>
-    T* read(size_t count = 1) {
-        T* result = reinterpret_cast<T*>(read(sizeof(T) * count));
-        if (result != nullptr) {
-            for (size_t i = 0; i < count; i++) {
-                if constexpr (std::is_enum_v<T>) {
-                    result[i] = static_cast<T>(EndianUtils::swap_le(static_cast<std::underlying_type_t<T>>(result[i])));
-                } else {
-                    result[i] = EndianUtils::swap_le(result[i]);
-                }
-            }
-        }
-        return result;
-    }
-
-    bool is_eof() const {
-        return m_position == m_end;
-    }
-
-private:
-    Vector<uint8_t> m_data;
-    uint8_t* m_end;
-    uint8_t* m_position;
-};
 
 constexpr uint32_t GEO_SIGNATURE = ' OEG';
 constexpr uint32_t DDS_SIGNATURE = ' SDD';
@@ -666,20 +619,20 @@ KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path) {
     Parser parser(memory_resource, relative_path);
     
     while (!parser.is_eof()) {
-        ChunkType* chunk_type = parser.read<ChunkType>();
+        ChunkType* chunk_type = parser.read_le<ChunkType>();
         KW_ERROR(chunk_type != nullptr, "Failed to read geometry chunk type from \"%s\".", relative_path);
 
-        uint32_t* chunk_size = parser.read<uint32_t>();
+        uint32_t* chunk_size = parser.read_le<uint32_t>();
         KW_ERROR(chunk_size != nullptr, "Failed to read geometry chunk size from \"%s\".", relative_path);
 
         switch (*chunk_type) {
         case ChunkType::VERTICES: {
             KW_ERROR(result.vertices == nullptr, "Geomtry vertices specified twice in \"%s\".", relative_path);
 
-            uint32_t* vertex_count = parser.read<uint32_t>();
+            uint32_t* vertex_count = parser.read_le<uint32_t>();
             KW_ERROR(vertex_count != nullptr, "Failed to read geometry vertex count from \"%s\".", relative_path);
 
-            result.vertices = parser.read<KwgData::Vertex>(*vertex_count);
+            result.vertices = parser.read_le<KwgData::Vertex>(*vertex_count);
             KW_ERROR(result.vertices != nullptr, "Failed to read geometry vertices from \"%s\".", relative_path);
 
             result.vertex_count = *vertex_count;
@@ -690,10 +643,10 @@ KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path) {
             KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
             KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
 
-            uint32_t* index_count = parser.read<uint32_t>();
+            uint32_t* index_count = parser.read_le<uint32_t>();
             KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path);
 
-            result.indices16 = parser.read<uint16_t>(*index_count);
+            result.indices16 = parser.read_le<uint16_t>(*index_count);
             KW_ERROR(result.indices16 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path);
 
             result.index16_count = *index_count;
@@ -704,10 +657,10 @@ KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path) {
             KW_ERROR(result.indices16 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
             KW_ERROR(result.indices32 == nullptr, "Geomtry indices specified twice in \"%s\".", relative_path);
 
-            uint32_t* index_count = parser.read<uint32_t>();
+            uint32_t* index_count = parser.read_le<uint32_t>();
             KW_ERROR(index_count != nullptr, "Failed to read geometry index count from \"%s\".", relative_path);
 
-            result.indices32 = parser.read<uint32_t>(*index_count);
+            result.indices32 = parser.read_le<uint32_t>(*index_count);
             KW_ERROR(result.indices32 != nullptr, "Failed to read geometry indices from \"%s\".", relative_path);
 
             result.index32_count = *index_count;
@@ -717,7 +670,7 @@ KwgData load_kwg(MemoryResource& memory_resource, const char* relative_path) {
         case ChunkType::BOUNDS: {
             KW_ERROR(result.bounds == nullptr, "Geomtry bounds specified twice in \"%s\".", relative_path);
 
-            result.bounds = parser.read<aabbox>();
+            result.bounds = parser.read_le<aabbox>();
             KW_ERROR(result.bounds != nullptr, "Failed to read geometry bounds from \"%s\".", relative_path);
 
             break;
