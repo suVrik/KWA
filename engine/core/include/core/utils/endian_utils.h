@@ -20,7 +20,7 @@
 
 namespace kw::EndianUtils {
 
-/** Host to/from Little Endian. */
+// Host to/from Little Endian.
 uint16_t swap_le(uint16_t value);
 int16_t swap_le(int16_t value);
 uint32_t swap_le(uint32_t value);
@@ -30,7 +30,7 @@ int64_t swap_le(int64_t value);
 float swap_le(float value);
 double swap_le(double value);
 
-/** Host to/from Big Endian. */
+// Host to/from Big Endian.
 uint16_t swap_be(uint16_t value);
 int16_t swap_be(int16_t value);
 uint32_t swap_be(uint32_t value);

@@ -3,8 +3,7 @@
 namespace kw {
 
 void Spinlock::lock() {
-    while (m_is_locked.test_and_set(std::memory_order_acquire)) {
-    }
+    while (m_is_locked.test_and_set(std::memory_order_acquire));
 }
 
 bool Spinlock::try_lock() {

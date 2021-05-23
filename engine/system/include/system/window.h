@@ -30,7 +30,7 @@ constexpr size_t CURSOR_COUNT = 10;
 
 class Window {
 public:
-    /** To create `Window` you must have an `EventLoop`. */
+    // To create `Window` you must have an `EventLoop`.
     Window(const WindowDescriptor& descriptor);
     ~Window();
 

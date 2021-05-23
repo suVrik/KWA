@@ -4,8 +4,8 @@
 
 namespace kw::error_details {
 
-[[noreturn]] void error_handler(const char* expression);
-[[noreturn]] void error_handler(const char* expression, const char* format, ...);
+void error_handler(const char* expression);
+void error_handler(const char* expression, const char* format, ...);
 
 } // namespace kw::error_details
 
