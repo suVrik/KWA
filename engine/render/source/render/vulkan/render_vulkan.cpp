@@ -1279,11 +1279,10 @@ BufferVulkan* RenderVulkan::acquire_transient_buffer_vulkan(const void* data, si
 uint32_t RenderVulkan::compute_texture_memory_index(VkMemoryPropertyFlags properties) {
     uint32_t memory_type_mask = UINT32_MAX;
 
-    for (size_t i = 1; i < TEXTURE_FORMAT_COUNT; i++) {
+    for (size_t i = 0; i < TEXTURE_FORMAT_COUNT; i++) {
         TextureFormat format = static_cast<TextureFormat>(i);
 
-        if (format == TextureFormat::RGB32_FLOAT || format == TextureFormat::RGB32_SINT || format == TextureFormat::RGB32_UINT) {
-            // TODO: Perhaps some mapping?
+        if (TextureFormatUtils::is_allowed_texture(format)) {
             continue;
         }
 
@@ -1337,7 +1336,7 @@ TextureVulkan* RenderVulkan::create_texture_vulkan(const TextureDescriptor& text
 
     uint32_t max_side = std::max(texture_descriptor.width, std::max(texture_descriptor.height, texture_descriptor.depth));
 
-    KW_ERROR(texture_descriptor.format != TextureFormat::UNKNOWN, "Invalid texture \"%s\" format.", texture_descriptor.name);
+    KW_ERROR(TextureFormatUtils::is_allowed_texture(texture_descriptor.format), "Invalid texture \"%s\" format.", texture_descriptor.name);
     KW_ERROR(texture_descriptor.mip_levels <= log2(max_side) + 1, "Invalid texture \"%s\" mip levels.", texture_descriptor.name);
     KW_ERROR(texture_descriptor.width > 0 && is_pow2(texture_descriptor.width), "Invalid texture \"%s\" width.", texture_descriptor.name);
     KW_ERROR(texture_descriptor.height > 0 && is_pow2(texture_descriptor.height), "Invalid texture \"%s\" height.", texture_descriptor.name);

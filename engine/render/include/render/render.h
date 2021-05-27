@@ -132,8 +132,14 @@ constexpr size_t TEXTURE_FORMAT_COUNT = 61;
 
 namespace TextureFormatUtils {
 
+bool is_depth(TextureFormat format);
 bool is_depth_stencil(TextureFormat format);
 bool is_compressed(TextureFormat format);
+
+bool is_allowed_texture(TextureFormat format);
+bool is_allowed_attachment(TextureFormat format);
+bool is_allowed_attribute(TextureFormat format);
+
 uint64_t get_pixel_size(TextureFormat format);
 
 } // namespace TextureFormatUtils
