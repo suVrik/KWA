@@ -26,7 +26,7 @@ Window::Window(const WindowDescriptor& descriptor) {
 }
 
 Window::~Window() {
-    // m_cursors[i] is acquired from `SDL_GetDefaultCursor` and must not be freed.
+    // m_cursors[0] is acquired from `SDL_GetDefaultCursor` and must not be freed.
     for (size_t i = 1; i < CURSOR_COUNT; i++) {
         SDL_FreeCursor(m_cursors[i]);
     }
