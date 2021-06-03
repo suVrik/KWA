@@ -19,31 +19,73 @@ public:
     }
 
     frustum(const plane& top, const plane& bottom, const plane& left, const plane& right, const plane& near, const plane& far)
-        : top(top)
-        , bottom(bottom)
-        , left(left)
+        : left(left)
         , right(right)
+        , bottom(bottom)
+        , top(top)
         , near(near)
         , far(far)
     {
     }
 
-    frustum(const float4x4& matrix)
-        : top(float3(matrix[0][3] - matrix[0][1], matrix[1][3] - matrix[1][1], matrix[2][3] - matrix[2][1]), matrix[3][3] - matrix[3][1])
-        , bottom(float3(matrix[0][3] + matrix[0][1], matrix[1][3] + matrix[1][1], matrix[2][3] + matrix[2][1]), matrix[3][3] + matrix[3][1])
-        , left(float3(matrix[0][3] + matrix[0][0], matrix[1][3] + matrix[1][0], matrix[2][3] + matrix[2][0]), matrix[3][3] + matrix[3][0])
-        , right(float3(matrix[0][3] - matrix[0][0], matrix[1][3] - matrix[1][0], matrix[2][3] - matrix[2][0]), matrix[3][3] - matrix[3][0])
-        , near(float3(matrix[0][2], matrix[1][2], matrix[2][2]), matrix[3][2])
-        , far(float3(matrix[0][3] - matrix[0][2], matrix[1][3] - matrix[1][2], matrix[2][3] - matrix[2][2]), matrix[3][3] - matrix[3][2])
+    frustum(const float4x4& view_projection_matrix)
+        : left(normalize(plane(
+            float3(
+                view_projection_matrix[0][3] + view_projection_matrix[0][0],
+                view_projection_matrix[1][3] + view_projection_matrix[1][0],
+                view_projection_matrix[2][3] + view_projection_matrix[2][0]
+            ),
+            view_projection_matrix[3][3] + view_projection_matrix[3][0]
+        )))
+        , right(normalize(plane(
+            float3(
+                view_projection_matrix[0][3] - view_projection_matrix[0][0],
+                view_projection_matrix[1][3] - view_projection_matrix[1][0],
+                view_projection_matrix[2][3] - view_projection_matrix[2][0]
+            ),
+            view_projection_matrix[3][3] - view_projection_matrix[3][0]
+        )))
+        , bottom(normalize(plane(
+            float3(
+                view_projection_matrix[0][3] + view_projection_matrix[0][1],
+                view_projection_matrix[1][3] + view_projection_matrix[1][1],
+                view_projection_matrix[2][3] + view_projection_matrix[2][1]
+            ),
+            view_projection_matrix[3][3] + view_projection_matrix[3][1]
+        )))
+        , top(normalize(plane(
+            float3(
+                view_projection_matrix[0][3] - view_projection_matrix[0][1],
+                view_projection_matrix[1][3] - view_projection_matrix[1][1],
+                view_projection_matrix[2][3] - view_projection_matrix[2][1]
+            ),
+            view_projection_matrix[3][3] - view_projection_matrix[3][1]
+        )))
+        , near(normalize(plane(
+            float3(
+                view_projection_matrix[0][2],
+                view_projection_matrix[1][2],
+                view_projection_matrix[2][2]
+            ),
+            view_projection_matrix[3][2]
+        )))
+        , far(normalize(plane(
+            float3(
+                view_projection_matrix[0][3] - view_projection_matrix[0][2],
+                view_projection_matrix[1][3] - view_projection_matrix[1][2],
+                view_projection_matrix[2][3] - view_projection_matrix[2][2]
+            ),
+            view_projection_matrix[3][3] - view_projection_matrix[3][2]
+        )))
     {
     }
 
     union {
         struct {
-            plane top;
-            plane bottom;
             plane left;
             plane right;
+            plane bottom;
+            plane top;
             plane near;
             plane far;
         };
