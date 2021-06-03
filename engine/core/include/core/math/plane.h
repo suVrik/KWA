@@ -28,4 +28,9 @@ public:
     };
 };
 
+inline plane normalize(const plane& value) {
+    float multiplier = 1.f / length(value.normal);
+    return plane(value.normal * multiplier, value.distance * multiplier);
+}
+
 } // namespace kw
