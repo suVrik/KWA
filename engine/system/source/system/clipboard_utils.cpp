@@ -8,7 +8,7 @@
 
 namespace kw::ClipboardUtils {
 
-const char* get_clipboard_text(MemoryResource& memory_resource) {
+char* get_clipboard_text(MemoryResource& memory_resource) {
     char* clipboard_text = SDL_GetClipboardText();
     size_t clipboard_text_length = strlen(clipboard_text);
     
