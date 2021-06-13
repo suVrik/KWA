@@ -67,13 +67,15 @@ function(target_add_shaders target shaders)
 endfunction()
 
 function(target_add_textures target textures)
-    foreach(absolute_path ${textures})
-        cmake_path(RELATIVE_PATH absolute_path BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path)
+    foreach(absolute_path_dds ${textures})
+        cmake_path(RELATIVE_PATH absolute_path_dds BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path_dds)
+        cmake_path(REPLACE_EXTENSION relative_path_dds LAST_ONLY "kwt" OUTPUT_VARIABLE relative_path_kwt)
 
         add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
-            COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
-            MAIN_DEPENDENCY ${absolute_path}
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwt}"
+            COMMAND $<TARGET_FILE:texture_converter> "\"${absolute_path_dds}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwt}\""
+            MAIN_DEPENDENCY ${absolute_path_dds}
+            DEPENDS texture_converter
             COMMAND_EXPAND_LISTS
         )
     endforeach()
