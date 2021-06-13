@@ -318,7 +318,7 @@ EventLoop::~EventLoop() {
     SDL_Quit();
 }
 
-bool EventLoop::poll_event(MemoryResource& memory_resource, Event& event) {
+bool EventLoop::poll_event(MemoryResource& transient_memory_resource, Event& event) {
     SDL_Event sdl_event;
     while (SDL_PollEvent(&sdl_event) != 0) {
         switch (sdl_event.type) {
@@ -371,7 +371,7 @@ bool EventLoop::poll_event(MemoryResource& memory_resource, Event& event) {
             Window* window = get_window_from_window_id(sdl_event.text.windowID);
             if (window != nullptr) {
                 size_t length = std::strlen(sdl_event.text.text);
-                char* text = memory_resource.allocate<char>(length + 1);
+                char* text = transient_memory_resource.allocate<char>(length + 1);
                 std::memcpy(text, sdl_event.text.text, length + 1);
 
                 event.text.type = EventType::TEXT;

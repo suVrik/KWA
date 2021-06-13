@@ -327,7 +327,7 @@ public:
     ~EventLoop();
 
     // Memory resource is used for text allocation.
-    bool poll_event(MemoryResource& memory_resource, Event& event);
+    bool poll_event(MemoryResource& transient_memory_resource, Event& event);
 };
 
 } // namespace kw
