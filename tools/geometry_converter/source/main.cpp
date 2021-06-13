@@ -1,8 +1,8 @@
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
 #include <core/math/quaternion.h>
-#include <core/utils/endian_utils.h>
 #include <core/utils/enum_utils.h>
+#include <core/utils/parser_utils.h>
 
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
@@ -32,21 +32,14 @@ struct Geometry {
 };
 
 enum class Attributes {
-    NONE     = 0,
-    POSITION = 1 << 0,
-    NORMAL   = 1 << 1,
-    TANGENT  = 1 << 2,
+    NONE       = 0,
+    POSITION   = 1 << 0,
+    NORMAL     = 1 << 1,
+    TANGENT    = 1 << 2,
     TEXCOORD_0 = 1 << 3,
 };
 
 KW_DEFINE_ENUM_BITMASK(Attributes);
-
-enum class ChunkType : uint16_t {
-    VERTICES  = 0,
-    INDICES16 = 10,
-    INDICES32 = 11,
-    BOUNDS    = 20,
-};
 
 static tinygltf::TinyGLTF gltf;
 static tinygltf::Model model;
@@ -55,89 +48,63 @@ static std::string warning;
 static std::string filename;
 static Geometry result;
 
-template <typename T>
-void swap_le(T* values, size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        values[i] = EndianUtils::swap_le(values[i]);
-    }
+namespace kw::EndianUtils {
+
+float2 swap_le(float2 vector) {
+    vector.x = swap_le(vector.x);
+    vector.y = swap_le(vector.y);
+    return vector;
 }
 
-template <>
-void swap_le<Vertex>(Vertex* values, size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        swap_le(values[i].position.data, std::size(values[i].position.data));
-        swap_le(values[i].normal.data, std::size(values[i].normal.data));
-        swap_le(values[i].tangent.data, std::size(values[i].tangent.data));
-        swap_le(values[i].texcoord_0.data, std::size(values[i].texcoord_0.data));
-    }
+float3 swap_le(float3 vector) {
+    vector.x = swap_le(vector.x);
+    vector.y = swap_le(vector.y);
+    vector.z = swap_le(vector.z);
+    return vector;
 }
 
-template <typename T>
-void write(std::ofstream& stream, T* values, size_t count) {
-    swap_le(values, count);
-    stream.write(reinterpret_cast<const char*>(values), sizeof(T) * count);
+float4 swap_le(float4 vector) {
+    vector.x = swap_le(vector.x);
+    vector.y = swap_le(vector.y);
+    vector.z = swap_le(vector.z);
+    vector.w = swap_le(vector.w);
+    return vector;
 }
 
-template <typename T, typename U>
-void write(std::ofstream& stream, const U& uvalue) {
-    T tvalue = static_cast<T>(uvalue);
-    write(stream, &tvalue, 1);
+Vertex swap_le(Vertex vertex) {
+    vertex.position = swap_le(vertex.position);
+    vertex.normal = swap_le(vertex.normal);
+    vertex.tangent = swap_le(vertex.tangent);
+    vertex.texcoord_0 = swap_le(vertex.texcoord_0);
+    return vertex;
 }
 
-static bool save_result(const std::string& output_filename) {
-    std::ofstream stream(output_filename, std::ofstream::binary);
+} // namespace kw::EndianUtils
 
-    if (!stream) {
-        std::cout << "Failed to open output geometry file \"" << output_filename << "\"." << std::endl;
+static bool save_result(const char* path) {
+    Writer writer(path);
+
+    if (!writer) {
+        std::cout << "Failed to open output geometry file \"" << path << "\"." << std::endl;
         return false;
     }
 
-    //
-    // Vertices.
-    //
+    writer.write_le<uint32_t>(result.vertices.size());
+    writer.write_le<uint32_t>(result.indices.size());
+    writer.write_le<float>(result.bounds.data, std::size(result.bounds.data));
 
-    {
-        write<uint16_t>(stream, ChunkType::VERTICES);
-        write<uint32_t>(stream, sizeof(uint32_t) + sizeof(Vertex) * result.vertices.size());
-
-        write<uint32_t>(stream, result.vertices.size());
-        write<Vertex>(stream, result.vertices.data(), result.vertices.size());
-    }
-
-    //
-    // Indices.
-    //
+    writer.write_le<Vertex>(result.vertices.data(), result.vertices.size());
 
     if (result.vertices.size() < UINT16_MAX) {
-        write<uint16_t>(stream, ChunkType::INDICES16);
-        write<uint32_t>(stream, sizeof(uint32_t) + sizeof(uint16_t) * result.indices.size());
-
-        write<uint32_t>(stream, result.indices.size());
-
         for (uint32_t index : result.indices) {
-            write<uint16_t>(stream, index);
+            writer.write_le<uint16_t>(index);
         }
     } else {
-        write<uint16_t>(stream, ChunkType::INDICES32);
-        write<uint32_t>(stream, sizeof(uint32_t) + sizeof(uint32_t) * result.indices.size());
-
-        write<uint32_t>(stream, result.indices.size());
-        write<uint32_t>(stream, result.indices.data(), result.indices.size());
+        writer.write_le<uint32_t>(result.indices.data(), result.indices.size());
     }
 
-    //
-    // Bounds.
-    //
-
-    {
-        write<uint16_t>(stream, ChunkType::BOUNDS);
-        write<uint32_t>(stream, sizeof(aabbox));
-
-        write<float>(stream, result.bounds.data, std::size(result.bounds.data));
-    }
-
-    if (!stream) {
-        std::cout << "Failed to write to output geometry file \"" << output_filename << "\"." << std::endl;
+    if (!writer) {
+        std::cout << "Failed to write to output geometry file \"" << path << "\"." << std::endl;
         return false;
     }
 
