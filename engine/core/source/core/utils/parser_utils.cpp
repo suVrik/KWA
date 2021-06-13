@@ -1,36 +1,26 @@
 #include "core/utils/parser_utils.h"
-#include "core/utils/filesystem_utils.h"
+#include "core/debug/assert.h"
 
 namespace kw {
 
-Parser::Parser(MemoryResource& memory_resource)
-    : m_data(memory_resource)
-    , m_end(nullptr)
-    , m_position(nullptr)
+Reader::Reader(const char* path)
+    : m_stream(path, std::ios::binary)
 {
 }
 
-Parser::Parser(MemoryResource& memory_resource, const char* relative_path)
-    : m_data(FilesystemUtils::read_file(memory_resource, relative_path))
-    , m_end(m_data.data() + m_data.size())
-    , m_position(m_data.data())
+bool Reader::read(void* output, size_t size) {
+    KW_ASSERT(output != nullptr);
+    return static_cast<bool>(m_stream.read(static_cast<char*>(output), size));
+}
+
+Writer::Writer(const char* path)
+    : m_stream(path, std::ios::binary)
 {
 }
 
-Parser::Parser(MemoryResource& memory_resource, const char* relative_path, size_t max_size)
-    : m_data(FilesystemUtils::read_file(memory_resource, relative_path, max_size))
-    , m_end(m_data.data() + m_data.size())
-    , m_position(m_data.data())
-{
-}
-
-uint8_t* Parser::read(size_t size) {
-    if (m_position + size <= m_end) {
-        uint8_t* result = m_position;
-        m_position += size;
-        return result;
-    }
-    return nullptr;
+bool Writer::write(const void* data, size_t size) {
+    KW_ASSERT(data != nullptr);
+    return static_cast<bool>(m_stream.write(reinterpret_cast<const char*>(data), size));
 }
 
 } // namespace kw
