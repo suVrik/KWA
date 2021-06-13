@@ -15,20 +15,23 @@ void print(const char* format, ...) {
 void print_va(const char* format, va_list args) {
     char buffer[128];
 
-    int length = vsnprintf(buffer, sizeof(buffer), format, args);
+    int length = vsnprintf(buffer, sizeof(buffer) - 1, format, args);
     if (length >= 0) {
-        if (length < sizeof(buffer)) {
+        if (length + 1 < sizeof(buffer)) {
+            buffer[length] = '\n';
+            buffer[length + 1] = '\0';
             OutputDebugStringA(buffer);
         } else {
-            char* large_buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 1));
+            char* large_buffer = static_cast<char*>(malloc(static_cast<size_t>(length) + 2));
             if (large_buffer != nullptr) {
                 if (vsnprintf(large_buffer, static_cast<size_t>(length) + 1, format, args) >= 0) {
+                    large_buffer[length] = '\n';
+                    large_buffer[length + 1] = '\0';
                     OutputDebugStringA(large_buffer);
                 }
                 free(large_buffer);
             }
         }
-        OutputDebugStringA("\n");
     }
 }
 
