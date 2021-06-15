@@ -75,7 +75,7 @@ function(target_add_textures target textures)
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwt}"
             COMMAND $<TARGET_FILE:texture_converter> "\"${absolute_path_dds}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwt}\""
             MAIN_DEPENDENCY ${absolute_path_dds}
-            DEPENDS texture_converter
+            #DEPENDS texture_converter
             COMMAND_EXPAND_LISTS
         )
     endforeach()
@@ -98,7 +98,7 @@ function(target_add_geometries target geometries)
             OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwg}"
             COMMAND $<TARGET_FILE:geometry_converter> "\"${absolute_path_glb}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path_kwg}\""
             MAIN_DEPENDENCY ${absolute_path_glb}
-            DEPENDS geometry_converter
+            #DEPENDS geometry_converter
             COMMAND_EXPAND_LISTS
         )
     endforeach()
