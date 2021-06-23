@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/memory/memory_resource.h"
+#include "core/memory/noop_memory_resource.h"
 
 #include <memory>
 
@@ -41,6 +41,55 @@ public:
     }
 
     Allocator allocator;
+    size_t size;
+};
+
+template <typename T>
+class UniquePtrDeleter<T, MemoryResourceAllocator<T>> {
+public:
+    UniquePtrDeleter()
+        : allocator(NoopMemoryResource::instance())
+    {
+    }
+
+    UniquePtrDeleter(const MemoryResourceAllocator<T>& allocator_)
+        : allocator(allocator_)
+    {
+    }
+    
+    void operator()(T* ptr) {
+        ptr->~T();
+
+        allocator.deallocate(ptr, 1);
+    }
+
+    MemoryResourceAllocator<T> allocator;
+};
+
+template <typename T>
+class UniquePtrDeleter<T[], MemoryResourceAllocator<T>> {
+public:
+    UniquePtrDeleter()
+        : allocator(NoopMemoryResource::instance())
+        , size(0)
+    {
+    }
+
+    UniquePtrDeleter(const MemoryResourceAllocator<T>& allocator_, size_t size_)
+        : allocator(allocator_)
+        , size(size_)
+    {
+    }
+
+    void operator()(T* ptr) {
+        for (size_t i = 0; i < size; i++) {
+            ptr[i].~T();
+        }
+
+        allocator.deallocate(ptr, size);
+    }
+
+    MemoryResourceAllocator<T> allocator;
     size_t size;
 };
 

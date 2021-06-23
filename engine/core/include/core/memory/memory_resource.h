@@ -24,7 +24,7 @@ public:
     using value_type = T;
 
     MemoryResourceAllocator(MemoryResource& memory_resource_)
-        : memory_resource(memory_resource_)
+        : memory_resource(&memory_resource_)
     {
     }
 
@@ -35,22 +35,22 @@ public:
     }
 
     T* allocate(size_t count) {
-        return memory_resource.allocate<T>(count);
+        return memory_resource->allocate<T>(count);
     }
 
     void deallocate(T* memory, size_t count) {
-        memory_resource.deallocate(memory);
+        memory_resource->deallocate(memory);
     }
 
     bool operator==(const MemoryResourceAllocator& other) const {
-        return &memory_resource == &other.memory_resource;
+        return memory_resource == other.memory_resource;
     }
 
     bool operator!=(const MemoryResourceAllocator& other) const {
-        return &memory_resource != &other.memory_resource;
+        return memory_resource != other.memory_resource;
     }
 
-    MemoryResource& memory_resource;
+    MemoryResource* memory_resource;
 };
 
 } // namespace kw
