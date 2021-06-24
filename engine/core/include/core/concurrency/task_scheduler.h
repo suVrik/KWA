@@ -1,8 +1,10 @@
 #pragma once
 
-#include <core/containers/vector.h>
+#include "core/containers/vector.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 
 namespace kw {
@@ -15,6 +17,7 @@ public:
     TaskScheduler(MemoryResource& persistent_memory_resource, size_t thread_count);
     ~TaskScheduler();
 
+    // Start running the given task when all its dependencies have completed.
     void enqueue_task(MemoryResource& transient_memory_resource, Task* task);
 
     // Help worker threads scheduling tasks. Return when there's no tasks left and all worker threads have completed.
@@ -29,8 +32,12 @@ private:
     void worker_thread();
     void run_task(Task* task);
 
-    std::atomic<TaskNode*> m_ready_tasks;
-    std::atomic<uint32_t> m_busy_threads;
+    std::mutex m_mutex;
+    TaskNode* m_ready_tasks;
+    size_t m_busy_threads;
+    std::condition_variable m_ready_task_condition_variable;
+    std::condition_variable m_busy_thread_condition_variable;
+
     std::atomic<bool> m_is_running;
 
     Vector<std::thread> m_threads;

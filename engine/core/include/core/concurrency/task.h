@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <initializer_list>
 
 namespace kw {
 
@@ -11,9 +12,19 @@ class Task {
 public:
     Task();
     
-    // This task must run before given tasks. Calling this method makes sense before the task is enqueued or when it
-    // has other dependencies. When a task is in ready stack, new input dependencies won't stop it from running.
-    void add_dependencies(MemoryResource& transient_memory_resource, Task** input_dependencies, size_t input_dependency_count);
+    // This task must run after given tasks. Calling this method is allowed before this task is enqueued or when it still
+    // has other dependencies. Otherwise data race might happen and this task will run too early won't run at all.
+    void add_input_dependencies(MemoryResource& transient_memory_resource, Task* const* input_dependencies, size_t input_dependency_count);
+
+    // Shortcut for the previous method.
+    void add_input_dependencies(MemoryResource& transient_memory_resource, std::initializer_list<Task*> input_dependencies);
+    
+    // This task must run before given tasks. Calling this method is allowed before the given tasks are enqueued or when they still
+    // have other dependencies. Otherwise data race might happen and some of these tasks will run too early won't run at all.
+    void add_output_dependencies(MemoryResource& transient_memory_resource, Task* const* output_dependencies, size_t output_dependency_count);
+
+    // Shortcut for the previous method.
+    void add_output_dependencies(MemoryResource& transient_memory_resource, std::initializer_list<Task*> output_dependencies);
 
     // Must be overriden by the user.
     virtual void run() = 0;
