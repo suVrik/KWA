@@ -2,9 +2,11 @@
 
 #include "render/render.h"
 
+#include <utility>
+
 namespace kw {
 
-class ThreadPool;
+class RenderPassImpl;
 class Window;
 
 struct ScissorsRect {
@@ -15,16 +17,16 @@ struct ScissorsRect {
 };
 
 struct DrawCallDescriptor {
-    // It is encouraged to submit subsequent draw calls with the same graphics pipeline.
+    // It is highly encouraged to submit subsequent draw calls with the same graphics pipeline.
     uint32_t graphics_pipeline_index;
 
-    const VertexBuffer* vertex_buffers;
+    const VertexBuffer* const* vertex_buffers;
     size_t vertex_buffer_count; // Must match graphics pipeline.
 
-    const VertexBuffer* instance_buffers;
+    const VertexBuffer* const* instance_buffers;
     size_t instance_buffer_count; // Must match graphics pipeline.
 
-    IndexBuffer index_buffer;
+    IndexBuffer* index_buffer;
 
     uint32_t index_count;
     uint32_t instance_count; // 0 is interpreted as 1.
@@ -43,10 +45,10 @@ struct DrawCallDescriptor {
     const uint32_t* uniform_attachment_indices;
     size_t uniform_attachment_index_count;
 
-    const Texture* uniform_textures;
+    const Texture* const* uniform_textures;
     size_t uniform_texture_count; // Must match flattened graphics pipeline.
 
-    const UniformBuffer* uniform_buffers;
+    const UniformBuffer* const* uniform_buffers;
     size_t uniform_buffer_count; // Must match flattened graphics pipeline.
 
     const void* push_constants;
@@ -68,15 +70,17 @@ class RenderPass {
 public:
     virtual ~RenderPass() = default;
 
-    // This method must be overridden by the user.
-    virtual void render(RenderPassContext& context) = 0;
+    // Must be called not more than once a frame for each attachment index. Must be called between first and second
+    // frame graph tasks. May return `nullptr` if window is minimized.
+    RenderPassContext* begin(uint32_t attachment_index = 0);
 
-    // This method may be overridden by the user, called instead of `render` when window is minimized.
-    virtual void skip() {
-    }
+private:
+    // API-specific structure set by frame graph.
+    RenderPassImpl* m_impl = nullptr;
+    friend class FrameGraph;
 };
 
-enum class Semantic {
+enum class Semantic : uint32_t {
     POSITION,
     COLOR,
     TEXCOORD,
@@ -103,7 +107,7 @@ struct BindingDescriptor {
     uint64_t stride;
 };
 
-enum class PrimitiveTopology {
+enum class PrimitiveTopology : uint32_t {
     TRIANGLE_LIST,
     TRIANGLE_STRIP,
     LINE_LIST,
@@ -113,7 +117,7 @@ enum class PrimitiveTopology {
 
 constexpr size_t PRIMITIVE_TOPOLOGY_COUNT = 5;
 
-enum class FillMode {
+enum class FillMode : uint32_t {
     FILL,
     LINE,
     POINT,
@@ -121,7 +125,7 @@ enum class FillMode {
 
 constexpr size_t FILL_MODE_COUNT = 3;
 
-enum class CullMode {
+enum class CullMode : uint32_t {
     BACK,
     FRONT,
     NONE,
@@ -129,14 +133,14 @@ enum class CullMode {
 
 constexpr size_t CULL_MODE_COUNT = 3;
 
-enum class FrontFace {
+enum class FrontFace : uint32_t {
     COUNTER_CLOCKWISE,
     CLOCKWISE,
 };
 
 constexpr size_t FRONT_FACE_COUNT = 2;
 
-enum class StencilOp {
+enum class StencilOp : uint32_t {
     KEEP,
     ZERO,
     REPLACE,
@@ -149,7 +153,7 @@ enum class StencilOp {
 
 constexpr size_t STENCIL_OP_COUNT = 8;
 
-enum class CompareOp {
+enum class CompareOp : uint32_t {
     NEVER,
     LESS,
     EQUAL,
@@ -169,7 +173,7 @@ struct StencilOpState {
     CompareOp compare_op;
 };
 
-enum class BlendFactor {
+enum class BlendFactor : uint32_t {
     ZERO,
     ONE,
     SOURCE_COLOR,
@@ -184,7 +188,7 @@ enum class BlendFactor {
 
 constexpr size_t BLEND_FACTOR_COUNT = 10;
 
-enum class BlendOp {
+enum class BlendOp : uint32_t {
     ADD,
     SUBTRACT,
     REVERSE_SUBTRACT,
@@ -206,7 +210,7 @@ struct AttachmentBlendDescriptor {
     BlendOp alpha_blend_op;
 };
 
-enum class ShaderVisibility {
+enum class ShaderVisibility : uint32_t {
     ALL,
     VERTEX,
     FRAGMENT,
@@ -232,14 +236,14 @@ struct UniformTextureDescriptor {
     uint32_t count; // 0 is interpreted as 1.
 };
 
-enum class Filter {
+enum class Filter : uint32_t {
     LINEAR,
     NEAREST,
 };
 
 constexpr size_t FILTER_COUNT = 2;
 
-enum class AddressMode {
+enum class AddressMode : uint32_t {
     WRAP,
     MIRROR,
     CLAMP,
@@ -248,7 +252,7 @@ enum class AddressMode {
 
 constexpr size_t ADDRESS_MODE_COUNT = 4;
 
-enum class BorderColor {
+enum class BorderColor : uint32_t {
     FLOAT_TRANSPARENT_BLACK,
     INT_TRANSPARENT_BLACK,
     FLOAT_OPAQUE_BLACK,
@@ -362,14 +366,14 @@ struct RenderPassDescriptor {
     const char* depth_stencil_attachment_name;
 };
 
-enum class SizeClass {
+enum class SizeClass : uint32_t {
     RELATIVE,
     ABSOLUTE,
 };
 
 constexpr size_t ATTACHMENT_SIZE_CLASS_COUNT = 2;
 
-enum class LoadOp {
+enum class LoadOp : uint32_t {
     CLEAR,
     DONT_CARE,
     LOAD,
@@ -403,17 +407,18 @@ struct AttachmentDescriptor {
 struct FrameGraphDescriptor {
     Render* render;
     Window* window;
-    ThreadPool* thread_pool;
 
     bool is_aliasing_enabled;
     bool is_vsync_enabled;
 
+    // Descriptor set count is pretty much the number of materials per descriptor pool. If most of your materials are
+    // 4 textures, 1 sampler and 1 uniform buffer, then good values for these fields are 256, 1024, 256, 256.
     uint32_t descriptor_set_count_per_descriptor_pool;
     uint32_t uniform_texture_count_per_descriptor_pool;
     uint32_t uniform_sampler_count_per_descriptor_pool;
     uint32_t uniform_buffer_count_per_descriptor_pool;
 
-    // `format` is decided automatically, `load_op` is `DONT_CARE`.
+    // `format` is decided automatically (most likely `RGBA8_UNORM`), `load_op` is `DONT_CARE`.
     const char* swapchain_attachment_name;
 
     const AttachmentDescriptor* color_attachment_descriptors;
@@ -434,10 +439,16 @@ public:
 
     virtual ~FrameGraph() = default;
 
-    virtual void render() = 0;
+    // The first task acquires the swapchain and resets render pass implementations.
+    // The second task submits the frame and presents the swapchain.
+    virtual std::pair<Task*, Task*> create_tasks() = 0;
 
     // Must be called when window size changes.
     virtual void recreate_swapchain() = 0;
+
+protected:
+    // Called by API implementations, because only base FrameGraph class has access to render pass implementation.
+    RenderPassImpl*& get_render_pass_impl(RenderPass* render_pass);
 };
 
 } // namespace kw

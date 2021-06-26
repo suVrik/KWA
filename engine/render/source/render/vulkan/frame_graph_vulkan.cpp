@@ -5,16 +5,15 @@
 
 #include <system/window.h>
 
-#include <core/concurrency/thread_pool.h>
 #include <core/debug/assert.h>
 #include <core/debug/log.h>
 #include <core/math/scalar.h>
 #include <core/utils/crc_utils.h>
-#include <core/utils/filesystem_utils.h>
 
 #include <SDL2/SDL_vulkan.h>
 
 #include <algorithm>
+#include <fstream>
 #include <numeric>
 #include <thread>
 
@@ -192,7 +191,6 @@ static void spv_free(void* context, void* memory) {
 FrameGraphVulkan::FrameGraphVulkan(const FrameGraphDescriptor& descriptor)
     : m_render(static_cast<RenderVulkan&>(*descriptor.render))
     , m_window(*descriptor.window)
-    , m_thread_pool(*descriptor.thread_pool)
     , m_descriptor_set_count_per_descriptor_pool(static_cast<uint32_t>(descriptor.descriptor_set_count_per_descriptor_pool))
     , m_uniform_texture_count_per_descriptor_pool(static_cast<uint32_t>(descriptor.uniform_texture_count_per_descriptor_pool))
     , m_uniform_sampler_count_per_descriptor_pool(static_cast<uint32_t>(descriptor.uniform_sampler_count_per_descriptor_pool))
@@ -212,17 +210,18 @@ FrameGraphVulkan::FrameGraphVulkan(const FrameGraphDescriptor& descriptor)
     , m_descriptor_pools(m_render.persistent_memory_resource)
     , m_render_pass_data(m_render.persistent_memory_resource)
     , m_parallel_block_data(m_render.persistent_memory_resource)
-    , m_thread_task_data(m_render.persistent_memory_resource)
     , m_command_pool_data{
-        Vector<CommandPoolData>(m_render.persistent_memory_resource),
-        Vector<CommandPoolData>(m_render.persistent_memory_resource),
-        Vector<CommandPoolData>(m_render.persistent_memory_resource),
+        UnorderedMap<std::thread::id, CommandPoolData>(m_render.persistent_memory_resource),
+        UnorderedMap<std::thread::id, CommandPoolData>(m_render.persistent_memory_resource),
+        UnorderedMap<std::thread::id, CommandPoolData>(m_render.persistent_memory_resource),
     }
     , m_image_acquired_binary_semaphores{ VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE }
     , m_render_finished_binary_semaphores{ VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE }
     , m_fences{ VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE }
     , m_frame_index(0)
     , m_is_attachment_layout_set(false)
+    , m_semaphore_index(UINT64_MAX)
+    , m_swapchain_image_index(UINT32_MAX)
 {
     create_lifetime_resources(descriptor);
     create_temporary_resources();
@@ -235,418 +234,11 @@ FrameGraphVulkan::~FrameGraphVulkan() {
     destroy_lifetime_resources();
 }
 
-void FrameGraphVulkan::render() {
-    //
-    // Check whether there's a swapchain to render to.
-    //
-
-    if (m_swapchain == VK_NULL_HANDLE) {
-        recreate_swapchain();
-
-        if (m_swapchain == VK_NULL_HANDLE) {
-            // Most likely the window is minimized.
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-            for (RenderPassData& render_pass_data : m_render_pass_data) {
-                KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
-                render_pass_data.render_pass_delegate->skip();
-            }
-
-            return;
-        }
-    }
-
-    //
-    // Wait until command buffers are available for new submission.
-    //
-
-    uint64_t semaphore_index = m_frame_index++ % SWAPCHAIN_IMAGE_COUNT;
-
-    VK_ERROR(
-        vkWaitForFences(m_render.device, 1, &m_fences[semaphore_index], VK_TRUE, UINT64_MAX),
-        "Failed to wait for fences."
-    );
-
-    //
-    // Wait until swapchain image is available for render.
-    //
-
-    uint32_t swapchain_image_index;
-
-    VkResult acquire_result = vkAcquireNextImageKHR(m_render.device, m_swapchain, UINT64_MAX, m_image_acquired_binary_semaphores[semaphore_index], VK_NULL_HANDLE, &swapchain_image_index);
-    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
-        recreate_swapchain();
-
-        // Semaphore wasn't signaled, so we'd need another acquire.
-
-        for (RenderPassData& render_pass_data : m_render_pass_data) {
-            KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
-            render_pass_data.render_pass_delegate->skip();
-        }
-
-        return;
-    } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
-        VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
-    }
-
-    //
-    // Once we're guaranteed to submit the frame, we can transition the fence to unsignaled state.
-    //
-
-    VK_ERROR(
-        vkResetFences(m_render.device, 1, &m_fences[semaphore_index]),
-        "Failed to reset fences."
-    );
-
-    //
-    // Increment timeline semaphore value, which provides a guarantee that no resources available right now
-    // will be destroyed until the frame execution on device is finished.
-    //
-
-    m_render_finished_timeline_semaphore->value++;
-
-    //
-    // Reset command pools.
-    //
-
-    for (size_t thread_index = 0; thread_index < m_command_pool_data[semaphore_index].size(); thread_index++) {
-        CommandPoolData& command_pool_data = m_command_pool_data[semaphore_index][thread_index];
-
-        KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
-        VK_ERROR(
-            vkResetCommandPool(m_render.device, command_pool_data.command_pool, 0),
-            "Failed to reset frame command pool."
-        );
-    }
-
-    //
-    // Execute render passes in parallel.
-    //
-
-    // Current command buffer index for each render pass.
-    Vector<uint32_t> command_buffer_indices(m_thread_pool.get_count(), m_render.transient_memory_resource);
-
-    // Assign command buffer to each render pass in parallel and then collect them into a single submit.
-    Vector<VkCommandBuffer> render_pass_command_buffers(m_thread_task_data.size(), m_render.transient_memory_resource);
-    
-    // If we didn't use any of the newly created resources, we shouldn't wait for a transfer queue.
-    std::atomic_uint64_t transfer_semaphore_value = 0;
-
-    m_thread_pool.parallel_for([&](size_t thread_task_index, size_t thread_index) {
-        ThreadTaskData& thread_task_data = m_thread_task_data[thread_task_index];
-        KW_ASSERT(thread_task_data.render_pass_index < m_render_pass_data.size());
-
-        RenderPassData& render_pass_data = m_render_pass_data[thread_task_data.render_pass_index];
-        KW_ASSERT(render_pass_data.render_pass != VK_NULL_HANDLE);
-        KW_ASSERT(render_pass_data.parallel_block_index < m_parallel_block_data.size());
-
-        //
-        // Find or create a command buffer.
-        //
-
-        KW_ASSERT(thread_index < command_buffer_indices.size());
-        uint32_t command_buffer_index = command_buffer_indices[thread_index]++;
-
-        KW_ASSERT(thread_index < m_command_pool_data[semaphore_index].size());
-        CommandPoolData& command_pool_data = m_command_pool_data[semaphore_index][thread_index];
-
-        // When one thread is performing too long, other threads may need to process more render passes than they were
-        // expecting. Extra command buffers may be required to do that.
-        if (command_buffer_index >= command_pool_data.command_buffers.size()) {
-            KW_ASSERT(command_buffer_index == command_pool_data.command_buffers.size());
-
-            VkCommandBufferAllocateInfo command_buffer_allocate_info{};
-            command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            command_buffer_allocate_info.commandPool = command_pool_data.command_pool;
-            command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            command_buffer_allocate_info.commandBufferCount = 1;
-
-            VkCommandBuffer command_buffer;
-            VK_ERROR(
-                vkAllocateCommandBuffers(m_render.device, &command_buffer_allocate_info, &command_buffer),
-                "Failed to allocate frame command buffer."
-            );
-
-            command_pool_data.command_buffers.push_back(command_buffer);
-        }
-
-        VkCommandBuffer command_buffer = command_pool_data.command_buffers[command_buffer_index];
-        KW_ASSERT(command_buffer != VK_NULL_HANDLE);
-
-        KW_ASSERT(render_pass_command_buffers[thread_task_index] == VK_NULL_HANDLE);
-        render_pass_command_buffers[thread_task_index] = command_buffer;
-
-        VkCommandBufferBeginInfo command_buffer_begin_info{};
-        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        VK_ERROR(
-            vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
-            "Failed to begin frame command buffer."
-        );
-
-        //
-        // After swapchain recreation attachment layouts must be set.
-        //
-
-        if (!m_is_attachment_layout_set && thread_task_index == 0) {
-            Vector<VkImageMemoryBarrier> image_memory_barriers(m_attachment_data.size(), m_render.transient_memory_resource);
-            for (size_t attachment_index = 0; attachment_index < m_attachment_data.size(); attachment_index++) {
-                const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-                AttachmentData& attachment_data = m_attachment_data[attachment_index];
-
-                VkAccessFlags initial_access_mask = attachment_data.initial_access_mask;
-                VkImageLayout initial_layout = attachment_data.initial_layout;
-                if (initial_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-                    if (attachment_index == 0) {
-                        // Swapchain attachment is never written, just present garbage.
-                        initial_access_mask = 0;
-                        initial_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                    } else {
-                        // This happens only to attachments that are never read and written.
-                        initial_access_mask = VK_ACCESS_SHADER_READ_BIT;
-                        initial_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    }
-                }
-
-                VkImage attachment_image = attachment_index == 0 ? m_swapchain_images[swapchain_image_index] : attachment_data.image;
-                KW_ASSERT(attachment_image != VK_NULL_HANDLE);
-
-                VkImageAspectFlags aspect_mask;
-                if (attachment_descriptor.format == TextureFormat::D24_UNORM_S8_UINT || attachment_descriptor.format == TextureFormat::D32_FLOAT_S8X24_UINT) {
-                    aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-                } else if (attachment_descriptor.format == TextureFormat::D16_UNORM || attachment_descriptor.format == TextureFormat::D32_FLOAT) {
-                    aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                } else {
-                    aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
-                }
-
-                VkImageSubresourceRange image_subresource_range{};
-                image_subresource_range.aspectMask = aspect_mask;
-                image_subresource_range.baseMipLevel = 0;
-                image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
-                image_subresource_range.baseArrayLayer = 0;
-                image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-                VkImageMemoryBarrier& image_memory_barrier = image_memory_barriers[attachment_index];
-                image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                image_memory_barrier.srcAccessMask = 0;
-                image_memory_barrier.dstAccessMask = initial_access_mask;
-                image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                image_memory_barrier.newLayout = initial_layout;
-                image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                image_memory_barrier.image = attachment_image;
-                image_memory_barrier.subresourceRange = image_subresource_range;
-            }
-
-            vkCmdPipelineBarrier(
-                command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0,
-                0, nullptr, 0, nullptr, static_cast<uint32_t>(image_memory_barriers.size()), image_memory_barriers.data()
-            );
-
-            m_is_attachment_layout_set = true;
-        }
-
-        //
-        // Perform synchronization between render passes.
-        //
-
-        if (thread_task_data.render_pass_index > 0 && (thread_task_data.framebuffer_index == 0 || thread_task_data.framebuffer_index == UINT32_MAX) &&
-            m_render_pass_data[thread_task_data.render_pass_index - 1].parallel_block_index != render_pass_data.parallel_block_index)
-        {
-            ParallelBlockData& parallel_block_data = m_parallel_block_data[render_pass_data.parallel_block_index];
-
-            VkMemoryBarrier memory_barrier{};
-            memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
-            memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
-
-            // First render passes in their parallel blocks require pipeline barriers.
-            vkCmdPipelineBarrier(
-                command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
-                1, &memory_barrier, 0, nullptr, 0, nullptr
-            );
-        }
-
-        //
-        // Begin render pass.
-        //
-
-        VkFramebuffer framebuffer;
-        
-        if (thread_task_data.framebuffer_index == UINT32_MAX) {
-            KW_ASSERT(render_pass_data.framebuffers.size() == SWAPCHAIN_IMAGE_COUNT);
-            framebuffer = render_pass_data.framebuffers[swapchain_image_index];
-        } else {
-            KW_ASSERT(thread_task_data.framebuffer_index < render_pass_data.framebuffers.size());
-            framebuffer = render_pass_data.framebuffers[thread_task_data.framebuffer_index];
-        }
-
-        VkRect2D render_area{};
-        render_area.offset.x = 0;
-        render_area.offset.y = 0;
-        render_area.extent.width = render_pass_data.framebuffer_width;
-        render_area.extent.height = render_pass_data.framebuffer_height;
-
-        Vector<VkClearValue> clear_values(render_pass_data.attachment_indices.size(), m_render.transient_memory_resource);
-        for (size_t i = 0; i < render_pass_data.attachment_indices.size(); i++) {
-            size_t attachment_index = render_pass_data.attachment_indices[i];
-            KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-            AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-            if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                clear_values[i].depthStencil.depth = attachment_descriptor.clear_depth;
-                clear_values[i].depthStencil.stencil = attachment_descriptor.clear_stencil;
-            } else {
-                clear_values[i].color.float32[0] = attachment_descriptor.clear_color[0];
-                clear_values[i].color.float32[1] = attachment_descriptor.clear_color[1];
-                clear_values[i].color.float32[2] = attachment_descriptor.clear_color[2];
-                clear_values[i].color.float32[3] = attachment_descriptor.clear_color[3];
-            }
-        }
-
-        VkRenderPassBeginInfo render_pass_begin_info{};
-        render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        render_pass_begin_info.renderPass = render_pass_data.render_pass;
-        render_pass_begin_info.framebuffer = framebuffer;
-        render_pass_begin_info.renderArea = render_area;
-        render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
-        render_pass_begin_info.pClearValues = clear_values.data();
-
-        vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
-        VkViewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = render_pass_data.framebuffer_width;
-        viewport.height = render_pass_data.framebuffer_height;
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-
-        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-        RenderPassContextVulkan render_pass_context(*this, swapchain_image_index, command_buffer, thread_task_data.render_pass_index, thread_task_data.framebuffer_index, render_pass_data.framebuffer_width, render_pass_data.framebuffer_height);
-
-        KW_ASSERT(render_pass_data.render_pass_delegate != nullptr);
-        render_pass_data.render_pass_delegate->render(render_pass_context);
-
-        uint64_t previous_transfer_semaphore_value = transfer_semaphore_value.load(std::memory_order_relaxed);
-        while (previous_transfer_semaphore_value < render_pass_context.transfer_semaphore_value &&
-               !transfer_semaphore_value.compare_exchange_weak(previous_transfer_semaphore_value, render_pass_context.transfer_semaphore_value, std::memory_order_release, std::memory_order_relaxed))
-        {
-        }
-
-        vkCmdEndRenderPass(command_buffer);
-
-        vkEndCommandBuffer(command_buffer);
-    }, m_thread_task_data.size());
-
-    //
-    // Before submitting render passes, submit all copy commands (new could be added in render passes),
-    // which may create an execution dependency between transfer and graphics queues.
-    //
-
-    m_render.flush();
-
-    //
-    // Submit.
-    //
-
-    const uint64_t wait_semaphore_values[] = {
-        // Wait for image acquire.
-        0,
-        // Wait for transfer queue.
-        transfer_semaphore_value,
-        // Wait for previous frame.
-        m_render_finished_timeline_semaphore->value - 1,
+std::pair<Task*, Task*> FrameGraphVulkan::create_tasks() {
+    return {
+        new (m_render.transient_memory_resource.allocate<AcquireTask>()) AcquireTask(*this),
+        new (m_render.transient_memory_resource.allocate<PresentTask>()) PresentTask(*this)
     };
-
-    const uint64_t signal_semaphore_values[] = {
-        // Signal render finished for present.
-        0,
-        // Signal render finished for resource destroy.
-        m_render_finished_timeline_semaphore->value,
-    };
-
-    VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info{};
-    timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-    timeline_semaphore_submit_info.waitSemaphoreValueCount = static_cast<uint32_t>(std::size(wait_semaphore_values));
-    timeline_semaphore_submit_info.pWaitSemaphoreValues = wait_semaphore_values;
-    timeline_semaphore_submit_info.signalSemaphoreValueCount = static_cast<uint32_t>(std::size(signal_semaphore_values));
-    timeline_semaphore_submit_info.pSignalSemaphoreValues = signal_semaphore_values;
-
-    const VkSemaphore wait_semaphores[] = {
-        // Wait for image acquire.
-        m_image_acquired_binary_semaphores[semaphore_index],
-        // Wait for transfer queue.
-        m_render.semaphore->semaphore,
-        // Wait for previous frame.
-        m_render_finished_timeline_semaphore->semaphore,
-    };
-
-    const VkPipelineStageFlags wait_stage_masks[] = {
-        // We will write to acquired image only on color attachment output stage.
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        // We may use transfered resources on vertex shader stage and later.
-        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-        // First write access to attachment memory happens in later fragment tests.
-        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-    };
-
-    const VkSemaphore signal_semaphores[] = {
-        // Signal render finished for present.
-        m_render_finished_binary_semaphores[semaphore_index],
-        // Signal render finished for resource destroy.
-        m_render_finished_timeline_semaphore->semaphore,
-    };
-
-    VkSubmitInfo submit_info{};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.pNext = &timeline_semaphore_submit_info;
-    submit_info.waitSemaphoreCount = static_cast<uint32_t>(std::size(wait_semaphores));
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stage_masks;
-    submit_info.commandBufferCount = static_cast<uint32_t>(render_pass_command_buffers.size());
-    submit_info.pCommandBuffers = render_pass_command_buffers.data();
-    submit_info.signalSemaphoreCount = static_cast<uint32_t>(std::size(signal_semaphores));
-    submit_info.pSignalSemaphores = signal_semaphores;
-
-    {
-        std::lock_guard<Spinlock> lock(*m_render.graphics_queue_spinlock);
-
-        VK_ERROR(
-            vkQueueSubmit(m_render.graphics_queue, 1, &submit_info, m_fences[semaphore_index]),
-            "Failed to submit."
-        );
-    }
-
-    //
-    // Present.
-    //
-
-    VkPresentInfoKHR present_info{};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &m_render_finished_binary_semaphores[semaphore_index];
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = &m_swapchain;
-    present_info.pImageIndices = &swapchain_image_index;
-    present_info.pResults = nullptr;
-
-    VkResult present_result;
-    {
-        std::lock_guard<Spinlock> lock(*m_render.graphics_queue_spinlock);
-
-        present_result = vkQueuePresentKHR(m_render.graphics_queue, &present_info);
-    }
-
-    if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
-        recreate_swapchain();
-    } else if (present_result != VK_SUBOPTIMAL_KHR) {
-        VK_ERROR(present_result, "Failed to present.");
-    }
 }
 
 void FrameGraphVulkan::recreate_swapchain() {
@@ -677,9 +269,7 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
     compute_attachment_layouts(create_context);
 
     create_render_passes(create_context);
-    create_command_pools(create_context);
     create_synchronization(create_context);
-    create_thread_tasks(create_context);
 }
 
 void FrameGraphVulkan::destroy_lifetime_resources() {
@@ -706,7 +296,7 @@ void FrameGraphVulkan::destroy_lifetime_resources() {
     m_descriptor_pools.clear();
 
     for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        for (CommandPoolData& command_pool_data : m_command_pool_data[swapchain_image_index]) {
+        for (auto& [_, command_pool_data] : m_command_pool_data[swapchain_image_index]) {
             vkDestroyCommandPool(m_render.device, command_pool_data.command_pool, &m_render.allocation_callbacks);
         }
         m_command_pool_data[swapchain_image_index].clear();
@@ -1645,7 +1235,16 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
     );
     VK_NAME(m_render, render_pass_data.render_pass, "Render pass \"%s\"", render_pass_descriptor.name);
 
-    render_pass_data.render_pass_delegate = render_pass_descriptor.render_pass;
+    //
+    // Create render pass impl and pass it to an actual render pass.
+    //
+
+    static_assert(std::is_move_assignable_v<MemoryResourceAllocator<RenderPassImplVulkan>>);
+    static_assert(std::is_move_assignable_v<UniquePtr<RenderPassImplVulkan>>);
+
+    render_pass_data.render_pass_impl = allocate_unique<RenderPassImplVulkan>(m_render.persistent_memory_resource, *this, render_pass_index);
+
+    get_render_pass_impl(render_pass_descriptor.render_pass) = render_pass_data.render_pass_impl.get();
 }
 
 void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, uint32_t render_pass_index, uint32_t graphics_pipeline_index) {
@@ -1686,9 +1285,24 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
 
     /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
         String relative_path(graphics_pipeline_descriptor.vertex_shader_filename, create_context.graphics_pipeline_memory_resource);
+        KW_ERROR(relative_path.find(".hlsl") != String::npos, "Shader file \"%s\" must have .hlsl extention.", graphics_pipeline_descriptor.vertex_shader_filename);
+
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path.c_str());
+        std::ifstream file(relative_path.c_str(), std::ios::binary | std::ios::ate);
+        KW_ERROR(file, "Failed to open shader file \"%s\".", graphics_pipeline_descriptor.vertex_shader_filename);
+
+        std::streamsize size = file.tellg();
+        KW_ERROR(size >= 0, "Failed to query shader file size \"%s\".", graphics_pipeline_descriptor.vertex_shader_filename);
+
+        file.seekg(0, std::ios::beg);
+
+        Vector<char> shader_data(size, create_context.graphics_pipeline_memory_resource);
+
+        KW_ERROR(
+            file.read(shader_data.data(), size),
+            "Failed to read shader file \"%s\".", graphics_pipeline_descriptor.vertex_shader_filename
+        );
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &vertex_shader_reflection, &spv_allocator),
@@ -1703,9 +1317,24 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
 
     if (graphics_pipeline_descriptor.fragment_shader_filename != nullptr) {
         String relative_path(graphics_pipeline_descriptor.fragment_shader_filename, create_context.graphics_pipeline_memory_resource);
+        KW_ERROR(relative_path.find(".hlsl") != String::npos, "Shader file \"%s\" must have .hlsl extention.", graphics_pipeline_descriptor.fragment_shader_filename);
+
         relative_path.replace(relative_path.find(".hlsl"), 5, ".spv");
 
-        Vector<uint8_t> shader_data = FilesystemUtils::read_file(create_context.graphics_pipeline_memory_resource, relative_path.c_str());
+        std::ifstream file(relative_path.c_str(), std::ios::binary | std::ios::ate);
+        KW_ERROR(file, "Failed to open shader file \"%s\".", graphics_pipeline_descriptor.fragment_shader_filename);
+
+        std::streamsize size = file.tellg();
+        KW_ERROR(size >= 0, "Failed to query shader file size \"%s\".", graphics_pipeline_descriptor.fragment_shader_filename);
+
+        file.seekg(0, std::ios::beg);
+
+        Vector<char> shader_data(size, create_context.graphics_pipeline_memory_resource);
+
+        KW_ERROR(
+            file.read(shader_data.data(), size),
+            "Failed to read shader file \"%s\".", graphics_pipeline_descriptor.fragment_shader_filename
+        );
 
         SPV_ERROR(
             spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &fragment_shader_reflection, &spv_allocator),
@@ -2853,47 +2482,6 @@ void FrameGraphVulkan::create_graphics_pipeline(CreateContext& create_context, u
     render_pass_data.graphics_pipeline_data.push_back(std::move(graphics_pipeline_data));
 }
 
-void FrameGraphVulkan::create_command_pools(CreateContext& create_context) {
-    size_t thread_count = m_thread_pool.get_count();
-    KW_ASSERT(thread_count > 0);
-
-    size_t command_buffer_count = (m_render_pass_data.size() + thread_count - 1) / thread_count;
-
-    for (size_t swapchain_image_index = 0; swapchain_image_index < SWAPCHAIN_IMAGE_COUNT; swapchain_image_index++) {
-        KW_ASSERT(m_command_pool_data[swapchain_image_index].empty());
-        m_command_pool_data[swapchain_image_index].resize(thread_count, CommandPoolData{ VK_NULL_HANDLE, Vector<VkCommandBuffer>(m_render.persistent_memory_resource) });
-
-        for (size_t thread_index = 0; thread_index < thread_count; thread_index++) {
-            CommandPoolData& command_pool_data = m_command_pool_data[swapchain_image_index][thread_index];
-
-            VkCommandPoolCreateInfo command_pool_create_info{};
-            command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-            command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            command_pool_create_info.queueFamilyIndex = m_render.graphics_queue_family_index;
-
-            KW_ASSERT(command_pool_data.command_pool == VK_NULL_HANDLE);
-            VK_ERROR(
-                vkCreateCommandPool(m_render.device, &command_pool_create_info, &m_render.allocation_callbacks, &command_pool_data.command_pool),
-                "Failed to create a command pool."
-            );
-
-            KW_ASSERT(command_pool_data.command_buffers.empty());
-            command_pool_data.command_buffers.resize(command_buffer_count);
-
-            VkCommandBufferAllocateInfo command_buffer_allocate_info{};
-            command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            command_buffer_allocate_info.commandPool = command_pool_data.command_pool;
-            command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            command_buffer_allocate_info.commandBufferCount = static_cast<uint32_t>(command_pool_data.command_buffers.size());
-
-            VK_ERROR(
-                vkAllocateCommandBuffers(m_render.device, &command_buffer_allocate_info, command_pool_data.command_buffers.data()),
-                "Failed to allocate command buffers."
-            );
-        }
-    }
-}
-
 void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
     VkSemaphoreCreateInfo semaphore_create_info{};
     semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -2926,62 +2514,6 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
 
     // Render must wait for this frame to finish before destroying a resource that could be used in this frame.
     m_render.add_resource_dependency(m_render_finished_timeline_semaphore);
-}
-
-void FrameGraphVulkan::create_thread_tasks(CreateContext& create_context) {
-    //
-    // Compute the number of thread tasks.
-    //
-
-    uint32_t thread_task_count = 0;
-
-    for (size_t render_pass_index = 0; render_pass_index < m_render_pass_data.size(); render_pass_index++) {
-        RenderPassData& render_pass_data = m_render_pass_data[render_pass_index];
-        KW_ASSERT(!render_pass_data.attachment_indices.empty());
-
-        uint32_t attachment_index = render_pass_data.attachment_indices[0];
-        KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-        const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-        KW_ASSERT(attachment_descriptor.count > 0);
-
-        thread_task_count += attachment_descriptor.count;
-    }
-
-    KW_ASSERT(m_thread_task_data.empty());
-    m_thread_task_data.reserve(thread_task_count);
-
-    //
-    // Create thread tasks.
-    //
-
-    for (size_t render_pass_index = 0; render_pass_index < m_render_pass_data.size(); render_pass_index++) {
-        RenderPassData& render_pass_data = m_render_pass_data[render_pass_index];
-        KW_ASSERT(!render_pass_data.attachment_indices.empty());
-
-        uint32_t attachment_count = 0;
-        bool is_swapchain_attachment_present = false;
-
-        for (size_t i = 0; i < render_pass_data.attachment_indices.size(); i++) {
-            uint32_t attachment_index = render_pass_data.attachment_indices[i];
-            KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-            attachment_count = m_attachment_descriptors[attachment_index].count;
-
-            if (attachment_index == 0) {
-                is_swapchain_attachment_present = true;
-            }
-        }
-
-        if (is_swapchain_attachment_present) {
-            // When swapchain attachment in present a framebuffer, the framebuffer selection is dynamic.
-            m_thread_task_data.push_back(ThreadTaskData{ static_cast<uint32_t>(render_pass_index), UINT32_MAX });
-        } else {
-            for (uint32_t framebuffer_index = 0; framebuffer_index < attachment_count; framebuffer_index++) {
-                m_thread_task_data.push_back(ThreadTaskData{ static_cast<uint32_t>(render_pass_index), framebuffer_index });
-            }
-        }
-    }
 }
 
 void FrameGraphVulkan::create_temporary_resources() {
@@ -3539,44 +3071,30 @@ FrameGraphVulkan::GraphicsPipelineData::GraphicsPipelineData(GraphicsPipelineDat
 {
 }
 
-FrameGraphVulkan::RenderPassData::RenderPassData(MemoryResource& memory_resource)
-    : render_pass(VK_NULL_HANDLE)
-    , graphics_pipeline_data(memory_resource)
-    , framebuffer_width(0)
-    , framebuffer_height(0)
-    , framebuffers(memory_resource)
-    , parallel_block_index(0)
-    , attachment_indices(memory_resource)
-    , render_pass_delegate(render_pass_delegate)
+FrameGraphVulkan::CommandPoolData::CommandPoolData(MemoryResource& memory_resource)
+    : command_pool(VK_NULL_HANDLE)
+    , command_buffers(memory_resource)
+    , current_command_buffer(0)
 {
 }
 
-FrameGraphVulkan::RenderPassData::RenderPassData(RenderPassData&& other)
-    : render_pass(other.render_pass)
-    , graphics_pipeline_data(std::move(other.graphics_pipeline_data))
-    , framebuffer_width(other.framebuffer_width)
-    , framebuffer_height(other.framebuffer_height)
-    , framebuffers(std::move(other.framebuffers))
-    , parallel_block_index(other.parallel_block_index)
-    , attachment_indices(std::move(other.attachment_indices))
-    , render_pass_delegate(other.render_pass_delegate)
+FrameGraphVulkan::CommandPoolData::CommandPoolData(CommandPoolData&& other)
+    : command_pool(other.command_pool)
+    , command_buffers(std::move(other.command_buffers))
+    , current_command_buffer(other.current_command_buffer)
 {
 }
 
-FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t swapchain_image_index,
-                                                                   VkCommandBuffer command_buffer, uint32_t render_pass_index,
-                                                                   uint32_t attachment_index, uint32_t attachment_width, uint32_t attachment_height)
-    : transfer_semaphore_value(0)
+FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index, uint32_t framebuffer_index)
+    : command_buffer(VK_NULL_HANDLE)
+    , transfer_semaphore_value(0)
     , m_frame_graph(frame_graph)
-    , m_swapchain_image_index(swapchain_image_index)
-    , m_command_buffer(command_buffer)
     , m_render_pass_index(render_pass_index)
-    , m_attachment_index(attachment_index)
-    , m_attachment_width(attachment_width)
-    , m_attachment_height(attachment_height)
+    , m_framebuffer_index(framebuffer_index)
+    , m_framebuffer_width(frame_graph.m_render_pass_data[render_pass_index].framebuffer_width)
+    , m_framebuffer_height(frame_graph.m_render_pass_data[render_pass_index].framebuffer_height)
     , m_graphics_pipeline_index(UINT32_MAX)
 {
-    KW_ASSERT(render_pass_index < frame_graph.m_render_pass_data.size());
 }
 
 void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& descriptor) {
@@ -3644,7 +3162,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     //
 
     if (descriptor.graphics_pipeline_index != m_graphics_pipeline_index) {
-        vkCmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_data.pipeline);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_data.pipeline);
         m_graphics_pipeline_index = descriptor.graphics_pipeline_index;
     }
 
@@ -3656,20 +3174,19 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     Vector<VkDeviceSize> vertex_buffer_offsets(descriptor.vertex_buffer_count, m_frame_graph.m_render.transient_memory_resource);
 
     for (size_t i = 0; i < descriptor.vertex_buffer_count; i++) {
-        const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.vertex_buffers[i]);
-        KW_ASSERT(buffer_vulkan != nullptr);
+        const VertexBufferVulkan* vertex_buffer_vulkan = reinterpret_cast<const VertexBufferVulkan*>(descriptor.vertex_buffers[i]);
+        KW_ASSERT(vertex_buffer_vulkan != nullptr);
 
-        vertex_buffers[i] = buffer_vulkan->buffer;
+        vertex_buffers[i] = vertex_buffer_vulkan->buffer;
 
-        if ((buffer_vulkan->buffer_flags & BufferFlagsVulkan::TRANSIENT) == BufferFlagsVulkan::TRANSIENT) {
-            // Transient buffers store transient offset in `device_data_offset`.
-            vertex_buffer_offsets[i] = buffer_vulkan->device_data_offset;
+        if (vertex_buffer_vulkan->is_transient()) {
+            vertex_buffer_offsets[i] = vertex_buffer_vulkan->transient_buffer_offset;
         } else {
             vertex_buffer_offsets[i] = 0;
         }
     }
 
-    vkCmdBindVertexBuffers(m_command_buffer, 0, static_cast<uint32_t>(descriptor.vertex_buffer_count), vertex_buffers.data(), vertex_buffer_offsets.data());
+    vkCmdBindVertexBuffers(command_buffer, 0, static_cast<uint32_t>(descriptor.vertex_buffer_count), vertex_buffers.data(), vertex_buffer_offsets.data());
 
     //
     // Bind instance buffers.
@@ -3680,45 +3197,43 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
         Vector<VkDeviceSize> instance_buffer_offsets(descriptor.instance_buffer_count, m_frame_graph.m_render.transient_memory_resource);
 
         for (size_t i = 0; i < descriptor.instance_buffer_count; i++) {
-            const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.instance_buffers[i]);
-            KW_ASSERT(buffer_vulkan != nullptr);
+            const VertexBufferVulkan* vertex_buffer_vulkan = reinterpret_cast<const VertexBufferVulkan*>(descriptor.instance_buffers[i]);
+            KW_ASSERT(vertex_buffer_vulkan != nullptr);
 
-            instance_buffers[i] = buffer_vulkan->buffer;
+            instance_buffers[i] = vertex_buffer_vulkan->buffer;
 
-            if ((buffer_vulkan->buffer_flags & BufferFlagsVulkan::TRANSIENT) == BufferFlagsVulkan::TRANSIENT) {
-                // Transient buffers store transient offset in `device_data_offset`.
-                instance_buffer_offsets[i] = buffer_vulkan->device_data_offset;
+            if (vertex_buffer_vulkan->is_transient()) {
+                instance_buffer_offsets[i] = vertex_buffer_vulkan->transient_buffer_offset;
             } else {
                 instance_buffer_offsets[i] = 0;
             }
         }
 
-        vkCmdBindVertexBuffers(m_command_buffer, graphics_pipeline_data.vertex_buffer_count, static_cast<uint32_t>(descriptor.instance_buffer_count), instance_buffers.data(), instance_buffer_offsets.data());
+        vkCmdBindVertexBuffers(command_buffer, graphics_pipeline_data.vertex_buffer_count, static_cast<uint32_t>(descriptor.instance_buffer_count), instance_buffers.data(), instance_buffer_offsets.data());
     }
 
     //
     // Bind index buffer.
     //
 
-    const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.index_buffer);
-    KW_ASSERT(buffer_vulkan != nullptr);
+    const IndexBufferVulkan* index_buffer_vulkan = reinterpret_cast<const IndexBufferVulkan*>(descriptor.index_buffer);
+    KW_ASSERT(index_buffer_vulkan != nullptr);
 
     VkIndexType index_type;
-    if ((buffer_vulkan->buffer_flags & BufferFlagsVulkan::INDEX16) == BufferFlagsVulkan::INDEX16) {
+    if (index_buffer_vulkan->get_index_size() == IndexSize::UINT16) {
         index_type = VK_INDEX_TYPE_UINT16;
     } else {
         index_type = VK_INDEX_TYPE_UINT32;
     }
 
     VkDeviceSize index_buffer_offset;
-    if ((buffer_vulkan->buffer_flags & BufferFlagsVulkan::TRANSIENT) == BufferFlagsVulkan::TRANSIENT) {
-        // Transient buffers store transient offset in `device_data_offset`.
-        index_buffer_offset = buffer_vulkan->device_data_offset;
+    if (index_buffer_vulkan->is_transient()) {
+        index_buffer_offset = index_buffer_vulkan->transient_buffer_offset;
     } else {
         index_buffer_offset = 0;
     }
 
-    vkCmdBindIndexBuffer(m_command_buffer, buffer_vulkan->buffer, index_buffer_offset, index_type);
+    vkCmdBindIndexBuffer(command_buffer, index_buffer_vulkan->buffer, index_buffer_offset, index_type);
 
     //
     // Set scissor.
@@ -3733,17 +3248,17 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     } else {
         scissor.offset.x = 0;
         scissor.offset.y = 0;
-        scissor.extent.width = render_pass_data.framebuffer_width;
-        scissor.extent.height = render_pass_data.framebuffer_height;
+        scissor.extent.width = m_framebuffer_width;
+        scissor.extent.height = m_framebuffer_height;
     }
 
-    vkCmdSetScissor(m_command_buffer, 0, 1, &scissor);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
     //
     // Set stencil reference value.
     //
 
-    vkCmdSetStencilReference(m_command_buffer, VK_STENCIL_FACE_FRONT_AND_BACK, descriptor.stencil_reference);
+    vkCmdSetStencilReference(command_buffer, VK_STENCIL_FACE_FRONT_AND_BACK, descriptor.stencil_reference);
 
     //
     // Compute descriptor set's CRC.
@@ -3777,7 +3292,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     for (uint32_t uniform_texture_mapping : graphics_pipeline_data.uniform_texture_mapping) {
         KW_ASSERT(uniform_texture_mapping < descriptor.uniform_texture_count);
 
-        const TextureVulkan* texture_vulkan = reinterpret_cast<const TextureVulkan*>(descriptor.uniform_textures[uniform_texture_mapping]);
+        const TextureVulkan* texture_vulkan = static_cast<const TextureVulkan*>(descriptor.uniform_textures[uniform_texture_mapping]);
         KW_ASSERT(texture_vulkan != nullptr);
 
         crc = CrcUtils::crc64(crc, &texture_vulkan->image_view, sizeof(VkImageView));
@@ -3788,12 +3303,13 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     for (uint32_t uniform_buffer_mapping : graphics_pipeline_data.uniform_buffer_mapping) {
         KW_ASSERT(uniform_buffer_mapping < descriptor.uniform_buffer_count);
 
-        const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.uniform_buffers[uniform_buffer_mapping]);
-        KW_ASSERT(buffer_vulkan != nullptr);
+        const UniformBufferVulkan* uniform_buffer_vulkan = static_cast<const UniformBufferVulkan*>(descriptor.uniform_buffers[uniform_buffer_mapping]);
+        KW_ASSERT(uniform_buffer_vulkan != nullptr);
 
-        crc = CrcUtils::crc64(crc, &buffer_vulkan->buffer, sizeof(VkBuffer));
+        VkBuffer transient_buffer = m_frame_graph.m_render.get_transient_buffer();
+        crc = CrcUtils::crc64(crc, &transient_buffer, sizeof(VkBuffer));
 
-        transfer_semaphore_value = std::max(transfer_semaphore_value, buffer_vulkan->transfer_semaphore_value);
+        // `transfer_semaphore_value` for transient data is implicitly zero.
     }
 
     //
@@ -3803,7 +3319,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
 
     if (!graphics_pipeline_data.uniform_attachment_mapping.empty() || !graphics_pipeline_data.uniform_texture_mapping.empty() || !graphics_pipeline_data.uniform_buffer_mapping.empty()) {
-        std::shared_lock<std::shared_mutex> bound_descriptor_sets_shared_lock(graphics_pipeline_data.bound_descriptor_sets_mutex);
+        std::shared_lock bound_descriptor_sets_shared_lock(graphics_pipeline_data.bound_descriptor_sets_mutex);
 
         auto bound_descriptor_set_it = graphics_pipeline_data.bound_descriptor_sets.find(crc);
         if (bound_descriptor_set_it == graphics_pipeline_data.bound_descriptor_sets.end()) {
@@ -3816,13 +3332,13 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
             //
 
             {
-                std::lock_guard<std::mutex> unbound_descriptor_sets_lock(graphics_pipeline_data.unbound_descriptor_sets_mutex);
+                std::lock_guard unbound_descriptor_sets_lock(graphics_pipeline_data.unbound_descriptor_sets_mutex);
 
                 if (graphics_pipeline_data.unbound_descriptor_sets.empty()) {
                     // We don't have a descriptor to write to. Allocate more descriptors.
                     while (!allocate_descriptor_sets(graphics_pipeline_data)) {
                         // Failed to allocate more descriptors because descriptor pools are full. Create new pool.
-                        std::lock_guard<std::mutex> descriptor_pools_lock(m_frame_graph.m_descriptor_pools_mutex);
+                        std::lock_guard descriptor_pools_lock(m_frame_graph.m_descriptor_pools_mutex);
 
                         VkDescriptorPoolSize descriptor_pool_sizes[3]{};
                         descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
@@ -3891,7 +3407,8 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
                     descriptor_image_info.sampler = VK_NULL_HANDLE;
 
                     if (attachment_index == 0) {
-                        descriptor_image_info.imageView = m_frame_graph.m_swapchain_image_views[m_swapchain_image_index];
+                        KW_ASSERT(m_frame_graph.m_swapchain_image_index < SWAPCHAIN_IMAGE_COUNT);
+                        descriptor_image_info.imageView = m_frame_graph.m_swapchain_image_views[m_frame_graph.m_swapchain_image_index];
                     } else {
                         KW_ASSERT(attachment_data.sampled_view != VK_NULL_HANDLE);
                         descriptor_image_info.imageView = attachment_data.sampled_view;
@@ -3989,7 +3506,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
             vkUpdateDescriptorSets(m_frame_graph.m_render.device, static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
 
             {
-                std::lock_guard<std::shared_mutex> bound_descriptor_sets_lock(graphics_pipeline_data.bound_descriptor_sets_mutex);
+                std::lock_guard bound_descriptor_sets_lock(graphics_pipeline_data.bound_descriptor_sets_mutex);
 
                 graphics_pipeline_data.bound_descriptor_sets.emplace(crc, DescriptorSetData(descriptor_set, m_frame_graph.m_frame_index));
             }
@@ -4013,14 +3530,14 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
             uint32_t uniform_buffer_mapping = graphics_pipeline_data.uniform_buffer_mapping[i];
             KW_ASSERT(uniform_buffer_mapping < descriptor.uniform_buffer_count);
 
-            const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.uniform_buffers[uniform_buffer_mapping]);
-            KW_ASSERT(buffer_vulkan != nullptr);
+            const UniformBufferVulkan* uniform_buffer_vulkan = static_cast<const UniformBufferVulkan*>(descriptor.uniform_buffers[uniform_buffer_mapping]);
+            KW_ASSERT(uniform_buffer_vulkan != nullptr);
 
-            dynamic_offsets[i] = buffer_vulkan->device_data_offset;
+            dynamic_offsets[i] = uniform_buffer_vulkan->transient_buffer_offset;
         }
 
         vkCmdBindDescriptorSets(
-            m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_data.pipeline_layout, 0,
+            command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_data.pipeline_layout, 0,
             1, &descriptor_set, static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data()
         );
     }
@@ -4031,7 +3548,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
 
     if (graphics_pipeline_data.push_constants_visibility != 0) {
         vkCmdPushConstants(
-            m_command_buffer, graphics_pipeline_data.pipeline_layout,
+            command_buffer, graphics_pipeline_data.pipeline_layout,
             graphics_pipeline_data.push_constants_visibility, 0, graphics_pipeline_data.push_constants_size, descriptor.push_constants
         );
     }
@@ -4040,23 +3557,31 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     // Draw.
     //
 
-    vkCmdDrawIndexed(m_command_buffer, descriptor.index_count, std::max(descriptor.instance_count, 1U), descriptor.index_offset, descriptor.vertex_offset, descriptor.instance_offset);
+    vkCmdDrawIndexed(command_buffer, descriptor.index_count, std::max(descriptor.instance_count, 1U), descriptor.index_offset, descriptor.vertex_offset, descriptor.instance_offset);
 }
 
 uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_width() const {
-    return m_attachment_width;
+    return m_framebuffer_width;
 }
 
 uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_height() const {
-    return m_attachment_height;
+    return m_framebuffer_height;
 }
 
 uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachemnt_index() const {
-    return m_attachment_index;
+    return m_framebuffer_index;
+}
+
+void FrameGraphVulkan::RenderPassContextVulkan::reset() {
+    command_buffer = VK_NULL_HANDLE;
+    transfer_semaphore_value = 0;
+    m_framebuffer_width = m_frame_graph.m_render_pass_data[m_render_pass_index].framebuffer_width;
+    m_framebuffer_height  = m_frame_graph.m_render_pass_data[m_render_pass_index].framebuffer_height;
+    m_graphics_pipeline_index = UINT32_MAX;
 }
 
 bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets(GraphicsPipelineData& graphics_pipeline_data) {
-    std::lock_guard<std::mutex> descriptor_pools_lock(m_frame_graph.m_descriptor_pools_mutex);
+    std::lock_guard descriptor_pools_lock(m_frame_graph.m_descriptor_pools_mutex);
 
     for (DescriptorPoolData& descriptor_pool_data : m_frame_graph.m_descriptor_pools) {
         KW_ASSERT(graphics_pipeline_data.descriptor_set_count > 0);
@@ -4107,6 +3632,543 @@ bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets(Graphic
     }
 
     return false;
+}
+
+FrameGraphVulkan::RenderPassImplVulkan::RenderPassImplVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index)
+    : contexts(frame_graph.m_render.transient_memory_resource)
+    , m_frame_graph(frame_graph)
+    , m_render_pass_index(render_pass_index)
+{
+    KW_ASSERT(m_render_pass_index < m_frame_graph.m_render_pass_data.size());
+
+    RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[m_render_pass_index];
+    KW_ASSERT(!render_pass_data.attachment_indices.empty());
+
+    uint32_t attachment_index = render_pass_data.attachment_indices[0];
+    KW_ASSERT(attachment_index < m_frame_graph.m_attachment_descriptors.size());
+
+    const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+    KW_ASSERT(attachment_descriptor.count > 0);
+
+    contexts.reserve(attachment_descriptor.count);
+
+    for (uint32_t i = 0; i < attachment_descriptor.count; i++) {
+        contexts.push_back(RenderPassContextVulkan{ m_frame_graph, render_pass_index, i });
+    }
+}
+
+FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulkan::begin(uint32_t framebuffer_index) {
+    KW_ASSERT(framebuffer_index < contexts.size());
+
+    //
+    // Swapchain image index is set to `UINT32_MAX` when window is minimized.
+    //
+
+    if (m_frame_graph.m_swapchain_image_index == UINT32_MAX) {
+        return nullptr;
+    }
+
+    //
+    // Acquire a command buffer and begin its recording.
+    //
+
+    VkCommandBuffer command_buffer = acquire_command_buffer();
+
+    VkCommandBufferBeginInfo command_buffer_begin_info{};
+    command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    VK_ERROR(
+        vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+        "Failed to begin frame command buffer."
+    );
+
+    //
+    // After swapchain recreation attachment layouts must be set.
+    //
+
+    if (!m_frame_graph.m_is_attachment_layout_set && m_render_pass_index == 0 && framebuffer_index == 0) {
+        Vector<VkImageMemoryBarrier> image_memory_barriers(m_frame_graph.m_attachment_data.size(), m_frame_graph.m_render.transient_memory_resource);
+        for (size_t attachment_index = 0; attachment_index < m_frame_graph.m_attachment_data.size(); attachment_index++) {
+            const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+            AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+
+            VkAccessFlags initial_access_mask = attachment_data.initial_access_mask;
+            VkImageLayout initial_layout = attachment_data.initial_layout;
+            if (initial_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+                if (attachment_index == 0) {
+                    // Swapchain attachment is never written, just present garbage.
+                    initial_access_mask = 0;
+                    initial_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                } else {
+                    // This happens only to attachments that are never read and written.
+                    initial_access_mask = VK_ACCESS_SHADER_READ_BIT;
+                    initial_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
+            }
+
+            VkImage attachment_image = attachment_index == 0 ? m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index] : attachment_data.image;
+            KW_ASSERT(attachment_image != VK_NULL_HANDLE);
+
+            VkImageAspectFlags aspect_mask;
+            if (attachment_descriptor.format == TextureFormat::D24_UNORM_S8_UINT || attachment_descriptor.format == TextureFormat::D32_FLOAT_S8X24_UINT) {
+                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            } else if (attachment_descriptor.format == TextureFormat::D16_UNORM || attachment_descriptor.format == TextureFormat::D32_FLOAT) {
+                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            } else {
+                aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+            }
+
+            VkImageSubresourceRange image_subresource_range{};
+            image_subresource_range.aspectMask = aspect_mask;
+            image_subresource_range.baseMipLevel = 0;
+            image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+            image_subresource_range.baseArrayLayer = 0;
+            image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+            VkImageMemoryBarrier& image_memory_barrier = image_memory_barriers[attachment_index];
+            image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image_memory_barrier.srcAccessMask = 0;
+            image_memory_barrier.dstAccessMask = initial_access_mask;
+            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            image_memory_barrier.newLayout = initial_layout;
+            image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_memory_barrier.image = attachment_image;
+            image_memory_barrier.subresourceRange = image_subresource_range;
+        }
+
+        vkCmdPipelineBarrier(
+            command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0,
+            0, nullptr, 0, nullptr, static_cast<uint32_t>(image_memory_barriers.size()), image_memory_barriers.data()
+        );
+
+        m_frame_graph.m_is_attachment_layout_set = true;
+    }
+
+    //
+    // Perform synchronization between render passes.
+    //
+
+    RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[m_render_pass_index];
+    KW_ASSERT(render_pass_data.render_pass != VK_NULL_HANDLE);
+    KW_ASSERT(render_pass_data.framebuffer_width > 0);
+    KW_ASSERT(render_pass_data.framebuffer_height > 0);
+    KW_ASSERT(render_pass_data.parallel_block_index < m_frame_graph.m_parallel_block_data.size());
+
+    if (m_render_pass_index > 0 && framebuffer_index == 0 && m_frame_graph.m_render_pass_data[m_render_pass_index - 1].parallel_block_index != render_pass_data.parallel_block_index) {
+        ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+
+        VkMemoryBarrier memory_barrier{};
+        memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
+        memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+
+        vkCmdPipelineBarrier(
+            command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
+            1, &memory_barrier, 0, nullptr, 0, nullptr
+        );
+    }
+
+    //
+    // Begin render pass.
+    //
+
+    VkFramebuffer framebuffer;
+
+    if (contexts.size() == 1 && render_pass_data.framebuffers.size() == SWAPCHAIN_IMAGE_COUNT) {
+        KW_ASSERT(framebuffer_index == 0);
+        framebuffer = render_pass_data.framebuffers[m_frame_graph.m_swapchain_image_index];
+    } else {
+        KW_ASSERT(framebuffer_index < render_pass_data.framebuffers.size());
+        framebuffer = render_pass_data.framebuffers[framebuffer_index];
+    }
+
+    VkRect2D render_area{};
+    render_area.offset.x = 0;
+    render_area.offset.y = 0;
+    render_area.extent.width = render_pass_data.framebuffer_width;
+    render_area.extent.height = render_pass_data.framebuffer_height;
+
+    Vector<VkClearValue> clear_values(render_pass_data.attachment_indices.size(), m_frame_graph.m_render.transient_memory_resource);
+    for (size_t i = 0; i < render_pass_data.attachment_indices.size(); i++) {
+        size_t attachment_index = render_pass_data.attachment_indices[i];
+        KW_ASSERT(attachment_index < m_frame_graph.m_attachment_descriptors.size());
+
+        AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+            clear_values[i].depthStencil.depth = attachment_descriptor.clear_depth;
+            clear_values[i].depthStencil.stencil = attachment_descriptor.clear_stencil;
+        } else {
+            clear_values[i].color.float32[0] = attachment_descriptor.clear_color[0];
+            clear_values[i].color.float32[1] = attachment_descriptor.clear_color[1];
+            clear_values[i].color.float32[2] = attachment_descriptor.clear_color[2];
+            clear_values[i].color.float32[3] = attachment_descriptor.clear_color[3];
+        }
+    }
+
+    VkRenderPassBeginInfo render_pass_begin_info{};
+    render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_begin_info.renderPass = render_pass_data.render_pass;
+    render_pass_begin_info.framebuffer = framebuffer;
+    render_pass_begin_info.renderArea = render_area;
+    render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+    render_pass_begin_info.pClearValues = clear_values.data();
+
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+    //
+    // Viewport size is equal to framebuffer size.
+    //
+
+    VkViewport viewport{};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = render_pass_data.framebuffer_width;
+    viewport.height = render_pass_data.framebuffer_height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+    //
+    // Set context's command buffer. Must be null handle, because only one begin per context is allowed.
+    //
+
+    KW_ASSERT(contexts[framebuffer_index].command_buffer == VK_NULL_HANDLE);
+    contexts[framebuffer_index].command_buffer = command_buffer;
+
+    return &contexts[framebuffer_index];
+}
+
+FrameGraphVulkan::CommandPoolData& FrameGraphVulkan::RenderPassImplVulkan::acquire_command_pool() {
+    UnorderedMap<std::thread::id, CommandPoolData>& command_pool_map = m_frame_graph.m_command_pool_data[m_frame_graph.m_semaphore_index];
+
+    {
+        std::shared_lock lock(m_frame_graph.m_command_pool_mutex);
+
+        auto result = command_pool_map.find(std::this_thread::get_id());
+        if (result != command_pool_map.end()) {
+            return result->second;
+        }
+    }
+
+    {
+        std::unique_lock lock(m_frame_graph.m_command_pool_mutex);
+
+        VkCommandPoolCreateInfo command_pool_create_info{};
+        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        command_pool_create_info.queueFamilyIndex = m_frame_graph.m_render.graphics_queue_family_index;
+
+        CommandPoolData command_pool_data(m_frame_graph.m_render.persistent_memory_resource);
+        VK_ERROR(
+            vkCreateCommandPool(m_frame_graph.m_render.device, &command_pool_create_info, &m_frame_graph.m_render.allocation_callbacks, &command_pool_data.command_pool),
+            "Failed to create a command pool."
+        );
+
+        return command_pool_map.emplace(std::this_thread::get_id(), std::move(command_pool_data)).first->second;
+    }
+}
+
+VkCommandBuffer FrameGraphVulkan::RenderPassImplVulkan::acquire_command_buffer() {
+    CommandPoolData& command_pool_data = acquire_command_pool();
+
+    size_t command_buffer_index = command_pool_data.current_command_buffer++;
+
+    if (command_buffer_index == command_pool_data.command_buffers.size()) {
+        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        command_buffer_allocate_info.commandPool = command_pool_data.command_pool;
+        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        command_buffer_allocate_info.commandBufferCount = 1;
+
+        VkCommandBuffer command_buffer;
+        VK_ERROR(
+            vkAllocateCommandBuffers(m_frame_graph.m_render.device, &command_buffer_allocate_info, &command_buffer),
+            "Failed to allocate a command buffer."
+        );
+
+        command_pool_data.command_buffers.push_back(command_buffer);
+    }
+
+    return command_pool_data.command_buffers[command_buffer_index];
+}
+
+FrameGraphVulkan::RenderPassData::RenderPassData(MemoryResource& memory_resource)
+    : render_pass(VK_NULL_HANDLE)
+    , graphics_pipeline_data(memory_resource)
+    , framebuffer_width(0)
+    , framebuffer_height(0)
+    , framebuffers(memory_resource)
+    , parallel_block_index(0)
+    , attachment_indices(memory_resource)
+{
+}
+
+FrameGraphVulkan::RenderPassData::RenderPassData(RenderPassData&& other)
+    : render_pass(other.render_pass)
+    , graphics_pipeline_data(std::move(other.graphics_pipeline_data))
+    , framebuffer_width(other.framebuffer_width)
+    , framebuffer_height(other.framebuffer_height)
+    , framebuffers(std::move(other.framebuffers))
+    , parallel_block_index(other.parallel_block_index)
+    , attachment_indices(std::move(other.attachment_indices))
+    , render_pass_impl(std::move(other.render_pass_impl))
+{
+}
+
+FrameGraphVulkan::AcquireTask::AcquireTask(FrameGraphVulkan& frame_graph)
+    : m_frame_graph(frame_graph)
+{
+}
+
+void FrameGraphVulkan::AcquireTask::run() {
+    //
+    // Check whether there's a swapchain to render to.
+    //
+
+    if (m_frame_graph.m_swapchain == VK_NULL_HANDLE) {
+        m_frame_graph.recreate_swapchain();
+
+        if (m_frame_graph.m_swapchain == VK_NULL_HANDLE) {
+            // Most likely the window is minimized. Invalid swapchain image index notifies other subsystems that
+            // frame must be skipped.
+            m_frame_graph.m_swapchain_image_index = UINT32_MAX;
+            return;
+        }
+    }
+
+    //
+    // Wait until command buffers are available for new submission.
+    //
+
+    m_frame_graph.m_semaphore_index = m_frame_graph.m_frame_index++ % SWAPCHAIN_IMAGE_COUNT;
+
+    VK_ERROR(
+        vkWaitForFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index], VK_TRUE, UINT64_MAX),
+        "Failed to wait for fences."
+    );
+
+    //
+    // Wait until swapchain image is available for render.
+    //
+
+    VkResult acquire_result = vkAcquireNextImageKHR(
+        m_frame_graph.m_render.device,
+        m_frame_graph.m_swapchain,
+        UINT64_MAX,
+        m_frame_graph.m_image_acquired_binary_semaphores[m_frame_graph.m_semaphore_index],
+        VK_NULL_HANDLE,
+        &m_frame_graph.m_swapchain_image_index
+    );
+
+    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
+        m_frame_graph.recreate_swapchain();
+
+        // Semaphore wasn't signaled, so we don't need to present. Invalid swapchain image index notifies other
+        // subsystems that frame must be skipped.
+        m_frame_graph.m_swapchain_image_index = UINT32_MAX;
+
+        return;
+    } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
+        VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
+    }
+
+    //
+    // Once we're guaranteed to submit the frame, we can transition the fence to unsignaled state.
+    //
+
+    VK_ERROR(
+        vkResetFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index]),
+        "Failed to reset fences."
+    );
+
+    //
+    // Increment timeline semaphore value, which provides a guarantee that no resources available right now
+    // will be destroyed until the frame execution on device is finished.
+    //
+
+    m_frame_graph.m_render_finished_timeline_semaphore->value++;
+
+    //
+    // Reset command pools.
+    //
+
+    for (auto& [_, command_pool_data] : m_frame_graph.m_command_pool_data[m_frame_graph.m_semaphore_index]) {
+        KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
+        VK_ERROR(
+            vkResetCommandPool(m_frame_graph.m_render.device, command_pool_data.command_pool, 0),
+            "Failed to reset frame command pool."
+        );
+
+        // All command buffers are available again.
+        command_pool_data.current_command_buffer = 0;
+    }
+
+    //
+    // Reset render pass contexts.
+    //
+
+    for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
+        for (RenderPassContextVulkan& render_pass_context : render_pass_data.render_pass_impl->contexts) {
+            render_pass_context.reset();
+        }
+    }
+}
+
+FrameGraphVulkan::PresentTask::PresentTask(FrameGraphVulkan& frame_graph)
+    : m_frame_graph(frame_graph)
+{
+}
+
+void FrameGraphVulkan::PresentTask::run() {
+    //
+    // If window is minimized, don't do anything here.
+    //
+
+    if (m_frame_graph.m_swapchain_image_index == UINT32_MAX) {
+        return;
+    }
+
+    //
+    // Query render pass command buffers and required transfer semaphore value.
+    //
+
+    size_t framebuffer_count = 0;
+
+    for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
+        KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
+        framebuffer_count += render_pass_data.render_pass_impl->contexts.size();
+    }
+
+    Vector<VkCommandBuffer> render_pass_command_buffers(m_frame_graph.m_render.transient_memory_resource);
+    render_pass_command_buffers.reserve(framebuffer_count);
+
+    uint64_t transfer_semaphore_value = 0;
+
+    for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
+        for (size_t framebuffer_index = 0; framebuffer_index < render_pass_data.render_pass_impl->contexts.size(); framebuffer_index++) {
+            RenderPassContextVulkan& render_pass_context = render_pass_data.render_pass_impl->contexts[framebuffer_index];
+
+            // Every render pass and framebuffer must begin, because besides draw calls there's a synchronization layer
+            // that must execute.
+            if (render_pass_context.command_buffer == VK_NULL_HANDLE) {
+                render_pass_data.render_pass_impl->begin(static_cast<uint32_t>(framebuffer_index));
+                KW_ASSERT(render_pass_context.command_buffer != VK_NULL_HANDLE);
+            }
+
+            // End all render passes sequentially here.
+            vkCmdEndRenderPass(render_pass_context.command_buffer);
+            vkEndCommandBuffer(render_pass_context.command_buffer);
+
+            render_pass_command_buffers.push_back(render_pass_context.command_buffer);
+
+            transfer_semaphore_value = std::max(transfer_semaphore_value, render_pass_context.transfer_semaphore_value);
+        }
+    }
+
+    //
+    // Submit.
+    //
+
+    const uint64_t wait_semaphore_values[] = {
+        // Wait for image acquire.
+        0,
+        // Wait for transfer queue.
+        transfer_semaphore_value,
+        // Wait for previous frame.
+        m_frame_graph.m_render_finished_timeline_semaphore->value - 1,
+    };
+
+    const uint64_t signal_semaphore_values[] = {
+        // Signal render finished for present.
+        0,
+        // Signal render finished for resource destroy.
+        m_frame_graph.m_render_finished_timeline_semaphore->value,
+    };
+
+    VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info{};
+    timeline_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timeline_semaphore_submit_info.waitSemaphoreValueCount = static_cast<uint32_t>(std::size(wait_semaphore_values));
+    timeline_semaphore_submit_info.pWaitSemaphoreValues = wait_semaphore_values;
+    timeline_semaphore_submit_info.signalSemaphoreValueCount = static_cast<uint32_t>(std::size(signal_semaphore_values));
+    timeline_semaphore_submit_info.pSignalSemaphoreValues = signal_semaphore_values;
+
+    const VkSemaphore wait_semaphores[] = {
+        // Wait for image acquire.
+        m_frame_graph.m_image_acquired_binary_semaphores[m_frame_graph.m_semaphore_index],
+        // Wait for transfer queue.
+        m_frame_graph.m_render.semaphore->semaphore,
+        // Wait for previous frame.
+        m_frame_graph.m_render_finished_timeline_semaphore->semaphore,
+    };
+
+    const VkPipelineStageFlags wait_stage_masks[] = {
+        // We will write to acquired image only on color attachment output stage.
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        // We may use transfered resources on vertex shader stage and later.
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+        // First write access to attachment memory happens in later fragment tests.
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    };
+
+    const VkSemaphore signal_semaphores[] = {
+        // Signal render finished for present.
+        m_frame_graph.m_render_finished_binary_semaphores[m_frame_graph.m_semaphore_index],
+        // Signal render finished for resource destroy.
+        m_frame_graph.m_render_finished_timeline_semaphore->semaphore,
+    };
+
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.pNext = &timeline_semaphore_submit_info;
+    submit_info.waitSemaphoreCount = static_cast<uint32_t>(std::size(wait_semaphores));
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stage_masks;
+    submit_info.commandBufferCount = static_cast<uint32_t>(render_pass_command_buffers.size());
+    submit_info.pCommandBuffers = render_pass_command_buffers.data();
+    submit_info.signalSemaphoreCount = static_cast<uint32_t>(std::size(signal_semaphores));
+    submit_info.pSignalSemaphores = signal_semaphores;
+
+    {
+        std::lock_guard lock(*m_frame_graph.m_render.graphics_queue_spinlock);
+
+        VK_ERROR(
+            vkQueueSubmit(m_frame_graph.m_render.graphics_queue, 1, &submit_info, m_frame_graph.m_fences[m_frame_graph.m_semaphore_index]),
+            "Failed to submit."
+        );
+    }
+
+    //
+    // Present.
+    //
+
+    VkPresentInfoKHR present_info{};
+    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = &m_frame_graph.m_render_finished_binary_semaphores[m_frame_graph.m_semaphore_index];
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &m_frame_graph.m_swapchain;
+    present_info.pImageIndices = &m_frame_graph.m_swapchain_image_index;
+    present_info.pResults = nullptr;
+
+    VkResult present_result;
+    {
+        std::lock_guard lock(*m_frame_graph.m_render.graphics_queue_spinlock);
+
+        present_result = vkQueuePresentKHR(m_frame_graph.m_render.graphics_queue, &present_info);
+    }
+
+    if (present_result == VK_ERROR_OUT_OF_DATE_KHR) {
+        m_frame_graph.recreate_swapchain();
+    } else if (present_result != VK_SUBOPTIMAL_KHR) {
+        VK_ERROR(present_result, "Failed to present.");
+    }
+
+    // These values are valid only between acquire/present calls.
+    m_frame_graph.m_semaphore_index = UINT64_MAX;
+    m_frame_graph.m_swapchain_image_index = UINT32_MAX;
 }
 
 } // namespace kw

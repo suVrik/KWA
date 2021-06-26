@@ -4,9 +4,11 @@
 #include "render/render.h"
 
 #include <core/concurrency/spinlock.h>
+#include <core/concurrency/task.h>
 #include <core/containers/queue.h>
+#include <core/containers/shared_ptr.h>
+#include <core/containers/unique_ptr.h>
 #include <core/containers/vector.h>
-#include <core/utils/enum_utils.h>
 
 #include <vulkan/vulkan.h>
 
@@ -16,42 +18,85 @@ namespace kw {
 
 class TimelineSemaphore;
 
-enum class BufferFlagsVulkan {
-    NONE      = 0,
-
-    // Size in bits of each index.
-    INDEX16   = 1 << 0,
-    INDEX32   = 1 << 1,
-
-    // Buffer can't and shouldn't be destroyed.
-    // `device_data_index` is unused.
-    // `device_data_offset` is the offset within `buffer`.
-    TRANSIENT = 1 << 2,
-};
-
-KW_DEFINE_ENUM_BITMASK(BufferFlagsVulkan);
-
 class BufferVulkan {
 public:
+    // For transient buffer this is equal to `m_transient_buffer` from `RenderVulkan`.
     VkBuffer buffer;
-    BufferFlagsVulkan buffer_flags;
+
+    // For transient buffer this is equal to 0.
+    // For a new buffer this is equal to 0.
     uint64_t transfer_semaphore_value;
-    uint64_t device_data_index : 16;
-    uint64_t device_data_offset : 48;
+
+    union {
+        struct {
+            uint64_t device_data_index : 16;
+            uint64_t device_data_offset : 48;
+        };
+
+        uint64_t transient_buffer_offset;
+    };
 };
 
-static_assert(sizeof(BufferVulkan) == 32);
+static_assert(sizeof(BufferVulkan) == 24);
 
-class TextureVulkan {
+class VertexBufferVulkan : public VertexBuffer, public BufferVulkan {
 public:
+    VertexBufferVulkan(size_t size_, VkBuffer buffer_, uint64_t device_data_index_, uint64_t device_data_offset_);
+    VertexBufferVulkan(size_t size_, VkBuffer buffer_, uint64_t transient_buffer_offset_);
+
+    void set_available_size(size_t value) {
+        m_available_size = value;
+    }
+};
+
+static_assert(sizeof(VertexBufferVulkan) == 40);
+
+class IndexBufferVulkan : public IndexBuffer, public BufferVulkan {
+public:
+    IndexBufferVulkan(size_t size_, IndexSize index_size_, VkBuffer buffer_, uint64_t device_data_index_, uint64_t device_data_offset_);
+    IndexBufferVulkan(size_t size_, IndexSize index_size_, VkBuffer buffer_, uint64_t transient_buffer_offset_);
+
+    void set_available_size(size_t value) {
+        m_available_size = value;
+    }
+};
+
+static_assert(sizeof(IndexBufferVulkan) == 40);
+
+class UniformBufferVulkan : public UniformBuffer {
+public:
+    // Buffer is implicitly equal to `m_transient_buffer` from `RenderVulkan`.
+    UniformBufferVulkan(size_t size_, uint64_t transient_buffer_offset_);
+
+    uint64_t transient_buffer_offset;
+};
+
+static_assert(sizeof(UniformBufferVulkan) == 16);
+
+class TextureVulkan : public Texture {
+public:
+    TextureVulkan(TextureType type, TextureFormat format,
+                  uint32_t mip_level_count, uint32_t array_layer_count, uint32_t width, uint32_t height, uint32_t depth,
+                  VkImage image_, uint64_t device_data_index_, uint64_t device_data_offset_);
+
+    void set_available_mip_level_count(uint32_t value) {
+        m_available_mip_level_count = value;
+    }
+
     VkImage image;
+
+    // For a new texture this is equal to `VK_NULL_HANDLE`. First upload creates the image view,
+    // newer uploads destroy older image views and create new ones.
     VkImageView image_view;
+
+    // For a new texture this is equal to 0.
     uint64_t transfer_semaphore_value;
+
     uint64_t device_data_index : 16;
     uint64_t device_data_offset : 48;
 };
 
-static_assert(sizeof(TextureVulkan) == 32);
+static_assert(sizeof(TextureVulkan) == 48);
 
 class RenderVulkan : public Render {
 public:
@@ -61,23 +106,26 @@ public:
         uint64_t data_offset : 48;
     };
 
-    RenderVulkan(const RenderDescriptor& descriptor);
+    explicit RenderVulkan(const RenderDescriptor& descriptor);
     ~RenderVulkan() override;
 
-    VertexBuffer create_vertex_buffer(const BufferDescriptor& buffer_descriptor) override;
-    void destroy_vertex_buffer(VertexBuffer vertex_buffer) override;
+    VertexBuffer* create_vertex_buffer(const char* name, size_t size) override;
+    void upload_vertex_buffer(VertexBuffer* vertex_buffer, const void* data, size_t size) override;
+    void destroy_vertex_buffer(VertexBuffer* vertex_buffer) override;
 
-    IndexBuffer create_index_buffer(const BufferDescriptor& buffer_descriptor) override;
-    void destroy_index_buffer(IndexBuffer index_buffer) override;
+    IndexBuffer* create_index_buffer(const char* name, size_t size, IndexSize index_size) override;
+    void upload_index_buffer(IndexBuffer* index_buffer, const void* data, size_t size) override;
+    void destroy_index_buffer(IndexBuffer* index_buffer) override;
 
-    VertexBuffer acquire_transient_vertex_buffer(const void* data, size_t size) override;
-    IndexBuffer acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) override;
-    UniformBuffer acquire_transient_uniform_buffer(const void* data, size_t size) override;
+    Texture* create_texture(const CreateTextureDescriptor& create_texture_descriptor) override;
+    void upload_texture(const UploadTextureDescriptor& upload_texture_descriptor) override;
+    void destroy_texture(Texture* texture) override;
 
-    Texture create_texture(const TextureDescriptor& texture_descriptor) override;
-    void destroy_texture(Texture texture) override;
+    VertexBuffer* acquire_transient_vertex_buffer(const void* data, size_t size) override;
+    IndexBuffer* acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) override;
+    UniformBuffer* acquire_transient_uniform_buffer(const void* data, size_t size) override;
 
-    void flush() override;
+    Task* create_task() override;
 
     RenderApi get_api() const override;
 
@@ -85,18 +133,18 @@ public:
     template <typename T>
     void set_debug_name(T* handle, const char* format, ...) const;
 
-    // Returns `UINT32_MAX` if memory type is not found.
-    uint32_t find_memory_type(uint32_t memory_type_mask, VkMemoryPropertyFlags property_mask);
-
-    // When resource destroy is queried, the renderer first waits until all resource dependency semaphores are signaled
-    // and only then actually destroys the resource.
-    void add_resource_dependency(std::shared_ptr<TimelineSemaphore> timeline_semaphore);
+    // When resource destroy is queried, the renderer first waits (asynchronously) until all resource dependency
+    // semaphores are signaled and only then actually destroys the resource.
+    void add_resource_dependency(SharedPtr<TimelineSemaphore> timeline_semaphore);
 
     // Memory returned by these functions contains pure garbage.
     DeviceAllocation allocate_device_buffer_memory(uint64_t size, uint64_t alignment);
     void deallocate_device_buffer_memory(uint64_t data_index, uint64_t data_offset);
     DeviceAllocation allocate_device_texture_memory(uint64_t size, uint64_t alignment);
     void deallocate_device_texture_memory(uint64_t data_index, uint64_t data_offset);
+
+    // For `UniformBufferVulkan` buffer is not defined explicitly.
+    VkBuffer get_transient_buffer() const;
 
     MemoryResource& persistent_memory_resource;
     MemoryResource& transient_memory_resource;
@@ -121,48 +169,64 @@ public:
 
     // Submitting to a queue from multiple threads is not allowed. Surround `vkQueueSubmit` with these.
     // Some of the spinlocks may alias graphics spinklock, if corresponding queue is not present.
-    const std::shared_ptr<Spinlock> graphics_queue_spinlock;
-    const std::shared_ptr<Spinlock> compute_queue_spinlock;
-    const std::shared_ptr<Spinlock> transfer_queue_spinlock;
+    const SharedPtr<Spinlock> graphics_queue_spinlock;
+    const SharedPtr<Spinlock> compute_queue_spinlock;
+    const SharedPtr<Spinlock> transfer_queue_spinlock;
 
     // Those who depend on resource creation must wait for this semaphore.
-    std::shared_ptr<TimelineSemaphore> semaphore;
+    SharedPtr<TimelineSemaphore> semaphore;
 
 private:
+    // An instance of this task is returned by `get_task` method.
+
+    class FlushTask : public Task {
+    public:
+        FlushTask(RenderVulkan& render);
+
+        void run() override;
+
+    private:
+        RenderVulkan& m_render;
+    };
+
     // Vertex buffers, index buffers and textures are allocated by buddy allocator.
 
     struct DeviceData {
         VkDeviceMemory memory;
-        void* memory_mapping;
+        void* memory_mapping; // Not `nullptr` if memory is accessible on host (valid for integrated devices).
         RenderBuddyAllocator allocator;
         uint32_t memory_type_index;
     };
 
-    // Copy commands are not submitted on user request, but rather queued and submitted together in one batch.
-    // When such batch is submitted, all frame graphs wait for its execution on device, so no synchronization from
-    // user is needed.
+    // Upload commands are not submitted on user request, but rather queued and submitted together in one batch.
+    // When a resource from such batch is used in a draw call, the draw call submission waits for the batch to
+    // complete on device.
 
-    struct BufferCopyCommand {
+    struct BufferUploadCommand {
+        BufferVulkan* buffer;
+
         uint64_t staging_buffer_offset;
         uint64_t staging_buffer_size;
 
-        VkBuffer buffer;
+        uint64_t device_buffer_offset;
     };
 
-    struct TextureCopyCommand {
+    struct TextureUploadCommand {
+        TextureVulkan* texture;
+
         uint64_t staging_buffer_offset;
         uint64_t staging_buffer_size;
 
-        VkImage image;
-        VkImageAspectFlags aspect_mask;
-        uint32_t array_size;
-        uint32_t mip_levels;
+        uint32_t base_mip_level;
+        uint32_t mip_level_count;
+        uint32_t base_array_layer;
+        uint32_t array_layer_count;
+        uint32_t x;
+        uint32_t y;
+        uint32_t z;
         uint32_t width;
         uint32_t height;
         uint32_t depth;
-
-        // size_t offsets[array_size][mip_levels];
-        size_t* offsets;
     };
 
     // Resources are not destroyed on user request, because some of the frames that use them may still be in flight.
@@ -170,7 +234,7 @@ private:
     // the resources are preserved.
 
     struct DestroyCommandDependency {
-        std::weak_ptr<TimelineSemaphore> semaphore;
+        WeakPtr<TimelineSemaphore> semaphore;
         uint64_t value;
     };
 
@@ -184,9 +248,14 @@ private:
         TextureVulkan* texture;
     };
 
+    struct ImageViewDestroyCommand {
+        Vector<DestroyCommandDependency> dependencies;
+        VkImageView image_view;
+    };
+
     // When copy commands are submitted, the command buffer, current semaphore value and the end of staging data stack
     // are stored in a queue. Then renderer periodically checks whether the copy commands finished their execution on
-    // device and destroys the command buffer and pops from staging data stack.
+    // device and destroys the command buffer and pops from staging data ring buffer.
 
     struct SubmitData {
         VkCommandBuffer transfer_command_buffer;
@@ -213,9 +282,9 @@ private:
     VkQueue create_compute_queue();
     VkQueue create_transfer_queue();
 
-    std::shared_ptr<Spinlock> create_graphics_queue_spinlock();
-    std::shared_ptr<Spinlock> create_compute_queue_spinlock();
-    std::shared_ptr<Spinlock> create_transfer_queue_spinlock();
+    SharedPtr<Spinlock> create_graphics_queue_spinlock();
+    SharedPtr<Spinlock> create_compute_queue_spinlock();
+    SharedPtr<Spinlock> create_transfer_queue_spinlock();
 
     PFN_vkWaitSemaphoresKHR create_wait_semaphores();
 
@@ -228,32 +297,53 @@ private:
 
     VkBuffer create_staging_buffer(const RenderDescriptor& render_descriptor);
     VkDeviceMemory allocate_staging_memory();
+
+    // Allocate `size` bytes from staging memory. `size` must be not greater than `m_staging_buffer_size / 2`.
+    // Smaller `size` leads to lower staging memory fragmentation. Might cause one or more synchrnonous flushes.
     uint64_t allocate_from_staging_memory(uint64_t size, uint64_t alignment);
+
+    // Allocate from `min` to `max` bytes from staging memory. `min` must be not greater than `m_staging_buffer_size / 2`.
+    // Smaller `min` leads to lower staging memory fragmentation. Might cause one or more synchrnonous flushes
+    // unless `min` is 0. First value is the number of bytes allocated, second is the offset.
+    std::pair<uint64_t, uint64_t> allocate_from_staging_memory(uint64_t min, uint64_t max, uint64_t alignment);
+
+    // Wait until some more staging memory is available. Might cause a synchrnonous flush.
+    void wait_for_staging_memory();
 
     void* map_memory(VkDeviceMemory memory);
 
     uint32_t compute_buffer_memory_index(VkMemoryPropertyFlags properties);
-
-    BufferVulkan* create_buffer_vulkan(const BufferDescriptor& buffer_descriptor, VkBufferUsageFlags usage);
-    void destroy_buffer_vulkan(BufferVulkan* buffer);
+    uint32_t compute_texture_memory_index(VkMemoryPropertyFlags properties);
 
     VkBuffer create_transient_buffer(const RenderDescriptor& render_descriptor);
     VkDeviceMemory allocate_transient_memory();
     uint64_t allocate_from_transient_memory(uint64_t size, uint64_t alignment);
 
-    BufferVulkan* acquire_transient_buffer_vulkan(const void* data, size_t size, size_t alignment, BufferFlagsVulkan flags);
-
-    uint32_t compute_texture_memory_index(VkMemoryPropertyFlags properties);
-
-    TextureVulkan* create_texture_vulkan(const TextureDescriptor& texture_descriptor);
-    void destroy_texture_vulkan(TextureVulkan* texture);
+    // Returns UINT32_MAX on failure.
+    uint32_t find_memory_type(uint32_t memory_type_mask, VkMemoryPropertyFlags property_mask);
 
     Vector<DestroyCommandDependency> get_destroy_command_dependencies();
+
+    // Check which transfer queue submits have completed and pop from staging ring buffer.
+    // Check which pending destroy commands are safe to execute. Submit upload commands.
+    void flush();
 
     void process_completed_submits();
     void destroy_queued_buffers();
     void destroy_queued_textures();
-    void submit_copy_commands();
+    void destroy_queued_image_views();
+
+    void submit_upload_commands();
+
+    std::pair<VkCommandBuffer, uint64_t> upload_resources();
+    uint64_t upload_buffers(VkCommandBuffer transfer_command_buffer);
+    uint64_t upload_textures(VkCommandBuffer transfer_command_buffer);
+
+    uint64_t staging_buffer_max(uint64_t lhs, uint64_t rhs) const;
+    
+    VkCommandBuffer acquire_graphics_ownership();
+    void acquire_graphics_ownership_buffers(VkCommandBuffer graphics_command_buffer);
+    void acquire_graphics_ownership_textures(VkCommandBuffer graphics_command_buffer);
 
     PFN_vkWaitSemaphoresKHR m_wait_semaphores;
 
@@ -268,13 +358,21 @@ private:
     std::atomic_uint64_t m_staging_data_begin;
     std::atomic_uint64_t m_staging_data_end;
 
-    // Vertex/index buffers are first accessed on transfer queue
+    // Vertex/index buffer ranges are first accessed on transfer queue
     // but later ownership is transfered to graphics queue.
     Vector<DeviceData> m_buffer_device_data;
     uint64_t m_buffer_allocation_size;
     uint64_t m_buffer_block_size;
     uint32_t m_buffer_memory_indices[2];
     std::mutex m_buffer_mutex;
+
+    // Texture mip levels are first accessed on transfer queue
+    // but later ownership is transfered to graphics queue.
+    Vector<DeviceData> m_texture_device_data;
+    uint64_t m_texture_allocation_size;
+    uint64_t m_texture_block_size;
+    uint32_t m_texture_memory_indices[2];
+    std::mutex m_texture_mutex;
 
     // Transient buffer is accessed on host and graphics queue.
     VkBuffer m_transient_buffer;
@@ -283,36 +381,30 @@ private:
     uint64_t m_transient_buffer_size;
     std::atomic_uint64_t m_transient_data_end;
 
-    // Textures are first accessed on transfer queue
-    // but later ownership is transfered to graphics queue.
-    Vector<DeviceData> m_texture_device_data;
-    uint64_t m_texture_allocation_size;
-    uint64_t m_texture_block_size;
-    uint32_t m_texture_memory_indices[2];
-    std::mutex m_texture_mutex;
-
     // Dependencies we wait for before destroying any resource.
-    Vector<std::weak_ptr<TimelineSemaphore>> m_resource_dependencies;
+    Vector<WeakPtr<TimelineSemaphore>> m_resource_dependencies;
     std::mutex m_resource_dependency_mutex;
 
-    // Queued copy commands that will be submitted together in one batch.
-    Vector<BufferCopyCommand> m_buffer_copy_commands;
-    std::mutex m_buffer_copy_command_mutex;
-    Vector<TextureCopyCommand> m_texture_copy_commands;
-    std::mutex m_texture_copy_command_mutex;
+    // Queued upload commands that will be submitted together in one batch.
+    Vector<BufferUploadCommand> m_buffer_upload_commands;
+    std::mutex m_buffer_upload_command_mutex;
+    Vector<TextureUploadCommand> m_texture_upload_commands;
+    std::mutex m_texture_upload_command_mutex;
 
     // Queued destroy commands each waiting for its dependencies to signal.
     Queue<BufferDestroyCommand> m_buffer_destroy_commands;
     std::mutex m_buffer_destroy_command_mutex;
     Queue<TextureDestroyCommand> m_texture_destroy_commands;
     std::mutex m_texture_destroy_command_mutex;
+    Queue<ImageViewDestroyCommand> m_image_view_destroy_commands;
+    std::mutex m_image_view_destroy_command_mutex;
 
     // Submitted command buffers waiting for semaphore to signal.
     Queue<SubmitData> m_submit_data;
     std::recursive_mutex m_submit_data_mutex;
 
     // This semaphore is used to synchronize transfer/compute/graphics ownership transfer submits.
-    std::unique_ptr<TimelineSemaphore> m_intermediate_semaphore;
+    UniquePtr<TimelineSemaphore> m_intermediate_semaphore;
 
     // Transfer command buffers are used to submit copy commands, command buffers from other queues are used for queue
     // ownership transfer. Some of the command pools may alias graphics command pool, if corresponding queue is not present.

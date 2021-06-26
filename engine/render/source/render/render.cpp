@@ -17,7 +17,7 @@ struct TextureFormatProperties {
     uint8_t is_allowed_texture    : 1;
     uint8_t is_allowed_attachment : 1;
     uint8_t is_allowed_attribute  : 1;
-    uint8_t pixel_size            : 6;
+    uint8_t texel_size            : 6;
     uint8_t reserved              : 4;
 };
 
@@ -69,20 +69,20 @@ static const TextureFormatProperties TEXTURE_FORMAT_PROPERTIES[] = {
     { 1, 1, 0, 1, 0, 0, 4,  0 }, // D24_UNORM_S8_UINT
     { 1, 0, 0, 1, 0, 0, 4,  0 }, // D32_FLOAT
     { 1, 1, 0, 1, 0, 0, 8,  0 }, // D32_FLOAT_S8X24_UINT
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC1_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC1_UNORM_SRGB
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC2_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC2_UNORM_SRGB
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC3_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC3_UNORM_SRGB
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC4_SNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC4_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC5_SNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC5_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC6H_SF16
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC6H_UF16
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC7_UNORM
-    { 0, 0, 1, 1, 0, 0, 0,  0 }, // BC7_UNORM_SRGB
+    { 0, 0, 1, 1, 0, 0, 8,  0 }, // BC1_UNORM
+    { 0, 0, 1, 1, 0, 0, 8,  0 }, // BC1_UNORM_SRGB
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC2_UNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC2_UNORM_SRGB
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC3_UNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC3_UNORM_SRGB
+    { 0, 0, 1, 1, 0, 0, 8,  0 }, // BC4_SNORM
+    { 0, 0, 1, 1, 0, 0, 8,  0 }, // BC4_UNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC5_SNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC5_UNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC6H_SF16
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC6H_UF16
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC7_UNORM
+    { 0, 0, 1, 1, 0, 0, 16, 0 }, // BC7_UNORM_SRGB
 };
 
 static_assert(std::size(TEXTURE_FORMAT_PROPERTIES) == TEXTURE_FORMAT_COUNT);
@@ -112,8 +112,8 @@ bool is_allowed_attribute(TextureFormat format) {
     return TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].is_allowed_attribute != 0;
 }
 
-uint64_t get_pixel_size(TextureFormat format) {
-    return TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].pixel_size;
+uint64_t get_texel_size(TextureFormat format) {
+    return TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].texel_size;
 }
 
 } // namespace TextureFormatUtils
@@ -121,6 +121,8 @@ uint64_t get_pixel_size(TextureFormat format) {
 Render* Render::create_instance(const RenderDescriptor& descriptor) {
     KW_ERROR(descriptor.persistent_memory_resource != nullptr, "Invalid persistent memory resource.");
     KW_ERROR(descriptor.transient_memory_resource != nullptr, "Invalid transient memory resource.");
+    KW_ERROR(descriptor.staging_buffer_size >= 1024, "Staging buffer must be at least 1KB.");
+    KW_ERROR(descriptor.transient_buffer_size >= 1024, "Transient buffer must be at least 1KB.");
     KW_ERROR(descriptor.buffer_allocation_size >= descriptor.buffer_block_size, "Vertex/index allocation must be larger than block.");
     KW_ERROR(descriptor.buffer_block_size > 0, "Vertex/index block must not be empty.");
     KW_ERROR(is_pow2(descriptor.buffer_allocation_size), "Vertex/index allocation must be power of 2.");
@@ -129,8 +131,6 @@ Render* Render::create_instance(const RenderDescriptor& descriptor) {
     KW_ERROR(descriptor.texture_block_size > 0, "Texture block must not be empty.");
     KW_ERROR(is_pow2(descriptor.texture_allocation_size), "Texture allocation must be power of 2.");
     KW_ERROR(is_pow2(descriptor.texture_block_size), "Texture block must be power of 2.");
-    KW_ERROR(descriptor.staging_buffer_size > 0, "Staging buffer must not be empty.");
-    KW_ERROR(descriptor.transient_buffer_size > 0, "Transient buffer must not be empty.");
 
     switch (descriptor.api) {
     case RenderApi::VULKAN:

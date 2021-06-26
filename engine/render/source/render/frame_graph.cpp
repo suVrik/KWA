@@ -1,12 +1,20 @@
 #include "render/frame_graph.h"
 #include "render/render.h"
+#include "render/render_pass_impl.h"
 #include "render/vulkan/frame_graph_vulkan.h"
 
+#include <core/debug/assert.h>
 #include <core/error.h>
 
 #include <algorithm>
 
 namespace kw {
+
+RenderPassContext* RenderPass::begin(uint32_t attachment_index) {
+    KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
+
+    return m_impl->begin(attachment_index);
+}
 
 inline bool check_overlap(ShaderVisibility a, ShaderVisibility b) {
     return a == ShaderVisibility::ALL || b == ShaderVisibility::ALL || a == b;
@@ -499,7 +507,7 @@ static void validate_instance_binding_descriptors(const FrameGraphDescriptor& fr
                 "Invalid attribute format (render pass \"%s\", graphics pipeline \"%s\").", render_pass_descriptor.name, graphics_pipeline_descriptor.name
             );
 
-            uint64_t size = TextureFormatUtils::get_pixel_size(attribute_descriptor.format);
+            uint64_t size = TextureFormatUtils::get_texel_size(attribute_descriptor.format);
 
             KW_ERROR(
                 attribute_descriptor.offset >= stride,
@@ -575,7 +583,7 @@ static void validate_vertex_binding_descriptors(const FrameGraphDescriptor& fram
                 "Invalid attribute format (render pass \"%s\", graphics pipeline \"%s\").", render_pass_descriptor.name, graphics_pipeline_descriptor.name
             );
 
-            uint64_t size = TextureFormatUtils::get_pixel_size(attribute_descriptor.format);
+            uint64_t size = TextureFormatUtils::get_texel_size(attribute_descriptor.format);
 
             KW_ERROR(
                 attribute_descriptor.offset >= stride,
@@ -947,7 +955,6 @@ static void validate_color_attachments(const FrameGraphDescriptor& frame_graph_d
 FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& frame_graph_descriptor) {
     KW_ERROR(frame_graph_descriptor.render != nullptr, "Invalid render.");
     KW_ERROR(frame_graph_descriptor.window != nullptr, "Invalid window.");
-    KW_ERROR(frame_graph_descriptor.thread_pool != nullptr, "Invalid thread pool.");
     KW_ERROR(frame_graph_descriptor.descriptor_set_count_per_descriptor_pool > 0, "At least one frame_graph_descriptor set per frame_graph_descriptor pool is required.");
     KW_ERROR(frame_graph_descriptor.uniform_texture_count_per_descriptor_pool > 0, "At least one texture per frame_graph_descriptor pool is required.");
     KW_ERROR(frame_graph_descriptor.uniform_sampler_count_per_descriptor_pool > 0, "At least one sampler per frame_graph_descriptor pool is required.");
@@ -966,6 +973,10 @@ FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& frame_graph_
     default:
         KW_ERROR(false, "Chosen render API is not supported on your platform.");
     }
+}
+
+RenderPassImpl*& FrameGraph::get_render_pass_impl(RenderPass* render_pass) {
+    return render_pass->m_impl;
 }
 
 } // namespace kw
