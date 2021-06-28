@@ -8,13 +8,23 @@ namespace kw {
 
 constexpr uint32_t KWT_SIGNATURE = ' TWK';
 
-TextureLoader::TextureLoader(const char* path)
-    : m_reader(path)
+TextureLoader::TextureLoader()
+    : m_create_texture_descriptor{}
+    , m_current_mip_level(0)
+    , m_current_array_layer(0)
+    , m_current_z(0)
+    , m_current_y(0)
+    , m_current_x(0)
 {
-    KW_ERROR(m_reader, "Failed to open texture \"%s\".", path);
-    KW_ERROR(read_next() == KWT_SIGNATURE, "Invalid texture \"%s\" signature.", path);
+}
 
-    m_create_texture_descriptor.name = path;
+TextureLoader::TextureLoader(const char* relative_path)
+    : m_reader(relative_path)
+{
+    KW_ERROR(m_reader, "Failed to open texture \"%s\".", relative_path);
+    KW_ERROR(read_next() == KWT_SIGNATURE, "Invalid texture \"%s\" signature.", relative_path);
+
+    m_create_texture_descriptor.name = nullptr;
     m_create_texture_descriptor.type = static_cast<TextureType>(read_next());
     m_create_texture_descriptor.format = static_cast<TextureFormat>(read_next());
     m_create_texture_descriptor.mip_level_count = read_next();

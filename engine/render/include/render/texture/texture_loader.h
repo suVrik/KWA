@@ -8,7 +8,8 @@ namespace kw {
 
 class TextureLoader {
 public:
-    explicit TextureLoader(const char* path);
+    TextureLoader();
+    explicit TextureLoader(const char* relative_path);
 
     // `name` field must be set outside.
     const CreateTextureDescriptor& get_create_texture_descriptor() const {
