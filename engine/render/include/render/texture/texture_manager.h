@@ -38,8 +38,8 @@ public:
 
     // The first task creates worker tasks that load all enqueued textures at the moment. Those tasks will be finished
     // before the second task starts. If you are planning to load textures on this frame, you need to place your task
-    // before the first task. If you are planning to use texture resources loaded on this frame, you need to place your
-    // task after the second task.
+    // before the first task. If you are planning to use texture loaded on this frame, you need to place your task
+    // after the second task.
     std::pair<Task*, Task*> create_tasks();
 
 private:

@@ -170,6 +170,8 @@ UploadTextureDescriptor TextureLoader::load(MemoryResource& transient_memory_res
         result.depth = std::max(m_create_texture_descriptor.depth >> base_mip_level, 1U);
     }
 
+    KW_ASSERT(total_size <= size, "Transient data overflow.");
+
     void* texture_data = transient_memory_resource.allocate(total_size, 1);
 
     KW_ERROR(m_reader.read(texture_data, total_size), "Failed to read texture data.");

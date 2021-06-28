@@ -4,8 +4,6 @@
 #include <core/concurrency/task.h>
 #include <core/concurrency/task_scheduler.h>
 #include <core/debug/assert.h>
-#include <core/error.h>
-#include <core/math/scalar.h>
 
 namespace kw {
 
@@ -83,7 +81,8 @@ public:
     }
 
     void run() override {
-        // No lock here because tasks that load textures are expected to run before begin task.
+        // Tasks that load textures are expected to run before begin task, so this shouldn't block anyone.
+        std::lock_guard lock_guard(m_manager.m_textures_mutex);
 
         if (!m_manager.m_pending_textures.empty() || !m_manager.m_loading_textures.empty()) {
             size_t total_textures = m_manager.m_pending_textures.size() + m_manager.m_loading_textures.size();
@@ -176,7 +175,7 @@ TextureManager::~TextureManager() {
     m_loading_textures.clear();
 
     for (auto& [relative_path, texture] : m_textures) {
-        KW_ASSERT(texture.use_count() == 1, "Not all texture resources are released.");
+        KW_ASSERT(texture.use_count() == 1, "Not all textures are released.");
 
         m_render.destroy_texture(*texture);
     }
@@ -195,17 +194,17 @@ SharedPtr<Texture*> TextureManager::load(const char* relative_path) {
     {
         std::lock_guard lock_guard(m_textures_mutex);
 
-        auto result = m_textures.emplace(String(relative_path, m_persistent_memory_resource), SharedPtr<Texture*>());
-        if (!result.second) {
+        auto [it, success] = m_textures.emplace(String(relative_path, m_persistent_memory_resource), SharedPtr<Texture*>());
+        if (!success) {
             // Could return here if texture is enqueued from multiple threads.
-            return result.first->second;
+            return it->second;
         }
 
-        result.first->second = allocate_shared<Texture*>(m_persistent_memory_resource, nullptr);
+        it->second = allocate_shared<Texture*>(m_persistent_memory_resource, nullptr);
 
-        m_pending_textures.emplace_back(result.first->first, result.first->second);
+        m_pending_textures.emplace_back(it->first, it->second);
 
-        return result.first->second;
+        return it->second;
     }
 }
 
