@@ -14,9 +14,10 @@ LinearAccelerationStructure::LinearAccelerationStructure(MemoryResource& persist
 }
 
 void LinearAccelerationStructure::add(AccelerationStructurePrimitive& primitive) {
-    std::lock_guard<std::shared_mutex> lock_guard(m_shared_mutex);
+    std::lock_guard lock_guard(m_shared_mutex);
 
-    AccelerationStructure::add(primitive);
+    KW_ASSERT(primitive.m_acceleration_structure == nullptr);
+    primitive.m_acceleration_structure = this;
 
     KW_ASSERT(std::find(m_primitives.begin(), m_primitives.end(), &primitive) == m_primitives.end());
 
@@ -24,9 +25,10 @@ void LinearAccelerationStructure::add(AccelerationStructurePrimitive& primitive)
 }
 
 void LinearAccelerationStructure::remove(AccelerationStructurePrimitive& primitive) {
-    std::lock_guard<std::shared_mutex> lock_guard(m_shared_mutex);
+    std::lock_guard lock_guard(m_shared_mutex);
 
-    AccelerationStructure::remove(primitive);
+    KW_ASSERT(primitive.m_acceleration_structure == static_cast<AccelerationStructure*>(this));
+    primitive.m_acceleration_structure = nullptr;
 
     auto it = std::find(m_primitives.begin(), m_primitives.end(), &primitive);
     KW_ASSERT(it != m_primitives.end());
@@ -34,12 +36,12 @@ void LinearAccelerationStructure::remove(AccelerationStructurePrimitive& primiti
     m_primitives.erase(it);
 }
 
-void LinearAccelerationStructure::update(AccelerationStructurePrimitive& primitive, const aabbox& new_bounds) {
+void LinearAccelerationStructure::update(AccelerationStructurePrimitive& primitive) {
     // No-op.
 }
 
 Vector<AccelerationStructurePrimitive*> LinearAccelerationStructure::query(MemoryResource& memory_resource, const aabbox& bounds) const {
-    std::shared_lock<std::shared_mutex> shared_lock(m_shared_mutex);
+    std::shared_lock shared_lock(m_shared_mutex);
 
     Vector<AccelerationStructurePrimitive*> result(memory_resource);
     result.reserve(64);
@@ -54,7 +56,7 @@ Vector<AccelerationStructurePrimitive*> LinearAccelerationStructure::query(Memor
 }
 
 Vector<AccelerationStructurePrimitive*> LinearAccelerationStructure::query(MemoryResource& memory_resource, const frustum& frustum) const {
-    std::shared_lock<std::shared_mutex> shared_lock(m_shared_mutex);
+    std::shared_lock shared_lock(m_shared_mutex);
 
     Vector<AccelerationStructurePrimitive*> result(memory_resource);
     result.reserve(64);

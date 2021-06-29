@@ -10,7 +10,7 @@ public:
 
     void add(AccelerationStructurePrimitive& primitive) override;
     void remove(AccelerationStructurePrimitive& primitive) override;
-    void update(AccelerationStructurePrimitive& primitive, const aabbox& new_bounds) override;
+    void update(AccelerationStructurePrimitive& primitive) override;
 
     Vector<AccelerationStructurePrimitive*> query(MemoryResource& memory_resource, const aabbox& bounds) const override;
     Vector<AccelerationStructurePrimitive*> query(MemoryResource& memory_resource, const frustum& frustum) const override;

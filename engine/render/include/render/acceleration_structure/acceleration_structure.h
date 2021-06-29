@@ -10,11 +10,9 @@ class AccelerationStructurePrimitive;
 
 class AccelerationStructure {
 public:
-    virtual void add(AccelerationStructurePrimitive& primitive);
-    virtual void remove(AccelerationStructurePrimitive& primitive);
-
-    // Primitive must have old bounds set at this point. Once this method is called, new bounds must be set manually.
-    virtual void update(AccelerationStructurePrimitive& primitive, const aabbox& new_bounds) = 0;
+    virtual void add(AccelerationStructurePrimitive& primitive) = 0;
+    virtual void remove(AccelerationStructurePrimitive& primitive) = 0;
+    virtual void update(AccelerationStructurePrimitive& primitive) = 0;
 
     virtual Vector<AccelerationStructurePrimitive*> query(MemoryResource& memory_resource, const aabbox& bounds) const = 0;
     virtual Vector<AccelerationStructurePrimitive*> query(MemoryResource& memory_resource, const frustum& frustum) const = 0;

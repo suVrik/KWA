@@ -25,8 +25,11 @@ public:
 protected:
     AccelerationStructure* m_acceleration_structure;
     aabbox m_bounds;
+    void* m_node;
 
-    friend class AccelerationStructure;
+    friend class LinearAccelerationStructure;
+    friend class OctreeAccelerationStructure;
+    friend class QuadtreeAccelerationStructure;
 };
 
 } // namespace kw
