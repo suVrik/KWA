@@ -81,6 +81,8 @@ Vertex swap_le(Vertex vertex) {
 
 } // namespace kw::EndianUtils
 
+constexpr uint32_t KWG_SIGNATURE = ' GWK';
+
 static bool save_result(const char* path) {
     Writer writer(path);
 
@@ -89,6 +91,7 @@ static bool save_result(const char* path) {
         return false;
     }
 
+    writer.write_le<uint32_t>(KWG_SIGNATURE);
     writer.write_le<uint32_t>(result.vertices.size());
     writer.write_le<uint32_t>(result.indices.size());
     writer.write_le<float>(result.bounds.data, std::size(result.bounds.data));
