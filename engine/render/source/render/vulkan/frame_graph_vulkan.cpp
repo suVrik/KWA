@@ -248,11 +248,30 @@ void FrameGraphVulkan::recreate_swapchain() {
     create_temporary_resources();
 }
 
+uint64_t FrameGraphVulkan::get_frame_index() const {
+    uint64_t result;
+    VK_ERROR(
+        m_render.get_semaphore_counter_value(m_render.device, m_render_finished_timeline_semaphore->semaphore, &result),
+        "Failed to query timeline semaphore counter value."
+    );
+    return result;
+}
+
+uint32_t FrameGraphVulkan::get_width() const {
+    return m_swapchain_width;
+}
+
+uint32_t FrameGraphVulkan::get_height() const {
+    return m_swapchain_height;
+}
+
 void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& descriptor) {
     CreateContext create_context{
         descriptor,
         UnorderedMap<StringView, uint32_t>(m_render.transient_memory_resource),
         Vector<AttachmentAccess>(m_render.transient_memory_resource),
+        Vector<AttachmentBoundsData>(m_render.transient_memory_resource),
+        Vector<AttachmentBarrierData>(m_render.transient_memory_resource),
         LinearMemoryResource(m_render.transient_memory_resource, 4 * 1024 * 1024)
     };
 
@@ -262,11 +281,13 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
     compute_attachment_descriptors(create_context);
     compute_attachment_mapping(create_context);
     compute_attachment_access(create_context);
+    compute_attachment_barrier_data(create_context);
     compute_parallel_block_indices(create_context);
     compute_parallel_blocks(create_context);
     compute_attachment_ranges(create_context);
     compute_attachment_usage_mask(create_context);
     compute_attachment_layouts(create_context);
+    compute_attachment_blit_data(create_context);
 
     create_render_passes(create_context);
     create_synchronization(create_context);
@@ -390,6 +411,11 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
         attachment_count += count;
     }
 
+    KW_ASSERT(
+        m_attachment_descriptors.empty(),
+        "Attachments descriptors are computed twice."
+    );
+
     m_attachment_descriptors.reserve(attachment_count);
 
     //
@@ -400,6 +426,7 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
     swapchain_attachment_descriptor.name = frame_graph_descriptor.swapchain_attachment_name;
     swapchain_attachment_descriptor.load_op = LoadOp::DONT_CARE;
     swapchain_attachment_descriptor.format = TextureFormat::BGRA8_UNORM;
+    swapchain_attachment_descriptor.is_blit_source = true;
     m_attachment_descriptors.push_back(swapchain_attachment_descriptor);
 
     for (size_t i = 0; i < frame_graph_descriptor.color_attachment_descriptor_count; i++) {
@@ -452,6 +479,15 @@ void FrameGraphVulkan::compute_attachment_mapping(CreateContext& create_context)
 
 void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
+
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    //
+    // Compute conservative attachment access matrix.
+    //
 
     KW_ASSERT(create_context.attachment_access_matrix.empty());
     create_context.attachment_access_matrix.resize(frame_graph_descriptor.render_pass_descriptor_count * m_attachment_descriptors.size());
@@ -568,55 +604,86 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
         }
     }
 
+    //
+    // Compute attachment bounds.
+    //
+
+    KW_ASSERT(
+        create_context.attachment_bounds_data.empty(),
+        "Attachment bounds computed twice."
+    );
+
+    create_context.attachment_bounds_data.resize(
+        m_attachment_descriptors.size(),
+        AttachmentBoundsData{ UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX }
+    );
+
     for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
         const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-        if (attachment_descriptor.load_op != LoadOp::LOAD) {
-            uint32_t min_read_render_pass_index = UINT32_MAX;
-            uint32_t max_read_render_pass_index = UINT32_MAX;
-            uint32_t min_write_render_pass_index = UINT32_MAX;
-            uint32_t max_write_render_pass_index = UINT32_MAX;
+        AttachmentBoundsData& attachment_bounds = create_context.attachment_bounds_data[attachment_index];
 
-            for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+        for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+
+            if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                if (attachment_bounds.min_read_render_pass_index == UINT32_MAX) {
+                    attachment_bounds.min_read_render_pass_index = render_pass_index;
+                }
+
+                attachment_bounds.max_read_render_pass_index = render_pass_index;
+            }
+
+            if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                if (attachment_bounds.min_write_render_pass_index == UINT32_MAX) {
+                    attachment_bounds.min_write_render_pass_index = render_pass_index;
+                }
+
+                attachment_bounds.max_write_render_pass_index = render_pass_index;
+            }
+        }
+    }
+
+    //
+    // Compute precise attachment access matrix (remove extra loads and stores).
+    //
+
+    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
+        const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+        AttachmentBoundsData& attachment_bounds = create_context.attachment_bounds_data[attachment_index];
+
+        if (attachment_descriptor.load_op != LoadOp::LOAD) {
+            if (attachment_bounds.min_write_render_pass_index != UINT32_MAX) {
+                size_t access_index = attachment_bounds.min_write_render_pass_index * m_attachment_descriptors.size() + attachment_index;
                 KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
 
-                AttachmentAccess& attachment_access = create_context.attachment_access_matrix[access_index];
-
-                if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if (min_read_render_pass_index == UINT32_MAX) {
-                        min_read_render_pass_index = render_pass_index;
-                    }
-
-                    max_read_render_pass_index = render_pass_index;
-                }
-
-                if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (min_write_render_pass_index == UINT32_MAX) {
-                        min_write_render_pass_index = render_pass_index;
-
-                        attachment_access &= ~AttachmentAccess::LOAD;
-                    }
-
-                    max_write_render_pass_index = render_pass_index;
-                }
+                // We either DONT_CARE or CLEAR this attachment, so we can remove first write LOAD.
+                create_context.attachment_access_matrix[access_index] &= ~AttachmentAccess::LOAD;
             }
 
             if (attachment_index == 0) {
                 // This restriction allows the last write render pass to transition the attachment image to present layout.
                 KW_ERROR(
-                    max_read_render_pass_index == UINT32_MAX || (max_write_render_pass_index != UINT32_MAX && min_read_render_pass_index > min_write_render_pass_index && max_read_render_pass_index < max_write_render_pass_index),
+                    attachment_bounds.max_read_render_pass_index == UINT32_MAX ||
+                    (attachment_bounds.max_write_render_pass_index != UINT32_MAX &&
+                     attachment_bounds.min_read_render_pass_index > attachment_bounds.min_write_render_pass_index &&
+                     attachment_bounds.max_read_render_pass_index < attachment_bounds.max_write_render_pass_index),
                     "Swapchain image must not be read before the first write nor after the last write."
                 );
             }
 
-            if (max_write_render_pass_index != UINT32_MAX) {
-                size_t access_index = max_write_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            if (attachment_bounds.max_write_render_pass_index != UINT32_MAX) {
+                size_t access_index = attachment_bounds.max_write_render_pass_index * m_attachment_descriptors.size() + attachment_index;
                 KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
 
                 AttachmentAccess& attachment_access = create_context.attachment_access_matrix[access_index];
 
-                if (max_read_render_pass_index != UINT32_MAX) {
-                    if (min_read_render_pass_index > min_write_render_pass_index && max_read_render_pass_index < max_write_render_pass_index) {
+                if (attachment_bounds.max_read_render_pass_index != UINT32_MAX) {
+                    if (attachment_bounds.min_read_render_pass_index > attachment_bounds.min_write_render_pass_index &&
+                        attachment_bounds.max_read_render_pass_index < attachment_bounds.max_write_render_pass_index)
+                    {
                         // All read accesses are between write accesses, so the last write access is followed by a write access that doesn't load.
                         attachment_access &= ~AttachmentAccess::STORE;
                     }
@@ -629,10 +696,487 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
     }
 }
 
+void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_context) {
+    const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
+
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_bounds_data.empty(),
+        "Attachment bounds must be computed first."
+    );
+
+    KW_ASSERT(
+        create_context.attachment_barrier_matrix.empty(),
+        "Attachment barriers are initialized twice."
+    );
+
+    create_context.attachment_barrier_matrix.resize(
+        frame_graph_descriptor.render_pass_descriptor_count * m_attachment_descriptors.size(),
+        AttachmentBarrierData{}
+    );
+
+    KW_ASSERT(
+        create_context.attachment_access_matrix.size() == create_context.attachment_barrier_matrix.size(),
+        "Attachment access matrix must be computed first."
+    );
+
+    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
+        const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+        AttachmentBoundsData& attachment_bounds = create_context.attachment_bounds_data[attachment_index];
+
+        VkImageLayout layout_attachment_optimal;
+        VkImageLayout layout_read_only_optimal;
+
+        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+            layout_attachment_optimal = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            layout_read_only_optimal = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        } else {
+            layout_attachment_optimal = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            layout_read_only_optimal = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+
+        //
+        // If attachment is not read or written, perform an early quit. The further code can safely assume that there's
+        // at least read or write access happening to this attachment.
+        //
+
+        if (attachment_bounds.max_read_render_pass_index == UINT32_MAX && attachment_bounds.max_write_render_pass_index == UINT32_MAX) {
+            for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+                KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+                AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+                if (attachment_index == 0) {
+                    attachment_barrier_data.source_image_layout = attachment_barrier_data.destination_image_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                    attachment_barrier_data.source_access_mask = attachment_barrier_data.destination_access_mask = VK_ACCESS_NONE_KHR;
+                    attachment_barrier_data.source_pipeline_stage_mask = attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_NONE_KHR;
+                } else {
+                    attachment_barrier_data.source_image_layout = attachment_barrier_data.destination_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+                    attachment_barrier_data.source_access_mask = attachment_barrier_data.destination_access_mask = VK_ACCESS_NONE_KHR;
+                    attachment_barrier_data.source_pipeline_stage_mask = attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_NONE_KHR;
+                }
+            }
+
+            continue;
+        }
+
+        //
+        // Compute source image layout for READ/WRITE render passes.
+        //
+
+        AttachmentAccess previous_attachment_access;
+
+        if (attachment_bounds.max_read_render_pass_index != UINT32_MAX && attachment_bounds.max_write_render_pass_index != UINT32_MAX) {
+            uint32_t max_render_pass_index = std::max(attachment_bounds.max_read_render_pass_index, attachment_bounds.max_write_render_pass_index);
+
+            size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            previous_attachment_access = create_context.attachment_access_matrix[access_index];
+            KW_ASSERT(previous_attachment_access != AttachmentAccess::NONE);
+        } else {
+            KW_ASSERT(
+                attachment_bounds.max_read_render_pass_index != UINT32_MAX || attachment_bounds.max_write_render_pass_index != UINT32_MAX,
+                "One of the above checks ensures that this attachment is at least read or written once."
+            );
+
+            uint32_t max_render_pass_index = std::min(attachment_bounds.max_read_render_pass_index, attachment_bounds.max_write_render_pass_index);
+
+            size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            previous_attachment_access = create_context.attachment_access_matrix[access_index];
+            KW_ASSERT(previous_attachment_access != AttachmentAccess::NONE);
+        }
+
+        for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                // Read render pass can't change image layout, so previous render pass must have set it to read only.
+                attachment_barrier_data.source_image_layout = layout_read_only_optimal;
+                previous_attachment_access = attachment_access;
+            } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::NONE) {
+                    // This is a first CLEAR/DONT_CARE WRITE render pass on this frame. Ignore attachment content.
+                    attachment_barrier_data.source_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+                } else if ((previous_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                    // Read render pass can't change image layout, so previous render pass must have set it to read only.
+                    attachment_barrier_data.source_image_layout = layout_read_only_optimal;
+                } else {
+                    // Write render pass followed by another write render pass don't perform any layout transitions.
+                    attachment_barrier_data.source_image_layout = layout_attachment_optimal;
+                }
+
+                previous_attachment_access = attachment_access;
+            } else {
+                KW_ASSERT(
+                    attachment_access == AttachmentAccess::NONE,
+                    "Attachment access without READ or WRITE flags must be equal to NONE."
+                );
+            }
+        }
+
+        //
+        // Compute destination image layout for READ/WRITE render passes.
+        //
+
+        AttachmentAccess next_attachment_access;
+
+        if (attachment_bounds.min_read_render_pass_index != UINT32_MAX && attachment_bounds.min_write_render_pass_index != UINT32_MAX) {
+            uint32_t min_render_pass_index = std::min(attachment_bounds.min_read_render_pass_index, attachment_bounds.max_write_render_pass_index);
+
+            size_t access_index = min_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            next_attachment_access = create_context.attachment_access_matrix[access_index];
+            KW_ASSERT(next_attachment_access != AttachmentAccess::NONE);
+        } else {
+            KW_ASSERT(
+                attachment_bounds.min_read_render_pass_index != UINT32_MAX || attachment_bounds.min_write_render_pass_index != UINT32_MAX,
+                "One of the above checks ensures that this attachment is at least read or written once."
+            );
+
+            uint32_t min_render_pass_index = std::min(attachment_bounds.min_read_render_pass_index, attachment_bounds.min_write_render_pass_index);
+
+            size_t access_index = min_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            next_attachment_access = create_context.attachment_access_matrix[access_index];
+            KW_ASSERT(next_attachment_access != AttachmentAccess::NONE);
+        }
+
+        for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
+            size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                // Read render pass can't change image layout, so keep read only image layout.
+                attachment_barrier_data.destination_image_layout = layout_read_only_optimal;
+                next_attachment_access = attachment_access;
+            } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                if ((attachment_access & AttachmentAccess::STORE) == AttachmentAccess::NONE) {
+                    if (attachment_index == 0) {
+                        // Swapchain attachment must be transitioned to present image layout before present.
+                        attachment_barrier_data.destination_image_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                    } else {
+                        // DONT_CARE render passes are always write render passes. The next render pass always ignores
+                        // the attachment layout, so we can just avoid doing any image layout transitions.
+                        attachment_barrier_data.destination_image_layout = layout_attachment_optimal;
+                    }
+                } else if ((next_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                    // Read render pass can't change image layout, so keep current image layout value.
+                    attachment_barrier_data.destination_image_layout = layout_read_only_optimal;
+                } else {
+                    // Write render pass followed by another write render pass don't perform any layout transitions.
+                    attachment_barrier_data.destination_image_layout = layout_attachment_optimal;
+                }
+
+                next_attachment_access = attachment_access;
+            } else {
+                KW_ASSERT(
+                    attachment_access == AttachmentAccess::NONE,
+                    "Attachment access without READ or WRITE flags must be equal to NONE."
+                );
+            }
+        }
+
+        //
+        // Compute source/destination image layouts for NONE render passes.
+        //
+
+        VkImageLayout previous_image_layout;
+
+        if (attachment_bounds.max_read_render_pass_index != UINT32_MAX && attachment_bounds.max_write_render_pass_index != UINT32_MAX) {
+            uint32_t max_render_pass_index = std::max(attachment_bounds.max_read_render_pass_index, attachment_bounds.max_write_render_pass_index);
+
+            size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            previous_image_layout = create_context.attachment_barrier_matrix[access_index].destination_image_layout;
+        } else {
+            KW_ASSERT(
+                attachment_bounds.max_read_render_pass_index != UINT32_MAX || attachment_bounds.max_write_render_pass_index != UINT32_MAX,
+                "One of the above checks ensures that this attachment is at least read or written once."
+            );
+
+            uint32_t max_render_pass_index = std::min(attachment_bounds.max_read_render_pass_index, attachment_bounds.max_write_render_pass_index);
+
+            size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+
+            previous_image_layout = create_context.attachment_barrier_matrix[access_index].destination_image_layout;
+        }
+
+        for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if (attachment_access == AttachmentAccess::NONE) {
+                attachment_barrier_data.source_image_layout = attachment_barrier_data.destination_image_layout = previous_image_layout;
+            } else {
+                previous_image_layout = attachment_barrier_data.destination_image_layout;
+            }
+        }
+
+        //
+        // Compute source access mask & source pipeline stage for READ/WRITE render passes.
+        //
+
+        next_attachment_access = AttachmentAccess::NONE;
+
+        for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
+            size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                KW_ASSERT(
+                    (attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) != AttachmentAccess::NONE,
+                    "Read attachment access implies either VERTEX_SHADER, FRAGMENT_SHADER or ATTACHMENT."
+                );
+
+                // `...READ_BIT` in source access mask is a no-op.
+                attachment_barrier_data.source_access_mask = VK_ACCESS_NONE_KHR;
+
+                if ((next_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                    if ((attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER) {
+                        // We read from this attachment in fragment shader on current render pass, which means
+                        // that the writing next render pass needs to wait for fragment shader to complete.
+                        attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                    }
+
+                    if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
+                        // We perform depth test with this attachment on current render pass, which means
+                        // that the next writing render pass needs to wait for early fragment tests to complete.
+                        KW_ASSERT(TextureFormatUtils::is_depth_stencil(attachment_descriptor.format));
+                        attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                    }
+
+                    if ((attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER) {
+                        // We read from this attachment in vertex shader on current render pass, which means
+                        // that the next writing render pass needs to wait for vertex shader to complete.
+                        attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+                    }
+                } else {
+                    // We read from this attachment on both current render pass and the next render pass,
+                    // the next render pass doesn't have to wait for that.
+                    attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                }
+
+                next_attachment_access = attachment_access;
+            } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                KW_ASSERT(
+                    (attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT,
+                    "Write access must be ATTACHMENT."
+                );
+
+                // LOAD and BLEND checks are omitted here because they produce `...READ_BIT` access masks,
+                // which are redundant for source access mask. STORE is taken into consideration though.
+                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                    // We write to this depth stencil attachment on current render pass, which means that the next
+                    // render pass needs to wait for late fragment tests to complete to start rendering.
+                    attachment_barrier_data.source_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+                } else {
+                    // We write to this color attachment on current render pass, which means that the next
+                    // render pass needs to wait for color attachment output to start rendering.
+                    attachment_barrier_data.source_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                }
+
+                next_attachment_access = attachment_access;
+            } else {
+                KW_ASSERT(
+                    attachment_access == AttachmentAccess::NONE,
+                    "Attachment access without READ or WRITE flags must be equal to NONE."
+                );
+            }
+        }
+
+        //
+        // Compute source access mask & source pipeline stage for NONE render passes.
+        //
+
+        VkAccessFlags previous_access_mask = VK_ACCESS_NONE_KHR;
+        VkPipelineStageFlags previous_pipeline_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+        for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if (attachment_access == AttachmentAccess::NONE) {
+                attachment_barrier_data.source_access_mask = previous_access_mask;
+                attachment_barrier_data.source_pipeline_stage_mask = previous_pipeline_stage_mask;
+            } else {
+                previous_access_mask = attachment_barrier_data.source_access_mask;
+                previous_pipeline_stage_mask = attachment_barrier_data.source_pipeline_stage_mask;
+            }
+
+            KW_ASSERT(attachment_barrier_data.source_pipeline_stage_mask != VK_PIPELINE_STAGE_NONE_KHR);
+        }
+
+        //
+        // Compute destination access mask & destination pipeline stage.
+        //
+
+        next_attachment_access = AttachmentAccess::NONE;
+
+        for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
+            size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if (attachment_access != AttachmentAccess::NONE) {
+                if ((next_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
+                    KW_ASSERT(
+                        (next_attachment_access& (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) != AttachmentAccess::NONE,
+                        "Read attachment access implies either VERTEX_SHADER, FRAGMENT_SHADER or ATTACHMENT."
+                    );
+
+                    if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                        if ((next_attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER) {
+                            // We read this attachment in vertex shader in the next render pass after writing to it in
+                            // current render pass. The next render pass is allowed to execute every pipeline stage
+                            // before vertex shader without waiting.
+                            attachment_barrier_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
+                            attachment_barrier_data.destination_pipeline_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+                        }
+
+                        if ((next_attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
+                            // We perform depth test in the next render pass after writing to it in current render pass.
+                            // The next render pass is allowed to execute every pipeline stage before early fragment
+                            // tests without waiting.
+                            KW_ASSERT(TextureFormatUtils::is_depth_stencil(attachment_descriptor.format));
+                            attachment_barrier_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                            attachment_barrier_data.destination_pipeline_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                        }
+
+                        if ((next_attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER) {
+                            // We read this attachment in fragment shader in the next render pass after writing to it
+                            // in current render pass. The next render pass is allowed to execute every pipeline stage
+                            // before fragment shader without waiting.
+                            attachment_barrier_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
+                            attachment_barrier_data.destination_pipeline_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                        }
+                    } else {
+                        // We read from this attachment on both current render pass and the next render pass,
+                        // the next render pass can perform all pipeline stages.
+                        attachment_barrier_data.destination_access_mask = VK_ACCESS_NONE_KHR;
+                        attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+                    }
+                } else if ((next_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                    KW_ASSERT(
+                        (next_attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT,
+                        "Write access must be ATTACHMENT."
+                    );
+
+                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                        // Next render pass writes to this depth stencil attachment, so it is allowed to execute
+                        // every stage before early fragment tests without waiting.
+                        attachment_barrier_data.destination_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                        if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
+                            attachment_barrier_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                        }
+                        attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                    } else {
+                        // Next parallel block writes to this color attachment, so it is allowed to execute every stage
+                        // before color attachment output without waiting.
+                        attachment_barrier_data.destination_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                        if ((attachment_access & (AttachmentAccess::LOAD | AttachmentAccess::BLEND)) != AttachmentAccess::NONE) {
+                            attachment_barrier_data.destination_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+                        }
+                        attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    }
+                } else {
+                    KW_ASSERT(
+                        next_attachment_access == AttachmentAccess::NONE,
+                        "Attachment access without READ or WRITE flags must be equal to NONE."
+                    );
+
+                    // This is the last attachment access on this frame.
+                    attachment_barrier_data.destination_access_mask = VK_ACCESS_NONE_KHR;
+                    attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+                }
+
+                next_attachment_access = attachment_access;
+            }
+        }
+
+        //
+        // Compute destination access mask & source pipeline stage for NONE render passes.
+        //
+
+        VkAccessFlags next_access_mask = VK_ACCESS_NONE_KHR;
+        VkPipelineStageFlags next_pipeline_stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+
+        for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
+            size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+            AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+
+            if (attachment_access == AttachmentAccess::NONE) {
+                attachment_barrier_data.source_access_mask = next_access_mask;
+                attachment_barrier_data.source_pipeline_stage_mask = next_pipeline_stage_mask;
+            } else {
+                next_access_mask = attachment_barrier_data.destination_access_mask;
+                next_pipeline_stage_mask = attachment_barrier_data.destination_pipeline_stage_mask;
+            }
+
+            KW_ASSERT(attachment_barrier_data.destination_pipeline_stage_mask != VK_PIPELINE_STAGE_NONE_KHR);
+        }
+    }
+}
+
 void FrameGraphVulkan::compute_parallel_block_indices(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
-    KW_ASSERT(m_render_pass_data.empty());
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+    
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        m_render_pass_data.empty(),
+        "Parallel block indices are computed twice."
+    );
+
     m_render_pass_data.reserve(frame_graph_descriptor.render_pass_descriptor_count);
 
     // Keep accesses to each attachment in current parallel block. Once they conflict, move attachment to a new parallel block.
@@ -670,7 +1214,8 @@ void FrameGraphVulkan::compute_parallel_block_indices(CreateContext& create_cont
             if (previous_access == AttachmentAccess::NONE) {
                 previous_access = current_access;
             } else {
-                // Not possible otherwise because for this kind of conflict previous loop clears the `previous_accesses` array.
+                // Not possible otherwise because when this kind of conflict happens,
+                // previous loop clears the `previous_accesses` array.
                 KW_ASSERT(current_access == AttachmentAccess::NONE || previous_access == current_access);
             }
         }
@@ -680,7 +1225,32 @@ void FrameGraphVulkan::compute_parallel_block_indices(CreateContext& create_cont
 void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
-    KW_ASSERT(m_parallel_block_data.empty());
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_barrier_matrix.empty(),
+        "Attachments barrier matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_render_pass_data.empty(),
+        "Render pass parallel blocks must be computed first."
+    );
+
+    KW_ASSERT(
+        m_parallel_block_data.empty(),
+        "Parallel block data computed twice."
+    );
+
+    // If there's no render passes, there's no parallel blocks too.
     m_parallel_block_data.resize(m_render_pass_data.empty() ? 0 : m_render_pass_data.back().parallel_block_index + 1);
 
     for (size_t render_pass_index = 0; render_pass_index < m_render_pass_data.size(); render_pass_index++) {
@@ -694,128 +1264,16 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
 
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
 
             if (attachment_access != AttachmentAccess::NONE) {
-                AttachmentAccess previous_attachment_access = AttachmentAccess::NONE;
-
-                for (size_t offset = 1; offset <= render_pass_index; offset++) {
-                    size_t another_attachment_index = render_pass_index - offset;
-
-                    RenderPassData& another_render_pass_data = m_render_pass_data[another_attachment_index];
-                    KW_ASSERT(another_render_pass_data.parallel_block_index < m_parallel_block_data.size());
-
-                    if (another_render_pass_data.parallel_block_index < render_pass_data.parallel_block_index) {
-                        size_t another_access_index = another_attachment_index * m_attachment_descriptors.size() + attachment_index;
-                        KW_ASSERT(another_access_index < create_context.attachment_access_matrix.size());
-
-                        AttachmentAccess another_attachment_access = create_context.attachment_access_matrix[another_access_index];
-
-                        if (another_attachment_access != AttachmentAccess::NONE) {
-                            previous_attachment_access = another_attachment_access;
-                            break;
-                        }
-                    }
-                }
-
-                if ((previous_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                            if ((previous_attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER) {
-                                parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                            } else if ((previous_attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
-                                parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-                            } else {
-                                KW_ASSERT((previous_attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER);
-                                parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-                            }
-                        } else {
-                            if ((previous_attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER) {
-                                parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                            } else {
-                                KW_ASSERT((previous_attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER);
-                                parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-                            }
-                        }
-                    } else {
-                        parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-                    }
-                } else if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                        parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-                    } else {
-                        parallel_block_data.source_stage_mask |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                    }
-                }
-                
-                if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                        parallel_block_data.source_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                    } else {
-                        parallel_block_data.source_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                    }
-                }
-
-                if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                            if ((attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER) {
-                                parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-                            } else if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
-                                parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-                            } else {
-                                KW_ASSERT((attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER);
-                                parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                            }
-                        } else {
-                            if ((attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER) {
-                                parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-                            } else {
-                                KW_ASSERT((attachment_access & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::FRAGMENT_SHADER);
-                                parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                            }
-                        }
-                    } else {
-                        parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-                    }
-                } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                        parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-                    } else {
-                        parallel_block_data.destination_stage_mask |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                    }
-                }
-
-                if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                            if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
-                                parallel_block_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                            }
-
-                            if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE) {
-                                parallel_block_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
-                            }
-                        } else {
-                            parallel_block_data.destination_access_mask |= VK_ACCESS_SHADER_READ_BIT;
-                        }
-                    }
-                } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
-                        parallel_block_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-                        if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
-                            parallel_block_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-                        }
-                    } else {
-                        parallel_block_data.destination_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-                        if ((attachment_access & (AttachmentAccess::LOAD | AttachmentAccess::BLEND)) != AttachmentAccess::NONE) {
-                            parallel_block_data.destination_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-                        }
-                    }
-                }
+                parallel_block_data.source_stage_mask |= attachment_barrier_data.source_pipeline_stage_mask;
+                parallel_block_data.destination_stage_mask |= attachment_barrier_data.destination_pipeline_stage_mask;
+                parallel_block_data.source_access_mask |= attachment_barrier_data.source_access_mask;
+                parallel_block_data.destination_access_mask |= attachment_barrier_data.destination_access_mask;
             }
         }
     }
@@ -824,8 +1282,27 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
 void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
-    KW_ASSERT(m_attachment_data.empty());
-    m_attachment_data.resize(m_attachment_descriptors.size(), AttachmentData{});
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_render_pass_data.empty(),
+        "Render pass parallel blocks must be computed first."
+    );
+
+    KW_ASSERT(
+        m_attachment_data.empty(),
+        "Attachment ranges are computed twice."
+    );
+
+    m_attachment_data.resize(m_attachment_descriptors.size(), AttachmentData(m_render.persistent_memory_resource));
 
     for (size_t attachment_index = 0; attachment_index < m_attachment_data.size(); attachment_index++) {
         const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
@@ -888,9 +1365,7 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
                         KW_ASSERT(m_render_pass_data[min_render_pass_index].parallel_block_index > m_render_pass_data[max_render_pass_index].parallel_block_index);
                     }
                 }
-            }
 
-            if (min_render_pass_index != UINT32_MAX) {
                 attachment_data.min_parallel_block_index = m_render_pass_data[min_render_pass_index].parallel_block_index;
                 attachment_data.max_parallel_block_index = m_render_pass_data[max_render_pass_index].parallel_block_index;
             }
@@ -901,9 +1376,28 @@ void FrameGraphVulkan::compute_attachment_ranges(CreateContext& create_context) 
 void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_attachment_data.empty(),
+        "Attachment ranges must be computed first."
+    );
+
     for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
         AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
         AttachmentData& attachment_data = m_attachment_data[attachment_index];
+
+        if (attachment_descriptor.is_blit_source) {
+            attachment_data.usage_mask |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
 
         for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
@@ -921,9 +1415,13 @@ void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_conte
                         attachment_data.usage_mask |= VK_IMAGE_USAGE_SAMPLED_BIT;
                     }
                 } else {
+                    KW_ASSERT((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE);
+
                     attachment_data.usage_mask |= VK_IMAGE_USAGE_SAMPLED_BIT;
                 }
             } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                KW_ASSERT((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT);
+
                 if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
                     attachment_data.usage_mask |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                 } else {
@@ -936,6 +1434,21 @@ void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_conte
 
 void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
+
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_attachment_data.empty(),
+        "Attachment ranges must be computed first."
+    );
 
     for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
         AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
@@ -950,6 +1463,8 @@ void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context)
             if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
                 if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
                     if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
+                        KW_ASSERT((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD);
+
                         attachment_data.initial_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
                     }
 
@@ -957,17 +1472,21 @@ void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context)
                         attachment_data.initial_access_mask |= VK_ACCESS_SHADER_READ_BIT;
                     }
 
-                    if ((attachment_data.usage_mask & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0) {
-                        attachment_data.initial_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    } else {
+                    if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
                         attachment_data.initial_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    } else {
+                        attachment_data.initial_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                     }
                 } else {
+                    KW_ASSERT((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER)) != AttachmentAccess::NONE);
+
                     attachment_data.initial_access_mask = VK_ACCESS_SHADER_READ_BIT;
                     attachment_data.initial_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 }
                 break;
             } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+                KW_ASSERT((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT);
+
                 if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
                     if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
                         attachment_data.initial_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
@@ -986,6 +1505,42 @@ void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context)
                     attachment_data.initial_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 }
                 break;
+            }
+        }
+    }
+}
+
+void FrameGraphVulkan::compute_attachment_blit_data(CreateContext& create_context) {
+    const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
+
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_attachment_data.empty(),
+        "Attachment ranges must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_barrier_matrix.empty(),
+        "Attachments barrier matrix must be computed first."
+    );
+
+    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
+        AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
+        AttachmentData& attachment_data = m_attachment_data[attachment_index];
+
+        if (attachment_descriptor.is_blit_source) {
+            KW_ASSERT(attachment_data.blit_data.empty());
+            attachment_data.blit_data.reserve(frame_graph_descriptor.render_pass_descriptor_count);
+
+            for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
+                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+                KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+
+                attachment_data.blit_data.push_back(create_context.attachment_barrier_matrix[access_index]);
             }
         }
     }
@@ -1014,6 +1569,36 @@ void FrameGraphVulkan::create_render_passes(CreateContext& create_context) {
 void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_t render_pass_index) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
+    KW_ASSERT(
+        !m_attachment_descriptors.empty(),
+        "Attachments descriptors must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_mapping.empty(),
+        "Attachments mapping must be computed first."
+    );
+    
+    KW_ASSERT(
+        !create_context.attachment_access_matrix.empty(),
+        "Attachments access matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !create_context.attachment_barrier_matrix.empty(),
+        "Attachments barrier matrix must be computed first."
+    );
+
+    KW_ASSERT(
+        !m_attachment_data.empty(),
+        "Attachment ranges must be computed first."
+    );
+
+    KW_ASSERT(
+        render_pass_index < m_render_pass_data.size(),
+        "Render pass data must be initialized first."
+    );
+
     const RenderPassDescriptor& render_pass_descriptor = frame_graph_descriptor.render_pass_descriptors[render_pass_index];
     RenderPassData& render_pass_data = m_render_pass_data[render_pass_index];
 
@@ -1032,28 +1617,24 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
 
     Vector<VkAttachmentDescription> attachment_descriptions(attachment_count, m_render.transient_memory_resource);
 
-    KW_ASSERT(render_pass_data.attachment_indices.empty());
+    KW_ASSERT(
+        render_pass_data.attachment_indices.empty(),
+        "Attachment indices are computed twice."
+    );
+
     render_pass_data.attachment_indices.resize(attachment_count);
 
     for (size_t i = 0; i < attachment_descriptions.size(); i++) {
         uint32_t attachment_index;
-        VkImageLayout layout_attachment_optimal;
-        VkImageLayout layout_read_only_optimal;
 
         if (i == render_pass_descriptor.color_attachment_name_count) {
             KW_ASSERT(create_context.attachment_mapping.count(render_pass_descriptor.depth_stencil_attachment_name) > 0);
             attachment_index = create_context.attachment_mapping[render_pass_descriptor.depth_stencil_attachment_name];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-            layout_attachment_optimal = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            layout_read_only_optimal = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         } else {
             KW_ASSERT(create_context.attachment_mapping.count(render_pass_descriptor.color_attachment_names[i]) > 0);
             attachment_index = create_context.attachment_mapping[render_pass_descriptor.color_attachment_names[i]];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
-
-            layout_attachment_optimal = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            layout_read_only_optimal = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
 
         const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
@@ -1065,8 +1646,10 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
 
         size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
         KW_ASSERT(access_index < create_context.attachment_access_matrix.size());
+        KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
 
         AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
+        AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
 
         if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::NONE) {
             attachment_description.loadOp = LOAD_OP_MAPPING[static_cast<size_t>(attachment_descriptor.load_op)];
@@ -1074,97 +1657,22 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
             attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         }
 
-        if (attachment_description.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD) {
-            // Clear and don't care render passes always start with undefined initial layout.
-            attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        } else {
-            bool previous_attachment_access_is_read = (attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ;
-
-            for (size_t offset = 1; offset < frame_graph_descriptor.render_pass_descriptor_count; offset++) {
-                size_t previous_render_pass_index = (render_pass_index + frame_graph_descriptor.render_pass_descriptor_count - offset) % frame_graph_descriptor.render_pass_descriptor_count;
-                
-                size_t previous_access_index = previous_render_pass_index * m_attachment_descriptors.size() + attachment_index;
-                KW_ASSERT(previous_access_index < create_context.attachment_access_matrix.size());
-                
-                AttachmentAccess previous_attachment_access = create_context.attachment_access_matrix[previous_access_index];
-
-                if ((previous_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    previous_attachment_access_is_read = true;
-                    break;
-                } else if ((previous_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    previous_attachment_access_is_read = false;
-                    break;
-                }
-            }
-
-            if (previous_attachment_access_is_read) {
-                // Previous render pass read this attachment.
-                attachment_description.initialLayout = layout_read_only_optimal;
-            } else {
-                if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    // Previous render pass written this attachment and changed its layout to read only optimal to
-                    // avoid this render pass to do that (because read render passes are not allowed to change layout).
-                    attachment_description.initialLayout = layout_read_only_optimal;
-                } else {
-                    // Previous render pass written this attachment.
-                    attachment_description.initialLayout = layout_attachment_optimal;
-                }
-            }
-        }
-
         if ((attachment_access & AttachmentAccess::STORE) == AttachmentAccess::STORE) {
             attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         } else {
-            attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        }
-
-        if (attachment_description.storeOp != VK_ATTACHMENT_STORE_OP_STORE) {
             if (attachment_index == 0) {
-                // Swapchain attachment must be transitioned to present image layout before present.
+                // Store swapchain image for present.
                 attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
             } else {
-                // Don't care render passes are always write render passes, the next render pass always ignores the
-                // attachment layout, so we can just keep our current layout.
-                attachment_description.finalLayout = layout_attachment_optimal;
-            }
-        } else {
-            bool next_attachment_access_is_read = (attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ;
-
-            for (size_t offset = 1; offset < frame_graph_descriptor.render_pass_descriptor_count; offset++) {
-                size_t next_render_pass_index = (render_pass_index + offset) % frame_graph_descriptor.render_pass_descriptor_count;
-                
-                size_t next_access_index = next_render_pass_index * m_attachment_descriptors.size() + attachment_index;
-                KW_ASSERT(next_access_index < create_context.attachment_access_matrix.size());
-
-                AttachmentAccess next_attachment_access = create_context.attachment_access_matrix[next_access_index];
-
-                if ((next_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    next_attachment_access_is_read = true;
-                    break;
-                } else if ((next_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    next_attachment_access_is_read = false;
-                    break;
-                }
-            }
-
-            if (next_attachment_access_is_read) {
-                // This render pass is followed by a render pass that reads this attachment.
-                attachment_description.finalLayout = layout_read_only_optimal;
-            } else {
-                if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                    // Next render pass is a write render pass, but we're not allowed to change attachment layout
-                    // in this render pass because it's read only.
-                    attachment_description.finalLayout = layout_read_only_optimal;
-                } else {
-                    // Next render pass is a write render pass, so just keep our current layout.
-                    attachment_description.finalLayout = layout_attachment_optimal;
-                }
+                attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
             }
         }
 
         attachment_description.stencilLoadOp = attachment_description.loadOp;
         attachment_description.stencilStoreOp = attachment_description.storeOp;
+
+        attachment_description.initialLayout = attachment_barrier_data.source_image_layout;
+        attachment_description.finalLayout = attachment_barrier_data.destination_image_layout;
 
         KW_ASSERT(render_pass_data.attachment_indices[i] == 0);
         render_pass_data.attachment_indices[i] = attachment_index;
@@ -1196,6 +1704,8 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
         AttachmentAccess attachment_access = create_context.attachment_access_matrix[access_index];
 
         if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
+            KW_ASSERT((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT);
+
             depth_stencil_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
     }
@@ -1238,9 +1748,6 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
     //
     // Create render pass impl and pass it to an actual render pass.
     //
-
-    static_assert(std::is_move_assignable_v<MemoryResourceAllocator<RenderPassImplVulkan>>);
-    static_assert(std::is_move_assignable_v<UniquePtr<RenderPassImplVulkan>>);
 
     render_pass_data.render_pass_impl = allocate_unique<RenderPassImplVulkan>(m_render.persistent_memory_resource, *this, render_pass_index);
 
@@ -2611,7 +3118,7 @@ bool FrameGraphVulkan::create_swapchain() {
     swapchain_create_info.imageColorSpace = m_color_space;
     swapchain_create_info.imageExtent = extent;
     swapchain_create_info.imageArrayLayers = 1;
-    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     swapchain_create_info.queueFamilyIndexCount = 0;
     swapchain_create_info.pQueueFamilyIndices = nullptr;
@@ -3003,6 +3510,19 @@ void FrameGraphVulkan::create_framebuffers() {
 
 size_t FrameGraphVulkan::NoOpHash::operator()(uint64_t value) const {
     return value;
+}
+
+FrameGraphVulkan::AttachmentData::AttachmentData(MemoryResource& memory_resource)
+    : image(VK_NULL_HANDLE)
+    , image_view(VK_NULL_HANDLE)
+    , sampled_view(VK_NULL_HANDLE)
+    , min_parallel_block_index(0)
+    , max_parallel_block_index(0)
+    , usage_mask(0)
+    , initial_access_mask(VK_ACCESS_NONE_KHR)
+    , initial_layout(VK_IMAGE_LAYOUT_UNDEFINED)
+    , blit_data(memory_resource)
+{
 }
 
 FrameGraphVulkan::DescriptorSetData::DescriptorSetData(VkDescriptorSet descriptor_set_, uint64_t last_frame_usage_)
@@ -3635,7 +4155,8 @@ bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets(Graphic
 }
 
 FrameGraphVulkan::RenderPassImplVulkan::RenderPassImplVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index)
-    : contexts(frame_graph.m_render.transient_memory_resource)
+    : contexts(frame_graph.m_render.persistent_memory_resource)
+    , blit_command_buffer(VK_NULL_HANDLE)
     , m_frame_graph(frame_graph)
     , m_render_pass_index(render_pass_index)
 {
@@ -3747,32 +4268,13 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
     }
 
     //
-    // Perform synchronization between render passes.
+    // Begin render pass.
     //
 
     RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[m_render_pass_index];
     KW_ASSERT(render_pass_data.render_pass != VK_NULL_HANDLE);
     KW_ASSERT(render_pass_data.framebuffer_width > 0);
     KW_ASSERT(render_pass_data.framebuffer_height > 0);
-    KW_ASSERT(render_pass_data.parallel_block_index < m_frame_graph.m_parallel_block_data.size());
-
-    if (m_render_pass_index > 0 && framebuffer_index == 0 && m_frame_graph.m_render_pass_data[m_render_pass_index - 1].parallel_block_index != render_pass_data.parallel_block_index) {
-        ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
-
-        VkMemoryBarrier memory_barrier{};
-        memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
-        memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
-
-        vkCmdPipelineBarrier(
-            command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
-            1, &memory_barrier, 0, nullptr, 0, nullptr
-        );
-    }
-
-    //
-    // Begin render pass.
-    //
 
     VkFramebuffer framebuffer;
 
@@ -3839,6 +4341,154 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
     contexts[framebuffer_index].command_buffer = command_buffer;
 
     return &contexts[framebuffer_index];
+}
+
+uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment, HostTexture* destination_host_texture) {
+    KW_ASSERT(source_attachment != nullptr, "Source attachment must be a valid string.");
+    KW_ASSERT(destination_host_texture != nullptr, "Destination host texture must be a valid HostTexture.");
+
+    if (blit_command_buffer == VK_NULL_HANDLE) {
+        blit_command_buffer = acquire_command_buffer();
+        KW_ERROR(blit_command_buffer != VK_NULL_HANDLE);
+
+        VkCommandBufferBeginInfo command_buffer_begin_info{};
+        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        VK_ERROR(
+            vkBeginCommandBuffer(blit_command_buffer, &command_buffer_begin_info),
+            "Failed to begin blit command buffer."
+        );
+    }
+
+    HostTextureVulkan* host_texture_vulkan = static_cast<HostTextureVulkan*>(destination_host_texture);
+    KW_ASSERT(host_texture_vulkan != nullptr);
+
+    uint32_t attachment_index = 0;
+    for (; attachment_index < m_frame_graph.m_attachment_descriptors.size(); attachment_index++) {
+        if (std::strcmp(m_frame_graph.m_attachment_descriptors[attachment_index].name, source_attachment) == 0) {
+            break;
+        }
+    }
+
+    KW_ASSERT(
+        attachment_index < m_frame_graph.m_attachment_descriptors.size(),
+        "Invalid source attachment \"%s\".", source_attachment
+    );
+
+    AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+    AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+
+    KW_ASSERT(
+        attachment_descriptor.format == host_texture_vulkan->get_format(),
+        "Blit formats must match."
+    );
+
+    VkImageAspectFlags aspect_mask;
+    if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
+        // Depth-stencil blit is performed only for depth component.
+        aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    } else {
+        aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+
+    uint32_t width;
+    uint32_t height;
+    if (attachment_descriptor.size_class == SizeClass::RELATIVE) {
+        width = static_cast<uint32_t>(attachment_descriptor.width * m_frame_graph.m_swapchain_width);
+        height = static_cast<uint32_t>(attachment_descriptor.height * m_frame_graph.m_swapchain_height);
+    } else {
+        width = static_cast<uint32_t>(attachment_descriptor.width);
+        height = static_cast<uint32_t>(attachment_descriptor.height);
+    }
+
+    VkImageSubresourceRange image_subresource_range{};
+    image_subresource_range.aspectMask = aspect_mask;
+    image_subresource_range.baseMipLevel = 0;
+    image_subresource_range.levelCount = 1;
+    image_subresource_range.baseArrayLayer = 0;
+    image_subresource_range.layerCount = 1;
+
+    VkImage attachment_image = attachment_data.image;
+    if (attachment_index == 0) {
+        attachment_image = m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index];
+    }
+    KW_ASSERT(attachment_image != VK_NULL_HANDLE);
+
+    KW_ASSERT(m_render_pass_index < attachment_data.blit_data.size());
+    const AttachmentBarrierData& attachment_barrier_data = attachment_data.blit_data[m_render_pass_index];
+
+    VkBufferMemoryBarrier buffer_acquire_barrier{};
+    buffer_acquire_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buffer_acquire_barrier.srcAccessMask = VK_ACCESS_NONE_KHR;
+    buffer_acquire_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_acquire_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_acquire_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_acquire_barrier.buffer = host_texture_vulkan->buffer;
+    buffer_acquire_barrier.offset = 0;
+    buffer_acquire_barrier.size = VK_WHOLE_SIZE;
+
+    VkImageMemoryBarrier image_acquire_barrier{};
+    image_acquire_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_acquire_barrier.srcAccessMask = attachment_barrier_data.source_access_mask;
+    image_acquire_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_acquire_barrier.oldLayout = attachment_barrier_data.destination_image_layout;
+    image_acquire_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_acquire_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barrier.image = attachment_image;
+    image_acquire_barrier.subresourceRange = image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        blit_command_buffer, attachment_barrier_data.source_pipeline_stage_mask, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        0, nullptr, 1, &buffer_acquire_barrier, 1, &image_acquire_barrier
+    );
+
+    VkBufferImageCopy buffer_image_copy{};
+    buffer_image_copy.bufferOffset = 0;
+    buffer_image_copy.bufferRowLength = 0;
+    buffer_image_copy.bufferImageHeight = 0;
+    buffer_image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    buffer_image_copy.imageSubresource.layerCount = 1;
+    buffer_image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    buffer_image_copy.imageSubresource.layerCount = 1;
+    buffer_image_copy.imageOffset = VkOffset3D{};
+    buffer_image_copy.imageExtent.width = std::min(width, host_texture_vulkan->get_width());
+    buffer_image_copy.imageExtent.height = std::min(height, host_texture_vulkan->get_height());
+    buffer_image_copy.imageExtent.depth = 1;
+
+    vkCmdCopyImageToBuffer(
+        blit_command_buffer, attachment_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, host_texture_vulkan->buffer,
+        1, &buffer_image_copy
+    );
+
+    VkBufferMemoryBarrier buffer_release_barrier{};
+    buffer_release_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buffer_release_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    buffer_release_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    buffer_release_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_release_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buffer_release_barrier.buffer = host_texture_vulkan->buffer;
+    buffer_release_barrier.offset = 0;
+    buffer_release_barrier.size = VK_WHOLE_SIZE;
+
+    VkImageMemoryBarrier image_release_barrier{};
+    image_release_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_release_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_release_barrier.dstAccessMask = attachment_barrier_data.destination_access_mask;
+    image_release_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_release_barrier.newLayout = attachment_barrier_data.destination_image_layout;
+    image_release_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barrier.image = attachment_image;
+    image_release_barrier.subresourceRange = image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        blit_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, attachment_barrier_data.destination_pipeline_stage_mask, 0,
+        0, nullptr, 1, &buffer_release_barrier, 1, &image_release_barrier
+    );
+
+    return m_frame_graph.m_render_finished_timeline_semaphore->value;
 }
 
 FrameGraphVulkan::CommandPoolData& FrameGraphVulkan::RenderPassImplVulkan::acquire_command_pool() {
@@ -4014,6 +4664,7 @@ void FrameGraphVulkan::AcquireTask::run() {
         for (RenderPassContextVulkan& render_pass_context : render_pass_data.render_pass_impl->contexts) {
             render_pass_context.reset();
         }
+        render_pass_data.render_pass_impl->blit_command_buffer = VK_NULL_HANDLE;
     }
 }
 
@@ -4040,6 +4691,10 @@ void FrameGraphVulkan::PresentTask::run() {
     for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
         KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
         framebuffer_count += render_pass_data.render_pass_impl->contexts.size();
+
+        if (render_pass_data.render_pass_impl->blit_command_buffer != VK_NULL_HANDLE) {
+            framebuffer_count++;
+        }
     }
 
     Vector<VkCommandBuffer> render_pass_command_buffers(m_frame_graph.m_render.transient_memory_resource);
@@ -4047,7 +4702,11 @@ void FrameGraphVulkan::PresentTask::run() {
 
     uint64_t transfer_semaphore_value = 0;
 
-    for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
+    for (size_t render_pass_index = 0; render_pass_index < m_frame_graph.m_render_pass_data.size(); render_pass_index++) {
+        RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[render_pass_index];
+        KW_ASSERT(render_pass_data.parallel_block_index < m_frame_graph.m_parallel_block_data.size());
+        KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
+
         for (size_t framebuffer_index = 0; framebuffer_index < render_pass_data.render_pass_impl->contexts.size(); framebuffer_index++) {
             RenderPassContextVulkan& render_pass_context = render_pass_data.render_pass_impl->contexts[framebuffer_index];
 
@@ -4058,6 +4717,25 @@ void FrameGraphVulkan::PresentTask::run() {
                 KW_ASSERT(render_pass_context.command_buffer != VK_NULL_HANDLE);
             }
 
+            // Insert pipeline barrier between two render passes.
+            if (render_pass_data.render_pass_impl->blit_command_buffer == VK_NULL_HANDLE &&
+                framebuffer_index + 1 == render_pass_data.render_pass_impl->contexts.size() &&
+                render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
+                m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
+            {
+                ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+
+                VkMemoryBarrier memory_barrier{};
+                memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
+                memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+
+                vkCmdPipelineBarrier(
+                    render_pass_context.command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
+                    1, &memory_barrier, 0, nullptr, 0, nullptr
+                );
+            }
+
             // End all render passes sequentially here.
             vkCmdEndRenderPass(render_pass_context.command_buffer);
             vkEndCommandBuffer(render_pass_context.command_buffer);
@@ -4065,6 +4743,29 @@ void FrameGraphVulkan::PresentTask::run() {
             render_pass_command_buffers.push_back(render_pass_context.command_buffer);
 
             transfer_semaphore_value = std::max(transfer_semaphore_value, render_pass_context.transfer_semaphore_value);
+        }
+
+        if (render_pass_data.render_pass_impl->blit_command_buffer != VK_NULL_HANDLE) {
+            // Insert pipeline barrier between two render passes.
+            if (render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
+                m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
+            {
+                ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+
+                VkMemoryBarrier memory_barrier{};
+                memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
+                memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+
+                vkCmdPipelineBarrier(
+                    render_pass_data.render_pass_impl->blit_command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
+                    1, &memory_barrier, 0, nullptr, 0, nullptr
+                );
+            }
+            
+            vkEndCommandBuffer(render_pass_data.render_pass_impl->blit_command_buffer);
+
+            render_pass_command_buffers.push_back(render_pass_data.render_pass_impl->blit_command_buffer);
         }
     }
 

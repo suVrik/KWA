@@ -28,7 +28,13 @@ public:
     ~FrameGraphVulkan() override;
 
     std::pair<Task*, Task*> create_tasks() override;
+    
     void recreate_swapchain() override;
+
+    uint64_t get_frame_index() const override;
+    
+    uint32_t get_width() const override;
+    uint32_t get_height() const override;
 
 private:
     static constexpr size_t SWAPCHAIN_IMAGE_COUNT = 3;
@@ -47,6 +53,23 @@ private:
 
     KW_DECLARE_ENUM_BITMASK(AttachmentAccess);
 
+    struct AttachmentBoundsData {
+        // `UINT32_MAX` if there's no read/write render pass for this attachment.
+        uint32_t min_read_render_pass_index;
+        uint32_t max_read_render_pass_index;
+        uint32_t min_write_render_pass_index;
+        uint32_t max_write_render_pass_index;
+    };
+
+    struct AttachmentBarrierData {
+        VkImageLayout source_image_layout;
+        VkAccessFlags source_access_mask;
+        VkPipelineStageFlags source_pipeline_stage_mask;
+        VkImageLayout destination_image_layout;
+        VkAccessFlags destination_access_mask;
+        VkPipelineStageFlags destination_pipeline_stage_mask;
+    };
+
     struct CreateContext {
         const FrameGraphDescriptor& frame_graph_descriptor;
 
@@ -56,11 +79,20 @@ private:
         // Attachment_count x render_pass_count matrix of access to a certain attachment on a certain render pass.
         Vector<AttachmentAccess> attachment_access_matrix;
 
+        // Min/max read/write render pass indices for each attachment.
+        Vector<AttachmentBoundsData> attachment_bounds_data;
+
+        // Attachment_count x render_pass_count matrix of access masks and image layouts for pipeline barriers,
+        // render passes and blit requests.
+        Vector<AttachmentBarrierData> attachment_barrier_matrix;
+
         // Allocate a piece of memory and reuse it for each graphics pipeline.
         LinearMemoryResource graphics_pipeline_memory_resource;
     };
 
     struct AttachmentData {
+        AttachmentData(MemoryResource& memory_resource);
+
         VkImage image;
         VkImageView image_view;
 
@@ -80,6 +112,9 @@ private:
         // before the first render pass once after the attachment is created.
         VkAccessFlags initial_access_mask;
         VkImageLayout initial_layout;
+
+        // Empty if attachment is not blit-allowed.
+        Vector<AttachmentBarrierData> blit_data;
     };
 
     struct AllocationData {
@@ -252,8 +287,13 @@ private:
 
         RenderPassContextVulkan* begin(uint32_t framebuffer_index) override;
 
+        uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture) override;
+
         // Queried by `PresentTask`.
         Vector<RenderPassContextVulkan> contexts;
+
+        // Stores blit commands. Most likely `VK_NULL_HANDLE`.
+        VkCommandBuffer blit_command_buffer;
 
     private:
         CommandPoolData& acquire_command_pool();
@@ -319,11 +359,13 @@ private:
     void compute_attachment_descriptors(CreateContext& create_context);
     void compute_attachment_mapping(CreateContext& create_context);
     void compute_attachment_access(CreateContext& create_context);
+    void compute_attachment_barrier_data(CreateContext& create_context);
     void compute_parallel_block_indices(CreateContext& create_context);
     void compute_parallel_blocks(CreateContext& create_context);
     void compute_attachment_ranges(CreateContext& create_context);
     void compute_attachment_usage_mask(CreateContext& create_context);
     void compute_attachment_layouts(CreateContext& create_context);
+    void compute_attachment_blit_data(CreateContext& create_context);
 
     void create_render_passes(CreateContext& create_context);
     void create_render_pass(CreateContext& create_context, uint32_t render_pass_index);

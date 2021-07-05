@@ -121,6 +121,19 @@ TextureVulkan::TextureVulkan(TextureType type, TextureFormat format,
     m_depth = depth;
 }
 
+
+HostTextureVulkan::HostTextureVulkan(TextureFormat format, uint32_t width, uint32_t height,
+                                     VkBuffer buffer_, VkDeviceMemory device_memory_, void* memory_mapping_, size_t size_)
+    : buffer(buffer_)
+    , device_memory(device_memory_)
+    , memory_mapping(memory_mapping_)
+    , size(size_)
+{
+    m_format = format;
+    m_width = width;
+    m_height = height;
+}
+
 RenderVulkan::FlushTask::FlushTask(RenderVulkan& render)
     : m_render(render)
 {
@@ -196,6 +209,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , compute_queue_spinlock(create_compute_queue_spinlock())
     , transfer_queue_spinlock(create_transfer_queue_spinlock())
     , semaphore(allocate_shared<TimelineSemaphore>(persistent_memory_resource, this))
+    , get_semaphore_counter_value(create_get_semaphore_counter_value())
     , m_wait_semaphores(create_wait_semaphores())
     , m_debug_messenger(create_debug_messsenger(descriptor))
     , m_set_object_name(create_set_object_name(descriptor))
@@ -215,10 +229,10 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , m_texture_device_data(persistent_memory_resource)
     , m_texture_allocation_size(descriptor.texture_allocation_size)
     , m_texture_block_size(descriptor.texture_block_size)
-    , m_texture_memory_indices{
-        compute_texture_memory_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-        compute_texture_memory_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-    }
+    , m_texture_memory_index(compute_texture_memory_index(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+    , m_host_texture_memory_index(
+        compute_buffer_memory_index(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+    )
     , m_transient_buffer(create_transient_buffer(descriptor))
     , m_transient_memory(allocate_transient_memory())
     , m_transient_memory_mapping(map_memory(m_transient_memory))
@@ -227,6 +241,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , m_resource_dependencies(persistent_memory_resource)
     , m_buffer_destroy_commands(MemoryResourceAllocator<BufferDestroyCommand>(persistent_memory_resource))
     , m_texture_destroy_commands(MemoryResourceAllocator<TextureDestroyCommand>(persistent_memory_resource))
+    , m_host_texture_destroy_commands(MemoryResourceAllocator<TextureDestroyCommand>(persistent_memory_resource))
     , m_image_view_destroy_commands(MemoryResourceAllocator<TextureDestroyCommand>(persistent_memory_resource))
     , m_buffer_upload_commands(persistent_memory_resource)
     , m_texture_upload_commands(persistent_memory_resource)
@@ -297,6 +312,15 @@ RenderVulkan::~RenderVulkan() {
         m_image_view_destroy_commands.pop();
     }
 
+    while (!m_host_texture_destroy_commands.empty()) {
+        HostTextureDestroyCommand& host_texture_destroy_command = m_host_texture_destroy_commands.front();
+        vkUnmapMemory(device, host_texture_destroy_command.host_texture->device_memory);
+        vkFreeMemory(device, host_texture_destroy_command.host_texture->device_memory, &allocation_callbacks);
+        vkDestroyBuffer(device, host_texture_destroy_command.host_texture->buffer, &allocation_callbacks);
+        persistent_memory_resource.deallocate(host_texture_destroy_command.host_texture);
+        m_host_texture_destroy_commands.pop();
+    }
+    
     while (!m_texture_destroy_commands.empty()) {
         TextureDestroyCommand& texture_destroy_command = m_texture_destroy_commands.front();
         vkDestroyImageView(device, texture_destroy_command.texture->image_view, &allocation_callbacks);
@@ -917,9 +941,9 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
             //
 
             VkImageAspectFlags aspect_mask;
-            if (TextureFormatUtils::is_depth_stencil(format)) {
+            if (TextureFormatUtils::is_depth(format)) {
                 // Sampled depth stencil textures provide access only to depth.
-                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
             } else {
                 aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
             }
@@ -1231,6 +1255,120 @@ void RenderVulkan::destroy_texture(Texture* texture) {
     }
 }
 
+HostTexture* RenderVulkan::create_host_texture(const char* name, TextureFormat format, uint32_t width, uint32_t height) {
+    KW_ASSERT(name != nullptr, "Invalid host texture name.");
+
+    KW_ERROR(TextureFormatUtils::is_allowed_texture(format), "Invalid host texture \"%s\" format.", name);
+    KW_ERROR(width > 0, "Invalid host texture \"%s\" width.", name);
+    KW_ERROR(height > 0, "Invalid host texture \"%s\" height.", name);
+
+    //
+    // Create image to query its memory requirements.
+    //
+
+    VkImageCreateInfo image_create_info{};
+    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_create_info.flags = 0;
+    image_create_info.imageType = VK_IMAGE_TYPE_2D;
+    image_create_info.format = TextureFormatUtils::convert_format_vulkan(format);
+    image_create_info.extent.width = width;
+    image_create_info.extent.height = height;
+    image_create_info.extent.depth = 1;
+    image_create_info.mipLevels = 1;
+    image_create_info.arrayLayers = 1;
+    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_create_info.tiling = VK_IMAGE_TILING_LINEAR;
+    image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_create_info.queueFamilyIndexCount = 0;
+    image_create_info.pQueueFamilyIndices = nullptr;
+    image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkImage image;
+    VK_ERROR(
+        vkCreateImage(device, &image_create_info, &allocation_callbacks, &image),
+        "Failed to create a host image \"%s\".", name
+    );
+    VK_NAME(*this, image, "Host texture \"%s\"", name);
+
+    //
+    // Allocate device memory for the host texture buffer.
+    //
+
+    VkMemoryRequirements memory_requirements;
+    vkGetImageMemoryRequirements(device, image, &memory_requirements);
+
+    VkMemoryAllocateInfo memory_allocate_info{};
+    memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memory_allocate_info.allocationSize = memory_requirements.size;
+    memory_allocate_info.memoryTypeIndex = m_host_texture_memory_index;
+
+    VkDeviceMemory memory;
+    VK_ERROR(
+        vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory),
+        "Failed to allocate memory for host image \"%s\".", name
+    );
+    VK_NAME(*this, memory, "Host texture device memory \"%s\"", name);
+
+    //
+    // Create host texture buffer.
+    //
+    
+    VkBufferCreateInfo buffer_create_info{};
+    buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_create_info.flags = 0;
+    buffer_create_info.size = memory_requirements.size;
+    buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    buffer_create_info.queueFamilyIndexCount = 0;
+    buffer_create_info.pQueueFamilyIndices = nullptr;
+
+    VkBuffer buffer;
+    VK_ERROR(
+        vkCreateBuffer(device, &buffer_create_info, &allocation_callbacks, &buffer),
+        "Failed to create host texture buffer \"%s\".", name
+    );
+    VK_NAME(*this, buffer, "Host texture buffer \"%s\"", name);
+
+    //
+    // Bind host texture buffer to memory.
+    //
+
+    VK_ERROR(
+        vkBindBufferMemory(device, buffer, memory, 0),
+        "Failed to bind host image \"%s\" to device memory.", name
+    );
+
+    //
+    // Destroy the image.
+    //
+
+    vkDestroyImage(device, image, &allocation_callbacks);
+
+    //
+    // Create host texture handle and return it.
+    //
+
+    return new (persistent_memory_resource.allocate<HostTextureVulkan>()) HostTextureVulkan(
+        format, width, height, buffer, memory, map_memory(memory), memory_requirements.size
+    );
+}
+
+void RenderVulkan::read_host_texture(HostTexture* host_texture, void* buffer, size_t size) {
+    HostTextureVulkan* host_texture_vulkan = static_cast<HostTextureVulkan*>(host_texture);
+    KW_ASSERT(host_texture_vulkan != nullptr);
+
+    size_t copy_size = std::max(size, host_texture_vulkan->size);
+    std::memcpy(buffer, static_cast<uint8_t*>(host_texture_vulkan->memory_mapping), copy_size);
+}
+
+void RenderVulkan::destroy_host_texture(HostTexture* host_texture) {
+    if (host_texture != nullptr) {
+        std::lock_guard lock(m_host_texture_destroy_command_mutex);
+        m_host_texture_destroy_commands.push(HostTextureDestroyCommand{ get_destroy_command_dependencies(), static_cast<HostTextureVulkan*>(host_texture) });
+    }
+}
+
 VertexBuffer* RenderVulkan::acquire_transient_vertex_buffer(const void* data, size_t size) {
     KW_ASSERT(data != nullptr, "Invalid buffer data.");
     KW_ASSERT(size > 0, "Invalid buffer data size.");
@@ -1392,35 +1530,33 @@ RenderVulkan::DeviceAllocation RenderVulkan::allocate_device_texture_memory(uint
     //
     // Create new allocation to sub-allocate from. First try device local, but when out of device memory, try host visible.
     //
+    
+    for (uint64_t allocation_size = m_texture_allocation_size; allocation_size >= m_texture_block_size && allocation_size >= size; allocation_size /= 2) {
+        VkMemoryAllocateInfo memory_allocate_info{};
+        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memory_allocate_info.allocationSize = allocation_size;
+        memory_allocate_info.memoryTypeIndex = m_texture_memory_index;
 
-    for (uint32_t texture_memory_index : m_texture_memory_indices) {
-        for (uint64_t allocation_size = m_texture_allocation_size; allocation_size >= m_texture_block_size && allocation_size >= size; allocation_size /= 2) {
-            VkMemoryAllocateInfo memory_allocate_info{};
-            memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-            memory_allocate_info.allocationSize = allocation_size;
-            memory_allocate_info.memoryTypeIndex = texture_memory_index;
+        VkDeviceMemory memory;
+        VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
+        if (result == VK_SUCCESS) {
+            size_t device_data_index = m_texture_device_data.size();
 
-            VkDeviceMemory memory;
-            VkResult result = vkAllocateMemory(device, &memory_allocate_info, &allocation_callbacks, &memory);
-            if (result == VK_SUCCESS) {
-                size_t device_data_index = m_texture_device_data.size();
+            // We won't ever map texture memory, because we can't simply memcpy to textures.
+            m_texture_device_data.push_back(DeviceData{ memory, nullptr, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)), m_texture_memory_index });
 
-                // We won't ever map texture memory, because we can't simply memcpy to textures.
-                m_texture_device_data.push_back(DeviceData{ memory, nullptr, RenderBuddyAllocator(persistent_memory_resource, log2(allocation_size), log2(m_texture_block_size)), texture_memory_index });
+            uint64_t offset = m_texture_device_data.back().allocator.allocate(size, alignment);
+            KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
 
-                uint64_t offset = m_texture_device_data.back().allocator.allocate(size, alignment);
-                KW_ASSERT(offset != RenderBuddyAllocator::INVALID_ALLOCATION);
+            VK_NAME(*this, memory, "Texture device memory %zu", device_data_index);
 
-                VK_NAME(*this, memory, "Texture device memory %zu", device_data_index);
-
-                return { memory, static_cast<uint64_t>(device_data_index), offset };
-            }
-
-            KW_ERROR(
-                result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
-                "Failed to allocate texture device buffer."
-            );
+            return { memory, static_cast<uint64_t>(device_data_index), offset };
         }
+
+        KW_ERROR(
+            result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY,
+            "Failed to allocate texture device buffer."
+        );
     }
 
     KW_ERROR(
@@ -1712,6 +1848,15 @@ SharedPtr<Spinlock> RenderVulkan::create_compute_queue_spinlock() {
 
 SharedPtr<Spinlock> RenderVulkan::create_transfer_queue_spinlock() {
     return transfer_queue != graphics_queue ? allocate_shared<Spinlock>(persistent_memory_resource) : graphics_queue_spinlock;
+}
+
+PFN_vkGetSemaphoreCounterValueKHR RenderVulkan::create_get_semaphore_counter_value() {
+    PFN_vkGetSemaphoreCounterValueKHR get_semaphore_counter_value_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValueKHR>(vkGetDeviceProcAddr(device, "vkGetSemaphoreCounterValueKHR"));
+    KW_ERROR(
+        get_semaphore_counter_value_ != nullptr,
+        "Failed to get vkGetSemaphoreCounterValueKHR function."
+    );
+    return get_semaphore_counter_value_;
 }
 
 PFN_vkWaitSemaphoresKHR RenderVulkan::create_wait_semaphores() {
@@ -2067,7 +2212,7 @@ uint32_t RenderVulkan::compute_texture_memory_index(VkMemoryPropertyFlags proper
         memory_type_mask &= memory_requirements.memoryTypeBits;
     }
 
-    uint32_t texture_memory_index = find_memory_type(memory_type_mask, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    uint32_t texture_memory_index = find_memory_type(memory_type_mask, properties);
     KW_ERROR(texture_memory_index != UINT32_MAX, "Failed to find texture memory type.");
 
     return texture_memory_index;
@@ -2208,10 +2353,39 @@ Vector<RenderVulkan::DestroyCommandDependency> RenderVulkan::get_destroy_command
     return result;
 }
 
+bool RenderVulkan::wait_for_dependencies(Vector<DestroyCommandDependency>& dependencies) {
+    Vector<SharedPtr<TimelineSemaphore>> timeline_semaphores(transient_memory_resource);
+    timeline_semaphores.reserve(dependencies.size());
+
+    Vector<VkSemaphore> semaphores(transient_memory_resource);
+    semaphores.reserve(dependencies.size());
+
+    Vector<uint64_t> values(transient_memory_resource);
+    values.reserve(dependencies.size());
+
+    for (DestroyCommandDependency& destroy_command_dependency : dependencies) {
+        if (SharedPtr<TimelineSemaphore> timeline_semaphore = destroy_command_dependency.semaphore.lock()) {
+            values.push_back(destroy_command_dependency.value);
+            semaphores.push_back(timeline_semaphore->semaphore);
+            timeline_semaphores.push_back(std::move(timeline_semaphore));
+        }
+    }
+
+    VkSemaphoreWaitInfo semaphore_wait_info{};
+    semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    semaphore_wait_info.flags = 0;
+    semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(timeline_semaphores.size());
+    semaphore_wait_info.pSemaphores = semaphores.data();
+    semaphore_wait_info.pValues = values.data();
+
+    return m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS;
+}
+
 void RenderVulkan::flush() {
     process_completed_submits();
     destroy_queued_buffers();
     destroy_queued_textures();
+    destroy_queued_host_textures();
     destroy_queued_image_views();
     submit_upload_commands();
 }
@@ -2257,31 +2431,7 @@ void RenderVulkan::destroy_queued_buffers() {
     while (!m_buffer_destroy_commands.empty()) {
         BufferDestroyCommand& buffer_destroy_command = m_buffer_destroy_commands.front();
 
-        Vector<SharedPtr<TimelineSemaphore>> timeline_semaphores(transient_memory_resource);
-        timeline_semaphores.reserve(buffer_destroy_command.dependencies.size());
-
-        Vector<VkSemaphore> semaphores(transient_memory_resource);
-        semaphores.reserve(buffer_destroy_command.dependencies.size());
-
-        Vector<uint64_t> values(transient_memory_resource);
-        values.reserve(buffer_destroy_command.dependencies.size());
-
-        for (DestroyCommandDependency& destroy_command_dependency : buffer_destroy_command.dependencies) {
-            if (SharedPtr<TimelineSemaphore> timeline_semaphore = destroy_command_dependency.semaphore.lock()) {
-                values.push_back(destroy_command_dependency.value);
-                semaphores.push_back(timeline_semaphore->semaphore);
-                timeline_semaphores.push_back(std::move(timeline_semaphore));
-            }
-        }
-
-        VkSemaphoreWaitInfo semaphore_wait_info{};
-        semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        semaphore_wait_info.flags = 0;
-        semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(timeline_semaphores.size());
-        semaphore_wait_info.pSemaphores = semaphores.data();
-        semaphore_wait_info.pValues = values.data();
-
-        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (wait_for_dependencies(buffer_destroy_command.dependencies)) {
             // Transfer semaphore is also a destroy dependency. If it just signaled, we need to destroy command buffer
             // before destroying the buffer, because the former may have dependency on the latter.
             process_completed_submits();
@@ -2307,31 +2457,7 @@ void RenderVulkan::destroy_queued_textures() {
     while (!m_texture_destroy_commands.empty()) {
         TextureDestroyCommand& texture_destroy_command = m_texture_destroy_commands.front();
 
-        Vector<SharedPtr<TimelineSemaphore>> timeline_semaphores(transient_memory_resource);
-        timeline_semaphores.reserve(texture_destroy_command.dependencies.size());
-
-        Vector<VkSemaphore> semaphores(transient_memory_resource);
-        semaphores.reserve(texture_destroy_command.dependencies.size());
-
-        Vector<uint64_t> values(transient_memory_resource);
-        values.reserve(texture_destroy_command.dependencies.size());
-
-        for (DestroyCommandDependency& destroy_command_dependency : texture_destroy_command.dependencies) {
-            if (SharedPtr<TimelineSemaphore> timeline_semaphore = destroy_command_dependency.semaphore.lock()) {
-                values.push_back(destroy_command_dependency.value);
-                semaphores.push_back(timeline_semaphore->semaphore);
-                timeline_semaphores.push_back(std::move(timeline_semaphore));
-            }
-        }
-
-        VkSemaphoreWaitInfo semaphore_wait_info{};
-        semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        semaphore_wait_info.flags = 0;
-        semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(semaphores.size());
-        semaphore_wait_info.pSemaphores = semaphores.data();
-        semaphore_wait_info.pValues = values.data();
-
-        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (wait_for_dependencies(texture_destroy_command.dependencies)) {
             // Transfer semaphore is also a destroy dependency. If it just signaled, we need to destroy command buffer
             // before destroying the texture, because the former may have dependency on the latter.
             process_completed_submits();
@@ -2351,37 +2477,30 @@ void RenderVulkan::destroy_queued_textures() {
     }
 }
 
+void RenderVulkan::destroy_queued_host_textures() {
+    std::lock_guard lock(m_host_texture_destroy_command_mutex);
+
+    while (!m_host_texture_destroy_commands.empty()) {
+        HostTextureDestroyCommand& host_texture_destroy_command = m_host_texture_destroy_commands.front();
+        if (wait_for_dependencies(host_texture_destroy_command.dependencies)) {
+            vkUnmapMemory(device, host_texture_destroy_command.host_texture->device_memory);
+            vkFreeMemory(device, host_texture_destroy_command.host_texture->device_memory, &allocation_callbacks);
+            vkDestroyBuffer(device, host_texture_destroy_command.host_texture->buffer, &allocation_callbacks);
+            persistent_memory_resource.deallocate(host_texture_destroy_command.host_texture);
+            m_texture_destroy_commands.pop();
+        } else {
+            // The following resources in a queue have greater or equal semaphore values.
+            break;
+        }
+    }
+}
+
 void RenderVulkan::destroy_queued_image_views() {
     std::lock_guard lock(m_image_view_destroy_command_mutex);
 
     while (!m_image_view_destroy_commands.empty()) {
         ImageViewDestroyCommand& image_view_destroy_command = m_image_view_destroy_commands.front();
-
-        Vector<SharedPtr<TimelineSemaphore>> timeline_semaphores(transient_memory_resource);
-        timeline_semaphores.reserve(image_view_destroy_command.dependencies.size());
-
-        Vector<VkSemaphore> semaphores(transient_memory_resource);
-        semaphores.reserve(image_view_destroy_command.dependencies.size());
-
-        Vector<uint64_t> values(transient_memory_resource);
-        values.reserve(image_view_destroy_command.dependencies.size());
-
-        for (DestroyCommandDependency& destroy_command_dependency : image_view_destroy_command.dependencies) {
-            if (SharedPtr<TimelineSemaphore> timeline_semaphore = destroy_command_dependency.semaphore.lock()) {
-                values.push_back(destroy_command_dependency.value);
-                semaphores.push_back(timeline_semaphore->semaphore);
-                timeline_semaphores.push_back(std::move(timeline_semaphore));
-            }
-        }
-
-        VkSemaphoreWaitInfo semaphore_wait_info{};
-        semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        semaphore_wait_info.flags = 0;
-        semaphore_wait_info.semaphoreCount = static_cast<uint32_t>(semaphores.size());
-        semaphore_wait_info.pSemaphores = semaphores.data();
-        semaphore_wait_info.pValues = values.data();
-
-        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (wait_for_dependencies(image_view_destroy_command.dependencies)) {
             vkDestroyImageView(device, image_view_destroy_command.image_view, &allocation_callbacks);
             m_image_view_destroy_commands.pop();
         } else {
@@ -2573,9 +2692,9 @@ uint64_t RenderVulkan::upload_textures(VkCommandBuffer transfer_command_buffer) 
         uint64_t block_size = TextureFormatUtils::get_texel_size(format);
 
         VkImageAspectFlags aspect_mask;
-        if (TextureFormatUtils::is_depth_stencil(format)) {
+        if (TextureFormatUtils::is_depth(format)) {
             // Sampled depth stencil textures provide access only to depth.
-            aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
         } else {
             aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
         }

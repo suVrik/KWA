@@ -98,6 +98,19 @@ public:
 
 static_assert(sizeof(TextureVulkan) == 48);
 
+class HostTextureVulkan : public HostTexture {
+public:
+    HostTextureVulkan(TextureFormat format, uint32_t width, uint32_t height,
+                      VkBuffer buffer_, VkDeviceMemory device_memory_, void* memory_mapping_, size_t size_);
+
+    VkBuffer buffer;
+    VkDeviceMemory device_memory;
+    void* memory_mapping;
+    size_t size;
+};
+
+static_assert(sizeof(HostTextureVulkan) == 48);
+
 class RenderVulkan : public Render {
 public:
     struct DeviceAllocation {
@@ -120,6 +133,10 @@ public:
     Texture* create_texture(const CreateTextureDescriptor& create_texture_descriptor) override;
     void upload_texture(const UploadTextureDescriptor& upload_texture_descriptor) override;
     void destroy_texture(Texture* texture) override;
+
+    HostTexture* create_host_texture(const char* name, TextureFormat format, uint32_t width, uint32_t height) override;
+    void read_host_texture(HostTexture* host_texture, void* buffer, size_t size) override;
+    void destroy_host_texture(HostTexture* host_texture) override;
 
     VertexBuffer* acquire_transient_vertex_buffer(const void* data, size_t size) override;
     IndexBuffer* acquire_transient_index_buffer(const void* data, size_t size, IndexSize index_size) override;
@@ -175,6 +192,8 @@ public:
 
     // Those who depend on resource creation must wait for this semaphore.
     SharedPtr<TimelineSemaphore> semaphore;
+
+    const PFN_vkGetSemaphoreCounterValueKHR get_semaphore_counter_value;
 
 private:
     // An instance of this task is returned by `get_task` method.
@@ -247,6 +266,11 @@ private:
         Vector<DestroyCommandDependency> dependencies;
         TextureVulkan* texture;
     };
+    
+    struct HostTextureDestroyCommand {
+        Vector<DestroyCommandDependency> dependencies;
+        HostTextureVulkan* host_texture;
+    };
 
     struct ImageViewDestroyCommand {
         Vector<DestroyCommandDependency> dependencies;
@@ -286,6 +310,7 @@ private:
     SharedPtr<Spinlock> create_compute_queue_spinlock();
     SharedPtr<Spinlock> create_transfer_queue_spinlock();
 
+    PFN_vkGetSemaphoreCounterValueKHR create_get_semaphore_counter_value();
     PFN_vkWaitSemaphoresKHR create_wait_semaphores();
 
     VkDebugUtilsMessengerEXT create_debug_messsenger(const RenderDescriptor& descriptor);
@@ -323,6 +348,7 @@ private:
     uint32_t find_memory_type(uint32_t memory_type_mask, VkMemoryPropertyFlags property_mask);
 
     Vector<DestroyCommandDependency> get_destroy_command_dependencies();
+    bool wait_for_dependencies(Vector<DestroyCommandDependency>& dependencies);
 
     // Check which transfer queue submits have completed and pop from staging ring buffer.
     // Check which pending destroy commands are safe to execute. Submit upload commands.
@@ -331,6 +357,7 @@ private:
     void process_completed_submits();
     void destroy_queued_buffers();
     void destroy_queued_textures();
+    void destroy_queued_host_textures();
     void destroy_queued_image_views();
 
     void submit_upload_commands();
@@ -371,8 +398,11 @@ private:
     Vector<DeviceData> m_texture_device_data;
     uint64_t m_texture_allocation_size;
     uint64_t m_texture_block_size;
-    uint32_t m_texture_memory_indices[2];
+    uint32_t m_texture_memory_index;
     std::mutex m_texture_mutex;
+
+    // Only memory index because each host texture has its own device memory.
+    uint32_t m_host_texture_memory_index;
 
     // Transient buffer is accessed on host and graphics queue.
     VkBuffer m_transient_buffer;
@@ -396,6 +426,8 @@ private:
     std::mutex m_buffer_destroy_command_mutex;
     Queue<TextureDestroyCommand> m_texture_destroy_commands;
     std::mutex m_texture_destroy_command_mutex;
+    Queue<HostTextureDestroyCommand> m_host_texture_destroy_commands;
+    std::mutex m_host_texture_destroy_command_mutex;
     Queue<ImageViewDestroyCommand> m_image_view_destroy_commands;
     std::mutex m_image_view_destroy_command_mutex;
 

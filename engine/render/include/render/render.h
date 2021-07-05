@@ -161,8 +161,6 @@ protected:
     uint64_t m_is_transient : 1;
 };
 
-static_assert(sizeof(VertexBuffer) == 16);
-
 class IndexBuffer {
 public:
     size_t get_size() const {
@@ -192,8 +190,6 @@ protected:
     uint64_t m_is_transient : 1;
 };
 
-static_assert(sizeof(IndexBuffer) == 16);
-
 class UniformBuffer {
 public:
     size_t get_size() const {
@@ -206,8 +202,6 @@ protected:
 
     uint64_t m_size;
 };
-
-static_assert(sizeof(UniformBuffer) == 8);
 
 class Texture {
 public:
@@ -259,7 +253,44 @@ protected:
     uint32_t m_depth;
 };
 
-static_assert(sizeof(Texture) == 16);
+class HostTexture {
+public:
+    TextureType get_type() const {
+        return TextureType::TEXTURE_2D;
+    }
+
+    TextureFormat get_format() const {
+        return m_format;
+    }
+
+    uint32_t get_mip_level_count() const {
+        return 1;
+    }
+
+    uint32_t get_array_layer_count() const {
+        return 1;
+    }
+
+    uint32_t get_width() const {
+        return m_width;
+    }
+
+    uint32_t get_height() const {
+        return m_height;
+    }
+
+    uint32_t get_depth() const {
+        return 1;
+    }
+
+protected:
+    HostTexture() = default;
+    ~HostTexture() = default;
+
+    TextureFormat m_format;
+    uint32_t m_width;
+    uint32_t m_height;
+};
 
 struct CreateTextureDescriptor {
     const char* name;
@@ -335,6 +366,15 @@ public:
 
     // The actual resource is destroyed when all frames that were using it have completed on device.
     virtual void destroy_texture(Texture* texture) = 0;
+
+    // You can blit to host textures and read them on host.
+    virtual HostTexture* create_host_texture(const char* name, TextureFormat format, uint32_t width, uint32_t height) = 0;
+
+    // Read the given host texture to host memory.
+    virtual void read_host_texture(HostTexture* host_texture, void* buffer, size_t size) = 0;
+
+    // The actual resource is destroyed when all frames that were using it have completed on device.
+    virtual void destroy_host_texture(HostTexture* host_texture) = 0;
 
     // Buffer and handle lifetime is defined by transient memory resource. Must NOT be destroyed manually.
     virtual VertexBuffer* acquire_transient_vertex_buffer(const void* data, size_t size) = 0;

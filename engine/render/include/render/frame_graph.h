@@ -74,6 +74,11 @@ public:
     // frame graph tasks. May return `nullptr` if window is minimized.
     RenderPassContext* begin(uint32_t attachment_index = 0);
 
+    // If source attachment is smaller than destination host texture, the remaining host texture area is undefined.
+    // If source attachment is larger than destination host texture, the source attachment is cropped.
+    // Returns index that can be tested in `FrameGraph` on when host texture can be accessed on host.
+    uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture);
+
 private:
     // API-specific structure set by frame graph.
     RenderPassImpl* m_impl = nullptr;
@@ -402,6 +407,9 @@ struct AttachmentDescriptor {
     // For depth stencil formats.
     float clear_depth;
     uint8_t clear_stencil;
+
+    // Whether it is allowed to blit from this attachment to another texture (either device or host).
+    bool is_blit_source;
 };
 
 struct FrameGraphDescriptor {
@@ -445,6 +453,13 @@ public:
 
     // Must be called when window size changes.
     virtual void recreate_swapchain() = 0;
+
+    // Get rendered frame index, must be used along with blit.
+    virtual uint64_t get_frame_index() const = 0;
+
+    // Query swapchain size.
+    virtual uint32_t get_width() const = 0;
+    virtual uint32_t get_height() const = 0;
 
 protected:
     // Called by API implementations, because only base FrameGraph class has access to render pass implementation.

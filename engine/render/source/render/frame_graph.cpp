@@ -16,6 +16,12 @@ RenderPassContext* RenderPass::begin(uint32_t attachment_index) {
     return m_impl->begin(attachment_index);
 }
 
+uint64_t RenderPass::blit(const char* source_attachment, HostTexture* destination_host_texture) {
+    KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
+
+    return m_impl->blit(source_attachment, destination_host_texture);
+}
+
 inline bool check_overlap(ShaderVisibility a, ShaderVisibility b) {
     return a == ShaderVisibility::ALL || b == ShaderVisibility::ALL || a == b;
 }
