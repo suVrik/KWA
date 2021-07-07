@@ -59,6 +59,8 @@ class RenderPassContext {
 public:
     virtual void draw(const DrawCallDescriptor& descriptor) = 0;
 
+    virtual Render& get_render() const = 0;
+
     virtual uint32_t get_attachment_width() const = 0;
     virtual uint32_t get_attachment_height() const = 0;
 

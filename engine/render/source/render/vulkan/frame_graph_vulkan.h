@@ -257,6 +257,7 @@ private:
 
         void draw(const DrawCallDescriptor& descriptor) override;
 
+        Render& get_render() const override;
         uint32_t get_attachment_width() const override;
         uint32_t get_attachment_height() const override;
         uint32_t get_attachemnt_index() const override;

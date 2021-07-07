@@ -4348,6 +4348,10 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     vkCmdDrawIndexed(command_buffer, descriptor.index_count, std::max(descriptor.instance_count, 1U), descriptor.index_offset, descriptor.vertex_offset, descriptor.instance_offset);
 }
 
+Render& FrameGraphVulkan::RenderPassContextVulkan::get_render() const {
+    return m_frame_graph.m_render;
+}
+
 uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_width() const {
     return m_framebuffer_width;
 }
