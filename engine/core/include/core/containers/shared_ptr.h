@@ -17,4 +17,6 @@ SharedPtr<T> allocate_shared(MemoryResource& memory_resource, Args&&... args) {
     return std::allocate_shared<T, MemoryResourceAllocator<T>, Args...>(MemoryResourceAllocator<T>(memory_resource), std::forward<Args>(args)...);
 }
 
+using std::static_pointer_cast;
+
 } // namespace kw
