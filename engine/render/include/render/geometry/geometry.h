@@ -9,6 +9,18 @@ class VertexBuffer;
 
 class Geometry {
 public:
+    struct Vertex {
+        float3 position;
+        float3 normal;
+        float4 tangent;
+        float2 texcoord_0;
+    };
+
+    struct Joint {
+        uint8_t joints[4];
+        uint8_t weights[4];
+    };
+
     Geometry()
         : m_vertex_buffer(nullptr)
         , m_index_buffer(nullptr)

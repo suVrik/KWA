@@ -11,13 +11,6 @@
 
 namespace kw {
 
-struct Vertex {
-    float3 position;
-    float3 normal;
-    float4 tangent;
-    float2 texcoord_0;
-};
-
 namespace EndianUtils {
 
 float2 swap_le(float2 vector) {
@@ -41,7 +34,7 @@ float4 swap_le(float4 vector) {
     return vector;
 }
 
-Vertex swap_le(Vertex vertex) {
+Geometry::Vertex swap_le(Geometry::Vertex vertex) {
     vertex.position = swap_le(vertex.position);
     vertex.normal = swap_le(vertex.normal);
     vertex.tangent = swap_le(vertex.tangent);
@@ -73,13 +66,13 @@ public:
         aabbox bounds;
         KW_ERROR(reader.read_le<float>(bounds.data, std::size(bounds.data)), "Failed to read geometry header.");
 
-        Vector<Vertex> vertices(vertex_count, m_manager.m_transient_memory_resource);
-        KW_ERROR(reader.read_le<Vertex>(vertices.data(), vertices.size()), "Failed to read geometry vertices.");
+        Vector<Geometry::Vertex> vertices(vertex_count, m_manager.m_transient_memory_resource);
+        KW_ERROR(reader.read_le<Geometry::Vertex>(vertices.data(), vertices.size()), "Failed to read geometry vertices.");
 
-        VertexBuffer* vertex_buffer = m_manager.m_render.create_vertex_buffer(m_relative_path, sizeof(Vertex) * vertices.size());
+        VertexBuffer* vertex_buffer = m_manager.m_render.create_vertex_buffer(m_relative_path, sizeof(Geometry::Vertex) * vertices.size());
         KW_ASSERT(vertex_buffer != nullptr);
 
-        m_manager.m_render.upload_vertex_buffer(vertex_buffer, vertices.data(), sizeof(Vertex) * vertices.size());
+        m_manager.m_render.upload_vertex_buffer(vertex_buffer, vertices.data(), sizeof(Geometry::Vertex) * vertices.size());
 
         IndexBuffer* index_buffer;
 
