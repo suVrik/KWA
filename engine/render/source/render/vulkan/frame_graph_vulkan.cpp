@@ -234,6 +234,274 @@ FrameGraphVulkan::~FrameGraphVulkan() {
     destroy_lifetime_resources();
 }
 
+ShaderReflection FrameGraphVulkan::get_shader_reflection(const char* relative_path) {
+    KW_ASSERT(relative_path != nullptr, "Invalid shader path.");
+
+    ShaderReflection result{};
+
+    //
+    // Read shader from file system and query its reflection.
+    //
+
+    String relative_path_spv(relative_path, m_render.transient_memory_resource);
+
+    KW_ERROR(
+        relative_path_spv.find(".hlsl") != String::npos,
+        "Shader file \"%s\" must have .hlsl extention.", relative_path
+    );
+
+    relative_path_spv.replace(relative_path_spv.find(".hlsl"), 5, ".spv");
+
+    std::ifstream file(relative_path_spv.c_str(), std::ios::binary | std::ios::ate);
+
+    KW_ERROR(
+        file,
+        "Failed to open shader file \"%s\".", relative_path
+    );
+
+    std::streamsize size = file.tellg();
+    
+    KW_ERROR(
+        size >= 0,
+        "Failed to query shader file size \"%s\".", relative_path
+    );
+
+    file.seekg(0, std::ios::beg);
+
+    Vector<char> shader_data(size, m_render.transient_memory_resource);
+
+    KW_ERROR(
+        file.read(shader_data.data(), size),
+        "Failed to read shader file \"%s\".", relative_path
+    );
+
+    SpvReflectShaderModule shader_reflection;
+
+    SpvAllocator spv_allocator{};
+    spv_allocator.calloc = &spv_calloc;
+    spv_allocator.free = &spv_free;
+    spv_allocator.context = &m_render.transient_memory_resource;
+
+    SPV_ERROR(
+        spvReflectCreateShaderModule(shader_data.size(), shader_data.data(), &shader_reflection, &spv_allocator),
+        "Failed to create shader module from \"%s\".", relative_path
+    );
+
+    KW_ERROR(
+        spvReflectGetEntryPoint(&shader_reflection, "main") != nullptr,
+        "Shader \"%s\" must have entry point \"main\".", relative_path
+    );
+
+    //
+    // Attribute descriptors.
+    //
+
+    uint32_t input_variable_count;
+
+    SPV_ERROR(
+        spvReflectEnumerateInputVariables(&shader_reflection, &input_variable_count, nullptr),
+        "Failed to get input variable count."
+    );
+
+    SpvReflectInterfaceVariable** input_variables = m_render.transient_memory_resource.allocate<SpvReflectInterfaceVariable*>(input_variable_count);
+
+    SPV_ERROR(
+        spvReflectEnumerateInputVariables(&shader_reflection, &input_variable_count, input_variables),
+        "Failed to get input variables."
+    );
+
+    AttributeDescriptor* attribute_descriptors = m_render.transient_memory_resource.allocate<AttributeDescriptor>(input_variable_count);
+
+    for (uint32_t i = 0; i < input_variable_count; i++) {
+        size_t j = 0;
+        for (; j < std::size(SEMANTIC_STRINGS); j++) {
+            size_t length = std::strlen(SEMANTIC_STRINGS[j]);
+            if (std::strncmp(SEMANTIC_STRINGS[j], input_variables[i]->semantic, length) == 0) {
+                attribute_descriptors[i].semantic = static_cast<Semantic>(j);
+
+                KW_ERROR(
+                    std::isdigit(*(input_variables[i]->semantic + length)),
+                    "Invalid attribute semantic."
+                );
+
+                // `std::atoi` returns zero if no conversion can be performed, which is cool when semantic index is implicit.
+                attribute_descriptors[i].semantic_index = static_cast<uint32_t>(std::atoi(input_variables[i]->semantic + length));
+            }
+        }
+
+        KW_ERROR(
+            j < std::size(SEMANTIC_STRINGS),
+            "Invalid attribute semantic."
+        );
+
+        switch (input_variables[i]->format) {
+        case SPV_REFLECT_FORMAT_R32_UINT:
+            attribute_descriptors[i].format = TextureFormat::R32_UINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32_SINT:
+            attribute_descriptors[i].format = TextureFormat::R32_SINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32_SFLOAT:
+            attribute_descriptors[i].format = TextureFormat::R32_FLOAT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32_UINT:
+            attribute_descriptors[i].format = TextureFormat::RG32_UINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32_SINT:
+            attribute_descriptors[i].format = TextureFormat::RG32_SINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32_SFLOAT:
+            attribute_descriptors[i].format = TextureFormat::RG32_FLOAT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32_UINT:
+            attribute_descriptors[i].format = TextureFormat::RGB32_UINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32_SINT:
+            attribute_descriptors[i].format = TextureFormat::RGB32_SINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:
+            attribute_descriptors[i].format = TextureFormat::RGB32_FLOAT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:
+            attribute_descriptors[i].format = TextureFormat::RGBA32_UINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:
+            attribute_descriptors[i].format = TextureFormat::RGBA32_SINT;
+            break;
+        case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:
+            attribute_descriptors[i].format = TextureFormat::RGBA32_FLOAT;
+            break;
+        default:
+            KW_ERROR(false, "Invalid attribute format.");
+        }
+    }
+
+    result.attribute_descriptors = attribute_descriptors;
+
+    //
+    // Uniforms.
+    //
+
+    uint32_t descriptor_binding_count;
+
+    SPV_ERROR(
+        spvReflectEnumerateDescriptorBindings(&shader_reflection, &descriptor_binding_count, nullptr),
+        "Failed to get descriptor binding count."
+    );
+
+    SpvReflectDescriptorBinding** descriptor_bindings = m_render.transient_memory_resource.allocate<SpvReflectDescriptorBinding*>(descriptor_binding_count);
+
+    SPV_ERROR(
+        spvReflectEnumerateDescriptorBindings(&shader_reflection, &descriptor_binding_count, descriptor_bindings),
+        "Failed to get descriptor bindings."
+    );
+
+    for (uint32_t i = 0; i < descriptor_binding_count; i++) {
+        switch (descriptor_bindings[i]->descriptor_type) {
+        case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            result.uniform_texture_descriptor_count++;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
+            result.uniform_sampler_name_count++;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            result.uniform_buffer_descriptor_count++;
+            break;
+        }
+    }
+
+    UniformTextureDescriptor* uniform_texture_descriptors = m_render.transient_memory_resource.allocate<UniformTextureDescriptor>(result.uniform_texture_descriptor_count);
+    UniformTextureDescriptor* uniform_texture_descriptor = uniform_texture_descriptors;
+
+    const char** uniform_sampler_names = m_render.transient_memory_resource.allocate<const char*>(result.uniform_sampler_name_count);
+    const char** uniform_sampler_name = uniform_sampler_names;
+    
+    UniformBufferDescriptor* uniform_buffer_descriptors = m_render.transient_memory_resource.allocate<UniformBufferDescriptor>(result.uniform_buffer_descriptor_count);
+    UniformBufferDescriptor* uniform_buffer_descriptor = uniform_buffer_descriptors;
+
+    for (uint32_t i = 0; i < descriptor_binding_count; i++) {
+        KW_ERROR(
+            descriptor_bindings[i]->name != nullptr,
+            "Invalid uniform name."
+        );
+
+        size_t length = std::strlen(descriptor_bindings[i]->name);
+        char* data = m_render.transient_memory_resource.allocate<char>(length + 1);
+        std::strcpy(data, descriptor_bindings[i]->name);
+
+        switch (descriptor_bindings[i]->descriptor_type) {
+        case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            uniform_texture_descriptor->variable_name = data;
+
+            switch (descriptor_bindings[i]->image.dim) {
+            case SpvDim2D:
+                if (descriptor_bindings[i]->image.arrayed == 0) {
+                    uniform_texture_descriptor->texture_type = TextureType::TEXTURE_2D;
+                } else {
+                    uniform_texture_descriptor->texture_type = TextureType::TEXTURE_2D_ARRAY;
+                }
+                break;
+            case SpvDim3D:
+                uniform_texture_descriptor->texture_type = TextureType::TEXTURE_3D;
+                break;
+            case SpvDimCube:
+                if (descriptor_bindings[i]->image.arrayed == 0) {
+                    uniform_texture_descriptor->texture_type = TextureType::TEXTURE_CUBE;
+                } else {
+                    uniform_texture_descriptor->texture_type = TextureType::TEXTURE_CUBE_ARRAY;
+                }
+                break;
+            }
+
+            uint32_t count = 1;
+            for (uint32_t j = 0; j < descriptor_bindings[i]->array.dims_count; j++) {
+                count *= descriptor_bindings[i]->array.dims[j];
+            }
+
+            (uniform_texture_descriptor++)->count = count;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
+            *(uniform_sampler_name++) = data;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            uniform_buffer_descriptor->variable_name = data;
+            uniform_buffer_descriptor->size = descriptor_bindings[i]->block.size;
+
+            uint32_t count = 1;
+            for (uint32_t j = 0; j < descriptor_bindings[i]->array.dims_count; j++) {
+                count *= descriptor_bindings[i]->array.dims[j];
+            }
+
+            (uniform_buffer_descriptor++)->count = count;
+            break;
+        }
+    }
+
+    result.uniform_texture_descriptors = uniform_texture_descriptors;
+    result.uniform_sampler_names = uniform_sampler_names;
+    result.uniform_buffer_descriptors = uniform_buffer_descriptors;
+
+    //
+    // Push constants.
+    //
+
+    if (shader_reflection.push_constant_block_count == 1) {
+        KW_ERROR(
+            shader_reflection.push_constant_blocks[0].name != nullptr,
+            "Invalid push constants block name."
+        );
+
+        size_t length = std::strlen(shader_reflection.push_constant_blocks[0].name);
+        char* data = m_render.transient_memory_resource.allocate<char>(length + 1);
+        std::strcpy(data, shader_reflection.push_constant_blocks[0].name);
+
+        result.push_constants_name = data;
+        result.push_constants_size = shader_reflection.push_constant_blocks[0].size;
+    }
+
+    return result;
+}
+
 std::pair<Task*, Task*> FrameGraphVulkan::create_tasks() {
     return {
         new (m_render.transient_memory_resource.allocate<AcquireTask>()) AcquireTask(*this),

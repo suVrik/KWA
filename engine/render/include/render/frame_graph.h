@@ -355,6 +355,29 @@ struct GraphicsPipelineDescriptor {
     size_t push_constants_size;
 };
 
+// Some uniforms or push constants could be optimized away. It doesn't mean that you should remove those from
+// `GraphicsPipelineDescriptor`, because it gracefully handles this situation.
+struct ShaderReflection {
+    // Does not distinguish different attribute bindings. Offset is undefined.
+    const AttributeDescriptor* attribute_descriptors;
+    size_t attribute_descriptor_count;
+
+    // Does not distinguish uniform attachment and uniform texture. Visibility is undefined.
+    const UniformTextureDescriptor* uniform_texture_descriptors;
+    size_t uniform_texture_descriptor_count;
+
+    // Nothing other than name is available for samplers.
+    const char* const* uniform_sampler_names;
+    size_t uniform_sampler_name_count;
+
+    // Visibility is undefined.
+    const UniformBufferDescriptor* uniform_buffer_descriptors;
+    size_t uniform_buffer_descriptor_count;
+
+    const char* push_constants_name;
+    size_t push_constants_size;
+};
+
 struct RenderPassDescriptor {
     const char* name;
 
@@ -446,6 +469,9 @@ public:
     static FrameGraph* create_instance(const FrameGraphDescriptor& frame_graph_descriptor);
 
     virtual ~FrameGraph() = default;
+
+    // Works for any type of shaders.
+    virtual ShaderReflection get_shader_reflection(const char* relative_path) = 0;
 
     // The first task acquires the swapchain and resets render pass implementations.
     // The second task submits the frame and presents the swapchain.

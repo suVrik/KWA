@@ -27,6 +27,8 @@ public:
     explicit FrameGraphVulkan(const FrameGraphDescriptor& descriptor);
     ~FrameGraphVulkan() override;
 
+    ShaderReflection get_shader_reflection(const char* relative_path) override;
+
     std::pair<Task*, Task*> create_tasks() override;
     
     void recreate_swapchain() override;
