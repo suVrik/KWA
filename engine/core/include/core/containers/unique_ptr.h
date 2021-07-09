@@ -115,8 +115,8 @@ std::enable_if_t<std::is_array_v<T>, UniquePtr<T>> allocate_unique(MemoryResourc
 }
 
 template<class T, class U>
-std::enable_if_t<!std::is_array_v<T>, UniquePtr<T>> static_pointer_cast(const UniquePtr<U>& another) {
-    return UniquePtr<T>(another.release(), UniquePtrDeleter<T, MemoryResourceAllocator<T>>(another.get_deleter().allocator));
+std::enable_if_t<!std::is_array_v<T>, UniquePtr<T>> static_pointer_cast(UniquePtr<U>&& another) {
+    return UniquePtr<T>(static_cast<T*>(another.release()), UniquePtrDeleter<T, MemoryResourceAllocator<T>>(another.get_deleter().allocator));
 }
 
 } // namespace kw

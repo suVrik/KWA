@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/math/aabbox.h>
+#include <core/math/float4.h>
 
 namespace kw {
 

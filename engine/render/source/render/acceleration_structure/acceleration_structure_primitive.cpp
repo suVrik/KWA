@@ -5,6 +5,7 @@ namespace kw {
 
 AccelerationStructurePrimitive::AccelerationStructurePrimitive()
     : m_acceleration_structure(nullptr)
+    , m_node(nullptr)
 {
 }
 
