@@ -193,6 +193,7 @@ public:
     // Those who depend on resource creation must wait for this semaphore.
     SharedPtr<TimelineSemaphore> semaphore;
 
+    const PFN_vkWaitSemaphoresKHR wait_semaphores;
     const PFN_vkGetSemaphoreCounterValueKHR get_semaphore_counter_value;
 
 private:
@@ -310,8 +311,8 @@ private:
     SharedPtr<Spinlock> create_compute_queue_spinlock();
     SharedPtr<Spinlock> create_transfer_queue_spinlock();
 
-    PFN_vkGetSemaphoreCounterValueKHR create_get_semaphore_counter_value();
     PFN_vkWaitSemaphoresKHR create_wait_semaphores();
+    PFN_vkGetSemaphoreCounterValueKHR create_get_semaphore_counter_value();
 
     VkDebugUtilsMessengerEXT create_debug_messsenger(const RenderDescriptor& descriptor);
     PFN_vkSetDebugUtilsObjectNameEXT create_set_object_name(const RenderDescriptor& descriptor);
@@ -372,8 +373,6 @@ private:
     void acquire_graphics_ownership_buffers(VkCommandBuffer graphics_command_buffer);
     void acquire_graphics_ownership_textures(VkCommandBuffer graphics_command_buffer);
 
-    PFN_vkWaitSemaphoresKHR m_wait_semaphores;
-
     VkDebugUtilsMessengerEXT m_debug_messenger;
     PFN_vkSetDebugUtilsObjectNameEXT m_set_object_name;
 
@@ -421,7 +420,7 @@ private:
     Vector<TextureUploadCommand> m_texture_upload_commands;
     std::mutex m_texture_upload_command_mutex;
 
-    // Queued destroy commands each waiting for its dependencies to signal.
+    // Queued resource destroy commands waiting for its dependencies to signal.
     Queue<BufferDestroyCommand> m_buffer_destroy_commands;
     std::mutex m_buffer_destroy_command_mutex;
     Queue<TextureDestroyCommand> m_texture_destroy_commands;

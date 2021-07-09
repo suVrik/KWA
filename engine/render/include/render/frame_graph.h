@@ -6,6 +6,7 @@
 
 namespace kw {
 
+class GraphicsPipeline;
 class RenderPassImpl;
 class Window;
 
@@ -18,7 +19,7 @@ struct ScissorsRect {
 
 struct DrawCallDescriptor {
     // It is highly encouraged to submit subsequent draw calls with the same graphics pipeline.
-    uint32_t graphics_pipeline_index;
+    GraphicsPipeline* graphics_pipeline;
 
     const VertexBuffer* const* vertex_buffers;
     size_t vertex_buffer_count; // Must match graphics pipeline.
@@ -306,7 +307,8 @@ struct UniformBufferDescriptor {
 };
 
 struct GraphicsPipelineDescriptor {
-    const char* name;
+    const char* graphics_pipeline_name;
+    const char* render_pass_name;
 
     const char* vertex_shader_filename;
     const char* fragment_shader_filename;
@@ -383,17 +385,24 @@ struct ShaderReflection {
 struct RenderPassDescriptor {
     const char* name;
 
+    // This render pass instance is initialized in the first frame graph task.
     RenderPass* render_pass;
 
-    const GraphicsPipelineDescriptor* graphics_pipeline_descriptors;
-    size_t graphics_pipeline_descriptor_count;
+    // These color and depth stencil attachments may be read by this render pass.
+    const char* const* read_attachment_names;
+    size_t read_attachment_name_count;
 
-    const char* const* color_attachment_names;
-    size_t color_attachment_name_count;
+    // These color attachments are written by this render pass.
+    const char* const* write_color_attachment_names;
+    size_t write_color_attachment_name_count;
 
-    // If depth write is disabled and stencil write mask is 0, depth stencil attachment
-    // is considered to be read-only and therefore can be used in parallel.
-    const char* depth_stencil_attachment_name;
+    // This depth stencil attachment may be depth-stencil tested by this render pass.
+    // Must not be used along with `write_depth_stencil_attachment_name`.
+    const char* read_depth_stencil_attachment_name;
+
+    // This depth stencil attachment is written by this render pass.
+    // Must not be used along with `read_depth_stencil_attachment_name`.
+    const char* write_depth_stencil_attachment_name;
 };
 
 enum class SizeClass : uint32_t {
@@ -474,6 +483,9 @@ public:
 
     // Works for any type of shaders.
     virtual ShaderReflection get_shader_reflection(const char* relative_path) = 0;
+
+    virtual GraphicsPipeline* create_graphics_pipeline(const GraphicsPipelineDescriptor& graphics_pipeline_descriptor) = 0;
+    virtual void destroy_graphics_pipeline(GraphicsPipeline* graphics_pipeline) = 0;
 
     // The first task acquires the swapchain and resets render pass implementations.
     // The second task submits the frame and presents the swapchain.

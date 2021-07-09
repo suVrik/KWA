@@ -209,8 +209,8 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
     , compute_queue_spinlock(create_compute_queue_spinlock())
     , transfer_queue_spinlock(create_transfer_queue_spinlock())
     , semaphore(allocate_shared<TimelineSemaphore>(persistent_memory_resource, this))
+    , wait_semaphores(create_wait_semaphores())
     , get_semaphore_counter_value(create_get_semaphore_counter_value())
-    , m_wait_semaphores(create_wait_semaphores())
     , m_debug_messenger(create_debug_messsenger(descriptor))
     , m_set_object_name(create_set_object_name(descriptor))
     , m_staging_buffer(create_staging_buffer(descriptor))
@@ -1850,15 +1850,6 @@ SharedPtr<Spinlock> RenderVulkan::create_transfer_queue_spinlock() {
     return transfer_queue != graphics_queue ? allocate_shared<Spinlock>(persistent_memory_resource) : graphics_queue_spinlock;
 }
 
-PFN_vkGetSemaphoreCounterValueKHR RenderVulkan::create_get_semaphore_counter_value() {
-    PFN_vkGetSemaphoreCounterValueKHR get_semaphore_counter_value_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValueKHR>(vkGetDeviceProcAddr(device, "vkGetSemaphoreCounterValueKHR"));
-    KW_ERROR(
-        get_semaphore_counter_value_ != nullptr,
-        "Failed to get vkGetSemaphoreCounterValueKHR function."
-    );
-    return get_semaphore_counter_value_;
-}
-
 PFN_vkWaitSemaphoresKHR RenderVulkan::create_wait_semaphores() {
     PFN_vkWaitSemaphoresKHR wait_semaphores = reinterpret_cast<PFN_vkWaitSemaphoresKHR>(vkGetDeviceProcAddr(device, "vkWaitSemaphoresKHR"));
     KW_ERROR(
@@ -1866,6 +1857,15 @@ PFN_vkWaitSemaphoresKHR RenderVulkan::create_wait_semaphores() {
         "Failed to get vkWaitSemaphoresKHR function."
     );
     return wait_semaphores;
+}
+
+PFN_vkGetSemaphoreCounterValueKHR RenderVulkan::create_get_semaphore_counter_value() {
+    PFN_vkGetSemaphoreCounterValueKHR get_semaphore_counter_value_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValueKHR>(vkGetDeviceProcAddr(device, "vkGetSemaphoreCounterValueKHR"));
+    KW_ERROR(
+        get_semaphore_counter_value_ != nullptr,
+        "Failed to get vkGetSemaphoreCounterValueKHR function."
+    );
+    return get_semaphore_counter_value_;
 }
 
 VkDebugUtilsMessengerEXT RenderVulkan::create_debug_messsenger(const RenderDescriptor& descriptor) {
@@ -2114,7 +2114,7 @@ void RenderVulkan::wait_for_staging_memory() {
         // When this semaphore is signaled, staging data from `staging_data_begin` to
         // `submit_data.staging_data_end` becomes available for allocation.
         VK_ERROR(
-            m_wait_semaphores(device, &semaphore_wait_info, UINT64_MAX),
+            wait_semaphores(device, &semaphore_wait_info, UINT64_MAX),
             "Failed to wait for a transfer semaphore."
         );
 
@@ -2378,7 +2378,7 @@ bool RenderVulkan::wait_for_dependencies(Vector<DestroyCommandDependency>& depen
     semaphore_wait_info.pSemaphores = semaphores.data();
     semaphore_wait_info.pValues = values.data();
 
-    return m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS;
+    return wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS;
 }
 
 void RenderVulkan::flush() {
@@ -2403,7 +2403,7 @@ void RenderVulkan::process_completed_submits() {
         semaphore_wait_info.pSemaphores = &semaphore->semaphore;
         semaphore_wait_info.pValues = &submit_data.semaphore_value;
 
-        if (m_wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
+        if (wait_semaphores(device, &semaphore_wait_info, 0) == VK_SUCCESS) {
             if (submit_data.graphics_command_buffer != VK_NULL_HANDLE) {
                 vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &submit_data.graphics_command_buffer);
             }

@@ -1,13 +1,14 @@
 #include "render/frame_graph.h"
+#include "render/graphics_pipeline_impl.h"
 #include "render/render_pass_impl.h"
 
 #include <core/concurrency/task.h>
+#include <core/containers/queue.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unique_ptr.h>
 #include <core/containers/unordered_map.h>
 #include <core/containers/vector.h>
-#include <core/memory/linear_memory_resource.h>
 #include <core/utils/enum_utils.h>
 
 #include <vulkan/vulkan.h>
@@ -22,6 +23,98 @@ namespace kw {
 class RenderVulkan;
 class TimelineSemaphore;
 
+class GraphicsPipelineVulkan : public GraphicsPipeline {
+public:
+    struct NoOpHash {
+        // crc64 is already a decent hash.
+        size_t operator()(uint64_t value) const;
+    };
+
+    struct DescriptorSetData {
+        DescriptorSetData(VkDescriptorSet descriptor_set_, uint64_t last_frame_usage_);
+        DescriptorSetData(const DescriptorSetData& other);
+
+        VkDescriptorSet descriptor_set;
+
+        // When descriptor set is not used for a certain number of frames,
+        // it is considered to be retired and goes back to free list.
+        std::atomic_uint64_t last_frame_usage;
+    };
+
+    GraphicsPipelineVulkan(MemoryResource& memory_resource);
+    GraphicsPipelineVulkan(GraphicsPipelineVulkan&& other);
+
+    VkShaderModule vertex_shader_module;
+    VkShaderModule fragment_shader_module;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+
+    // These are needed for draw call validation.
+    uint32_t vertex_buffer_count;
+    uint32_t instance_buffer_count;
+
+    // Key here is crc64 of all descriptors in a descriptor set.
+    UnorderedMap<uint64_t, DescriptorSetData, NoOpHash> bound_descriptor_sets;
+    std::shared_mutex bound_descriptor_sets_mutex;
+
+    // Descriptor sets are allocated in batches, the extra ones end up here. When descriptor sets retire,
+    // they end up here. When new descriptor set is needed, it's queried from here.
+    Vector<VkDescriptorSet> unbound_descriptor_sets;
+    std::mutex unbound_descriptor_sets_mutex;
+
+    // Descriptor sets are allocated in geometric sequence: 1, 2, 4, 8, 16 and so on. This way graphics pipelines
+    // that use a few descriptor sets don't waste much of a descriptor memory, and render passes that need many
+    // descriptor sets don't waste CPU time to allocate them.
+    uint32_t descriptor_set_count;
+
+    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
+    // because of shader optimizations.
+    uint32_t uniform_attachment_descriptor_count;
+
+    // Mapping from `VkWriteDescriptorSet` indices to `m_attachment_data` indices.
+    Vector<uint32_t> uniform_attachment_indices;
+
+    // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
+    Vector<uint32_t> uniform_attachment_mapping;
+
+    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
+    // because of shader optimizations.
+    uint32_t uniform_texture_descriptor_count;
+
+    // First texture from `uniform_texture_mapping` goes to this binding.
+    uint32_t uniform_texture_first_binding;
+
+    // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
+    Vector<uint32_t> uniform_texture_mapping;
+
+    // These are immutable samplers and there's no need to bind them to descriptor set.
+    // They are stored to be destroyed after descriptor set layout is destroyed.
+    Vector<VkSampler> uniform_samplers;
+
+    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
+    // because of shader optimizations.
+    uint32_t uniform_buffer_descriptor_count;
+
+    // First buffer from `uniform_buffer_mapping` goes to this binding.
+    uint32_t uniform_buffer_first_binding;
+
+    // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
+    Vector<uint32_t> uniform_buffer_mapping;
+
+    // Sizes of each uniform buffer in descriptor set.
+    Vector<uint32_t> uniform_buffer_sizes;
+
+    // This is needed for draw call validation and for push constants command. When push constants are optimized
+    // away from the shader stages, this value is equal to the expected one anyway.
+    uint32_t push_constants_size;
+
+    // This is needed for push constants command. Might be different than graphics pipeline descriptor value
+    // because of shader optimizations. Value of 0 means push constants were optimized away from all stages and
+    // won't be pushed.
+    VkShaderStageFlags push_constants_visibility;
+};
+
 class FrameGraphVulkan : public FrameGraph {
 public:
     explicit FrameGraphVulkan(const FrameGraphDescriptor& descriptor);
@@ -29,12 +122,15 @@ public:
 
     ShaderReflection get_shader_reflection(const char* relative_path) override;
 
+    GraphicsPipeline* create_graphics_pipeline(const GraphicsPipelineDescriptor& graphics_pipeline_descriptor) override;
+    void destroy_graphics_pipeline(GraphicsPipeline* graphics_pipeline) override;
+
     std::pair<Task*, Task*> create_tasks() override;
     
     void recreate_swapchain() override;
 
     uint64_t get_frame_index() const override;
-    
+
     uint32_t get_width() const override;
     uint32_t get_height() const override;
 
@@ -78,18 +174,12 @@ private:
         // Mapping from attachment names to attachment indices.
         UnorderedMap<StringView, uint32_t> attachment_mapping;
 
-        // Attachment_count x render_pass_count matrix of access to a certain attachment on a certain render pass.
-        Vector<AttachmentAccess> attachment_access_matrix;
-
         // Min/max read/write render pass indices for each attachment.
         Vector<AttachmentBoundsData> attachment_bounds_data;
 
         // Attachment_count x render_pass_count matrix of access masks and image layouts for pipeline barriers,
         // render passes and blit requests.
         Vector<AttachmentBarrierData> attachment_barrier_matrix;
-
-        // Allocate a piece of memory and reuse it for each graphics pipeline.
-        LinearMemoryResource graphics_pipeline_memory_resource;
     };
 
     struct AttachmentData {
@@ -112,7 +202,6 @@ private:
 
         // Layout transition from `VK_IMAGE_LAYOUT_UNDEFINED` to specified image layout is performed manually
         // before the first render pass once after the attachment is created.
-        VkAccessFlags initial_access_mask;
         VkImageLayout initial_layout;
 
         // Empty if attachment is not blit-allowed.
@@ -135,97 +224,6 @@ private:
         uint32_t textures_left;
         uint32_t samplers_left;
         uint32_t uniform_buffers_left;
-    };
-
-    struct NoOpHash {
-        // crc64 is already a decent hash.
-        size_t operator()(uint64_t value) const;
-    };
-
-    struct DescriptorSetData {
-        DescriptorSetData(VkDescriptorSet descriptor_set_, uint64_t last_frame_usage_);
-        DescriptorSetData(const DescriptorSetData& other);
-
-        VkDescriptorSet descriptor_set;
-
-        // When descriptor set is not used for a certain number of frames,
-        // it is considered to be retired and goes back to free list.
-        std::atomic_uint64_t last_frame_usage;
-    };
-
-    struct GraphicsPipelineData {
-        GraphicsPipelineData(MemoryResource& memory_resource);
-        GraphicsPipelineData(GraphicsPipelineData&& other);
-
-        VkShaderModule vertex_shader_module;
-        VkShaderModule fragment_shader_module;
-        VkDescriptorSetLayout descriptor_set_layout;
-        VkPipelineLayout pipeline_layout;
-        VkPipeline pipeline;
-
-        // These are needed for draw call validation.
-        uint32_t vertex_buffer_count;
-        uint32_t instance_buffer_count;
-
-        // Key here is crc64 of all descriptors in a descriptor set.
-        UnorderedMap<uint64_t, DescriptorSetData, NoOpHash> bound_descriptor_sets;
-        std::shared_mutex bound_descriptor_sets_mutex;
-
-        // Descriptor sets are allocated in batches, the extra ones end up here. When descriptor sets retire,
-        // they end up here. When new descriptor set is needed, it's queried from here.
-        Vector<VkDescriptorSet> unbound_descriptor_sets;
-        std::mutex unbound_descriptor_sets_mutex;
-
-        // Descriptor sets are allocated in geometric sequence: 1, 2, 4, 8, 16 and so on. This way graphics pipelines
-        // that use a few descriptor sets don't waste much of a descriptor memory, and render passes that need many
-        // descriptor sets don't waste CPU time to allocate them.
-        uint32_t descriptor_set_count;
-
-        // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-        // because of shader optimizations.
-        uint32_t uniform_attachment_descriptor_count;
-
-        // Mapping from `VkWriteDescriptorSet` indices to `m_attachment_data` indices.
-        Vector<uint32_t> uniform_attachment_indices;
-
-        // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
-        Vector<uint32_t> uniform_attachment_mapping;
-
-        // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-        // because of shader optimizations.
-        uint32_t uniform_texture_descriptor_count;
-
-        // First texture from `uniform_texture_mapping` goes to this binding.
-        uint32_t uniform_texture_first_binding;
-
-        // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
-        Vector<uint32_t> uniform_texture_mapping;
-
-        // These are immutable samplers and there's no need to bind them to descriptor set.
-        // They are stored to be destroyed after descriptor set layout is destroyed.
-        Vector<VkSampler> uniform_samplers;
-
-        // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-        // because of shader optimizations.
-        uint32_t uniform_buffer_descriptor_count;
-
-        // First buffer from `uniform_buffer_mapping` goes to this binding.
-        uint32_t uniform_buffer_first_binding;
-
-        // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
-        Vector<uint32_t> uniform_buffer_mapping;
-
-        // Sizes of each uniform buffer in descriptor set.
-        Vector<uint32_t> uniform_buffer_sizes;
-
-        // This is needed for draw call validation and for push constants command. When push constants are optimized
-        // away from the shader stages, this value is equal to the expected one anyway.
-        uint32_t push_constants_size;
-
-        // This is needed for push constants command. Might be different than graphics pipeline descriptor value
-        // because of shader optimizations. Value of 0 means push constants were optimized away from all stages and
-        // won't be pushed.
-        VkShaderStageFlags push_constants_visibility;
     };
 
     struct ParallelBlockData {
@@ -272,7 +270,7 @@ private:
         uint64_t transfer_semaphore_value;
 
     private:
-        bool allocate_descriptor_sets(GraphicsPipelineData& graphics_pipeline_data);
+        bool allocate_descriptor_sets();
 
         FrameGraphVulkan& m_frame_graph;
         uint32_t m_render_pass_index;
@@ -281,7 +279,7 @@ private:
         uint32_t m_framebuffer_width;
         uint32_t m_framebuffer_height;
 
-        uint32_t m_graphics_pipeline_index;
+        GraphicsPipelineVulkan* m_graphics_pipeline_vulkan;
     };
 
     class RenderPassImplVulkan : public RenderPassImpl {
@@ -310,10 +308,10 @@ private:
         RenderPassData(MemoryResource& memory_resource);
         RenderPassData(RenderPassData&& other);
 
-        VkRenderPass render_pass;
+        // Needed to match graphics pipelines with render passes.
+        String name;
 
-        // Graphics pipelines are indexed in draw call descriptors the same way they're indexed here.
-        Vector<GraphicsPipelineData> graphics_pipeline_data;
+        VkRenderPass render_pass;
 
         // These are used to begin render pass and to set scissor.
         uint32_t framebuffer_width;
@@ -326,11 +324,19 @@ private:
         // Render passes with the same parallel index are executed without pipeline barriers in between.
         uint32_t parallel_block_index;
 
+        // Attachment indices that are allowed to be read from shaders.
+        Vector<uint32_t> read_attachment_indices;
+
         // Color attachment indices, followed by a depth stencil attachment index.
-        Vector<uint32_t> attachment_indices;
+        Vector<uint32_t> write_attachment_indices;
 
         // Passed to an actual render pass via `FrameGraph`.
         UniquePtr<RenderPassImplVulkan> render_pass_impl;
+    };
+
+    struct GraphicsPipelineDestroyCommand {
+        GraphicsPipelineVulkan* graphics_pipeline;
+        uint64_t semahore_value;
     };
 
     class AcquireTask : public Task {
@@ -363,6 +369,7 @@ private:
     void compute_attachment_mapping(CreateContext& create_context);
     void compute_attachment_access(CreateContext& create_context);
     void compute_attachment_barrier_data(CreateContext& create_context);
+    void compute_attachment_bounds_data(CreateContext& create_context);
     void compute_parallel_block_indices(CreateContext& create_context);
     void compute_parallel_blocks(CreateContext& create_context);
     void compute_attachment_ranges(CreateContext& create_context);
@@ -372,7 +379,6 @@ private:
 
     void create_render_passes(CreateContext& create_context);
     void create_render_pass(CreateContext& create_context, uint32_t render_pass_index);
-    void create_graphics_pipeline(CreateContext& create_context, uint32_t render_pass_index, uint32_t graphics_pipeline_index);
 
     void create_synchronization(CreateContext& create_context);
 
@@ -388,6 +394,8 @@ private:
     void create_attachment_image_views();
 
     void create_framebuffers();
+
+    void destroy_dynamic_resources();
 
     RenderVulkan& m_render;
     Window& m_window;
@@ -411,10 +419,18 @@ private:
 
     // Flattened attachment descriptors from frame graph descriptor.
     Vector<AttachmentDescriptor> m_attachment_descriptors;
+
+    // Attachment_count x render_pass_count matrix of access to a certain attachment on a certain render pass.
+    Vector<AttachmentAccess> m_attachment_access_matrix;
+    std::mutex m_attachment_access_matrix_mutex;
+
     Vector<AttachmentData> m_attachment_data;
     Vector<AllocationData> m_allocation_data;
     Vector<RenderPassData> m_render_pass_data;
+
+    // The number of parallel blocks can (and is encouraged to) be less than the number of render passes.
     Vector<ParallelBlockData> m_parallel_block_data;
+    std::mutex m_parallel_block_data_mutex;
 
     // Each frame in flight and each thread requires own set of command pools.
     UnorderedMap<std::thread::id, CommandPoolData> m_command_pool_data[SWAPCHAIN_IMAGE_COUNT];
@@ -423,6 +439,10 @@ private:
     // Descriptor pools are mostly traversed and rarely changed, so prefer shared access.
     Vector<DescriptorPoolData> m_descriptor_pools;
     std::mutex m_descriptor_pools_mutex;
+
+    // Queued graphics pipeline destroy commands waiting for semaphore to signal.
+    Queue<GraphicsPipelineDestroyCommand> m_graphics_pipeline_destroy_commands;
+    std::mutex m_graphics_pipeline_destroy_command_mutex;
 
     // `vkAcquireNextImageKHR` and `vkQueuePresentKHR` don't support timeline semaphores,
     // so we're forced to deal with a bunch of binary semaphores.
