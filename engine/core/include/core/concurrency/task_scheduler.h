@@ -7,6 +7,10 @@
 #include <mutex>
 #include <thread>
 
+#if 0
+#define TASK_SCHEDULER_DEBUG
+#endif
+
 namespace kw {
 
 class Task;

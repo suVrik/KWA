@@ -204,6 +204,7 @@ private:
         FlushTask(RenderVulkan& render);
 
         void run() override;
+        const char* get_name() const override;
 
     private:
         RenderVulkan& m_render;

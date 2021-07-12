@@ -29,6 +29,9 @@ public:
     // Must be overriden by the user.
     virtual void run() = 0;
 
+    // Could be overriden by the user.
+    virtual const char* get_name() const;
+
 private:
     std::atomic<TaskNode*> m_output_dependencies;
     std::atomic<uint32_t> m_input_dependency_count;
@@ -47,7 +50,14 @@ private:
 // completes and TaskB starts running.
 class NoopTask : public Task {
 public:
+    NoopTask();
+    NoopTask(const char* name);
+
     void run() override;
+    const char* get_name() const override;
+
+private:
+    const char* m_name;
 };
 
 } // namespace kw

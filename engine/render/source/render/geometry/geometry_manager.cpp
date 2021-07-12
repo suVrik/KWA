@@ -97,6 +97,10 @@ public:
         m_geometry = Geometry(vertex_buffer, index_buffer, index_count, bounds);
     }
 
+    const char* get_name() const override {
+        return "Geometry Manager Pending";
+    }
+
 private:
     uint32_t read_next(Reader& reader) {
         std::optional<uint32_t> value = reader.read_le<uint32_t>();
@@ -150,6 +154,10 @@ public:
                 ++it;
             }
         }
+    }
+
+    const char* get_name() const override {
+        return "Geometry Manager Begin";
     }
 
 private:
@@ -213,7 +221,7 @@ SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
 }
 
 std::pair<Task*, Task*> GeometryManager::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask();
+    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Geometry Manager End");
     Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
 
     return { begin_task, end_task };

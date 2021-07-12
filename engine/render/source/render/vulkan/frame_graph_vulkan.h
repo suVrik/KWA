@@ -344,6 +344,7 @@ private:
         AcquireTask(FrameGraphVulkan& frame_graph);
 
         void run() override;
+        const char* get_name() const override;
 
     private:
         FrameGraphVulkan& m_frame_graph;
@@ -354,6 +355,7 @@ private:
         PresentTask(FrameGraphVulkan& frame_graph);
 
         void run() override;
+        const char* get_name() const override;
 
     private:
         FrameGraphVulkan& m_frame_graph;

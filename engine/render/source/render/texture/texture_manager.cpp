@@ -26,6 +26,10 @@ public:
         m_manager.m_render.upload_texture(upload_texture_descriptor);
     }
 
+    const char* get_name() const override {
+        return "Texture Manager Loading";
+    }
+
 private:
     TextureManager& m_manager;
     TextureLoader& m_texture_loader;
@@ -61,6 +65,10 @@ public:
         loading_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
 
         m_manager.m_task_scheduler.enqueue_task(m_manager.m_transient_memory_resource, loading_task);
+    }
+
+    const char* get_name() const override {
+        return "Texture Manager Pending";
     }
 
 private:
@@ -145,6 +153,10 @@ public:
         }
     }
 
+    const char* get_name() const override {
+        return "Texture Manager Begin";
+    }
+
 private:
     TextureManager& m_manager;
     Task* m_end_task;
@@ -209,7 +221,7 @@ SharedPtr<Texture*> TextureManager::load(const char* relative_path) {
 }
 
 std::pair<Task*, Task*> TextureManager::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask();
+    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Texture Manager End");
     Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
 
     return { begin_task, end_task };

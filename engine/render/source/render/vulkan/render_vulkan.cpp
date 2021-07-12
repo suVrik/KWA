@@ -143,6 +143,10 @@ void RenderVulkan::FlushTask::run() {
     m_render.flush();
 }
 
+const char* RenderVulkan::FlushTask::get_name() const {
+    return "Render Flush";
+}
+
 #define DEFINE_SET_DEBUG_NAME(Type, Enum)                                                        \
 template <>                                                                                      \
 void RenderVulkan::set_debug_name(Type handle, const char* format, ...) const {                  \

@@ -88,7 +88,26 @@ void Task::add_output_dependencies(MemoryResource& transient_memory_resource, st
     return add_output_dependencies(transient_memory_resource, output_dependencies.begin(), output_dependencies.size());
 }
 
+const char* Task::get_name() const {
+    return "Nameless Task";
+}
+
+NoopTask::NoopTask()
+    : m_name("Nameless No-op Task")
+{
+}
+
+NoopTask::NoopTask(const char* name)
+    : m_name(name)
+{
+}
+
 void NoopTask::run() {
+    // No-op.
+}
+
+const char* NoopTask::get_name() const {
+    return m_name;
 }
 
 } // namespace kw

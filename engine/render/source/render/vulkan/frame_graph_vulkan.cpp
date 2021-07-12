@@ -5507,6 +5507,10 @@ void FrameGraphVulkan::AcquireTask::run() {
     }
 }
 
+const char* FrameGraphVulkan::AcquireTask::get_name() const {
+    return "Frame Graph Acquire";
+}
+
 FrameGraphVulkan::PresentTask::PresentTask(FrameGraphVulkan& frame_graph)
     : m_frame_graph(frame_graph)
 {
@@ -5709,6 +5713,10 @@ void FrameGraphVulkan::PresentTask::run() {
     // These values are valid only between acquire/present calls.
     m_frame_graph.m_semaphore_index = UINT64_MAX;
     m_frame_graph.m_swapchain_image_index = UINT32_MAX;
+}
+
+const char* FrameGraphVulkan::PresentTask::get_name() const {
+    return "Frame Graph Present";
 }
 
 } // namespace kw
