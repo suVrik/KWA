@@ -112,6 +112,27 @@ function(target_add_geometries target geometries)
     )
 endfunction()
 
+function(target_add_materials target materials)
+    foreach(absolute_path ${materials})
+        cmake_path(RELATIVE_PATH absolute_path BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path)
+
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
+            COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
+            MAIN_DEPENDENCY ${absolute_path}
+            COMMAND_EXPAND_LISTS
+        )
+    endforeach()
+
+    target_sources(${target} PRIVATE ${materials})
+
+    source_group(
+        TREE "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+        PREFIX "Resource Files"
+        FILES ${materials}
+    )
+endfunction()
+
 function(target_add_resources target)
     file(GLOB_RECURSE shaders "resource/*.hlsl")
     target_add_shaders(${target} "${shaders}")
@@ -121,6 +142,9 @@ function(target_add_resources target)
 
     file(GLOB_RECURSE geometries "resource/*.glb")
     target_add_geometries(${target} "${geometries}")
+
+    file(GLOB_RECURSE materials "resource/*.kwm")
+    target_add_materials(${target} "${materials}")
 endfunction()
 
 add_subdirectory("thirdparty")
