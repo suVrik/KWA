@@ -30,9 +30,9 @@ public:
     // Enqueue geometry loading if it's not yet loaded. Concurrent loads are allowed.
     SharedPtr<Geometry> load(const char* relative_path);
 
-    // The first task creates worker tasks that load all enqueued geometries at the moment. Those tasks will be finished
-    // before the second task starts. If you are planning to load geometries on this frame, you need to place your task
-    // before the first task. If you are planning to use geometries loaded on this frame, you need to place your task
+    // The first task creates worker tasks that load all enqueued geometry at the moment. Those tasks will be finished
+    // before the second task starts. If you are planning to load geometry on this frame, you need to place your task
+    // before the first task. If you are planning to use geometry loaded on this frame, you need to place your task
     // after the second task.
     std::pair<Task*, Task*> create_tasks();
 
@@ -46,11 +46,11 @@ private:
     MemoryResource& m_persistent_memory_resource;
     MemoryResource& m_transient_memory_resource;
 
-    UnorderedMap<String, SharedPtr<Geometry>> m_geometries;
-    std::shared_mutex m_geometries_mutex;
+    UnorderedMap<String, SharedPtr<Geometry>> m_geometry;
+    std::shared_mutex m_geometry_mutex;
 
     // Geometries that are not even opened yet.
-    Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometries;
+    Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
 };
 
 } // namespace kw

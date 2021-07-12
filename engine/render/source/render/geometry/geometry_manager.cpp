@@ -122,14 +122,14 @@ public:
     }
 
     void run() override {
-        // Tasks that load geometries are expected to run before begin task, so this shouldn't block anyone.
-        std::lock_guard lock_guard(m_manager.m_geometries_mutex);
+        // Tasks that load geometry are expected to run before begin task, so this shouldn't block anyone.
+        std::lock_guard lock_guard(m_manager.m_geometry_mutex);
 
         //
-        // Start loading brand new geometries.
+        // Start loading brand new geometry.
         //
 
-        for (auto& [relative_path, geometry] : m_manager.m_pending_geometries) {
+        for (auto& [relative_path, geometry] : m_manager.m_pending_geometry) {
             PendingTask* pending_task = new (m_manager.m_transient_memory_resource.allocate<PendingTask>()) PendingTask(m_manager, *geometry, relative_path.c_str());
             KW_ASSERT(pending_task != nullptr);
 
@@ -138,18 +138,18 @@ public:
             m_manager.m_task_scheduler.enqueue_task(m_manager.m_transient_memory_resource, pending_task);
         }
 
-        m_manager.m_pending_geometries.clear();
+        m_manager.m_pending_geometry.clear();
 
         //
-        // Destroy geometries that only referenced from `GeometryManager`.
+        // Destroy geometry that only referenced from `GeometryManager`.
         //
 
-        for (auto it = m_manager.m_geometries.begin(); it != m_manager.m_geometries.end(); ) {
+        for (auto it = m_manager.m_geometry.begin(); it != m_manager.m_geometry.end(); ) {
             if (it->second.use_count() == 1) {
                 m_manager.m_render.destroy_vertex_buffer(it->second->get_vertex_buffer());
                 m_manager.m_render.destroy_index_buffer(it->second->get_index_buffer());
 
-                it = m_manager.m_geometries.erase(it);
+                it = m_manager.m_geometry.erase(it);
             } else {
                 ++it;
             }
@@ -170,23 +170,23 @@ GeometryManager::GeometryManager(const GeometryManagerDescriptor& descriptor)
     , m_task_scheduler(*descriptor.task_scheduler)
     , m_persistent_memory_resource(*descriptor.persistent_memory_resource)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
-    , m_geometries(*descriptor.persistent_memory_resource)
-    , m_pending_geometries(*descriptor.persistent_memory_resource)
+    , m_geometry(*descriptor.persistent_memory_resource)
+    , m_pending_geometry(*descriptor.persistent_memory_resource)
 {
     KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.task_scheduler != nullptr);
     KW_ASSERT(descriptor.persistent_memory_resource != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 
-    m_geometries.reserve(32);
-    m_pending_geometries.reserve(32);
+    m_geometry.reserve(32);
+    m_pending_geometry.reserve(32);
 }
 
 GeometryManager::~GeometryManager() {
-    m_pending_geometries.clear();
+    m_pending_geometry.clear();
 
-    for (auto& [relative_path, geometry] : m_geometries) {
-        KW_ASSERT(geometry.use_count() == 1, "Not all geometries are released.");
+    for (auto& [relative_path, geometry] : m_geometry) {
+        KW_ASSERT(geometry.use_count() == 1, "Not all geometry are released.");
 
         m_render.destroy_vertex_buffer(geometry->get_vertex_buffer());
         m_render.destroy_index_buffer(geometry->get_index_buffer());
@@ -195,18 +195,18 @@ GeometryManager::~GeometryManager() {
 
 SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
     {
-        std::shared_lock shared_lock(m_geometries_mutex);
+        std::shared_lock shared_lock(m_geometry_mutex);
 
-        auto it = m_geometries.find(String(relative_path, m_transient_memory_resource));
-        if (it != m_geometries.end()) {
+        auto it = m_geometry.find(String(relative_path, m_transient_memory_resource));
+        if (it != m_geometry.end()) {
             return it->second;
         }
     }
 
     {
-        std::lock_guard lock_guard(m_geometries_mutex);
+        std::lock_guard lock_guard(m_geometry_mutex);
 
-        auto [it, success] = m_geometries.emplace(String(relative_path, m_persistent_memory_resource), SharedPtr<Geometry>());
+        auto [it, success] = m_geometry.emplace(String(relative_path, m_persistent_memory_resource), SharedPtr<Geometry>());
         if (!success) {
             // Could return here if geometry is enqueued from multiple threads.
             return it->second;
@@ -214,7 +214,7 @@ SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
 
         it->second = allocate_shared<Geometry>(m_persistent_memory_resource);
 
-        m_pending_geometries.emplace_back(it->first, it->second);
+        m_pending_geometry.emplace_back(it->first, it->second);
 
         return it->second;
     }
