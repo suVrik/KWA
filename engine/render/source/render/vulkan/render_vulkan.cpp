@@ -1794,9 +1794,10 @@ VkDevice RenderVulkan::create_device(const RenderDescriptor& descriptor) {
     };
 
     VkPhysicalDeviceFeatures physical_device_features{};
-    physical_device_features.independentBlend = VK_TRUE;
     physical_device_features.depthBiasClamp = VK_TRUE;
     physical_device_features.fillModeNonSolid = VK_TRUE;
+    physical_device_features.independentBlend = VK_TRUE;
+    physical_device_features.samplerAnisotropy = VK_TRUE;
     physical_device_features.textureCompressionBC = VK_TRUE;
 
     VkDeviceCreateInfo device_create_info{};
