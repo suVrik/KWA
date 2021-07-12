@@ -2,7 +2,7 @@
 
 #include "render/render.h"
 
-#include <core/utils/parser_utils.h>
+#include <core/io/binary_reader.h>
 
 namespace kw {
 
@@ -26,7 +26,7 @@ public:
 private:
     uint32_t read_next();
 
-    Reader m_reader;
+    BinaryReader m_reader;
     CreateTextureDescriptor m_create_texture_descriptor;
     uint32_t m_current_mip_level;
     uint32_t m_current_array_layer;

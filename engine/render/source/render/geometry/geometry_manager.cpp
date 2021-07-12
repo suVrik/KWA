@@ -6,8 +6,8 @@
 #include <core/concurrency/task_scheduler.h>
 #include <core/debug/assert.h>
 #include <core/error.h>
+#include <core/io/binary_reader.h>
 #include <core/math/float4.h>
-#include <core/utils/parser_utils.h>
 
 namespace kw {
 
@@ -56,7 +56,7 @@ public:
     }
 
     void run() override {
-        Reader reader(m_relative_path);
+        BinaryReader reader(m_relative_path);
         KW_ERROR(reader, "Failed to open geometry \"%s\".", m_relative_path);
         KW_ERROR(read_next(reader) == KWG_SIGNATURE, "Invalid geometry \"%s\" signature.", m_relative_path);
 
@@ -102,7 +102,7 @@ public:
     }
 
 private:
-    uint32_t read_next(Reader& reader) {
+    uint32_t read_next(BinaryReader& reader) {
         std::optional<uint32_t> value = reader.read_le<uint32_t>();
         KW_ERROR(value, "Failed to read geometry header.");
         return *value;

@@ -1,8 +1,8 @@
+#include <core/io/binary_writer.h>
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
 #include <core/math/quaternion.h>
 #include <core/utils/enum_utils.h>
-#include <core/utils/parser_utils.h>
 
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
@@ -84,7 +84,7 @@ Vertex swap_le(Vertex vertex) {
 constexpr uint32_t KWG_SIGNATURE = ' GWK';
 
 static bool save_result(const char* path) {
-    Writer writer(path);
+    BinaryWriter writer(path);
 
     if (!writer) {
         std::cout << "Failed to open output geometry file \"" << path << "\"." << std::endl;

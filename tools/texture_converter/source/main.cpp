@@ -1,7 +1,8 @@
 #include <render/render.h>
 
+#include <core/io/binary_reader.h>
+#include <core/io/binary_writer.h>
 #include <core/utils/endian_utils.h>
-#include <core/utils/parser_utils.h>
 
 #include <iostream>
 #include <map>
@@ -369,7 +370,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Reader reader(argv[1]);
+    BinaryReader reader(argv[1]);
 
     std::optional<uint32_t> magic = reader.read_le<uint32_t>();
     if (!magic) {
@@ -556,7 +557,7 @@ int main(int argc, char* argv[]) {
     // Write output texture.
     //
 
-    Writer writer(argv[2]);
+    BinaryWriter writer(argv[2]);
 
     if (!writer) {
         std::cout << "Failed to open output texture file \"" << argv[2] << "\"." << std::endl;
