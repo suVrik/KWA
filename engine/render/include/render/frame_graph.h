@@ -218,18 +218,9 @@ struct AttachmentBlendDescriptor {
     BlendOp alpha_blend_op;
 };
 
-enum class ShaderVisibility : uint32_t {
-    ALL,
-    VERTEX,
-    FRAGMENT,
-};
-
-constexpr size_t SHADER_VISILITY_COUNT = 3;
-
 struct UniformAttachmentDescriptor {
     const char* variable_name;
     const char* attachment_name;
-    ShaderVisibility visibility;
 
     // Must be less or equal than `count` specified in attachment descriptor. 0 is interpreted as 1.
     uint32_t count;
@@ -237,10 +228,7 @@ struct UniformAttachmentDescriptor {
 
 struct UniformTextureDescriptor {
     const char* variable_name;
-    ShaderVisibility visibility;
-
     TextureType texture_type;
-
     uint32_t count; // 0 is interpreted as 1.
 };
 
@@ -273,7 +261,6 @@ constexpr size_t BORDER_COLOR_COUNT = 6;
 
 struct UniformSamplerDescriptor {
     const char* variable_name;
-    ShaderVisibility visibility;
 
     Filter min_filter;
     Filter mag_filter;
@@ -299,10 +286,7 @@ struct UniformSamplerDescriptor {
 
 struct UniformBufferDescriptor {
     const char* variable_name;
-    ShaderVisibility visibility;
-
     uint64_t size;
-
     uint32_t count; // 0 is interpreted as 1.
 };
 
@@ -355,7 +339,6 @@ struct GraphicsPipelineDescriptor {
     size_t uniform_buffer_descriptor_count;
 
     const char* push_constants_name;
-    ShaderVisibility push_constants_visibility;
     size_t push_constants_size;
 };
 

@@ -116,14 +116,6 @@ static const VkBlendOp BLEND_OP_MAPPING[] = {
 
 static_assert(std::size(BLEND_OP_MAPPING) == BLEND_OP_COUNT);
 
-static const VkShaderStageFlags SHADER_VISILITY_MAPPING[] = {
-    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, // ALL
-    VK_SHADER_STAGE_VERTEX_BIT,                                // VERTEX
-    VK_SHADER_STAGE_FRAGMENT_BIT,                              // FRAGMENT
-};
-
-static_assert(std::size(SHADER_VISILITY_MAPPING) == SHADER_VISILITY_COUNT);
-
 static const VkFilter FILTER_MAPPING[] = {
     VK_FILTER_LINEAR,  // LINEAR
     VK_FILTER_NEAREST, // NEAREST
@@ -859,10 +851,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             const UniformAttachmentDescriptor& another_uniform_attachment_descriptor = graphics_pipeline_descriptor.uniform_attachment_descriptors[j];
 
             KW_ERROR(
-                std::strcmp(uniform_attachment_descriptor.variable_name, another_uniform_attachment_descriptor.variable_name) != 0 ||
-                (uniform_attachment_descriptor.visibility != ShaderVisibility::ALL &&
-                 another_uniform_attachment_descriptor.visibility != ShaderVisibility::ALL &&
-                 uniform_attachment_descriptor.visibility != another_uniform_attachment_descriptor.visibility),
+                std::strcmp(uniform_attachment_descriptor.variable_name, another_uniform_attachment_descriptor.variable_name) != 0,
                 "Variable \"%s\" is already defined (graphics pipeline \"%s\").", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -871,7 +860,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = SHADER_VISILITY_MAPPING[static_cast<size_t>(uniform_attachment_descriptor.visibility)];
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -907,8 +896,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     vertex_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Uniform attachment \"%s\" is not found in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_VERTEX_BIT;
                 }
             }
@@ -952,8 +939,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     fragment_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Uniform attachment \"%s\" is not found in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
             }
@@ -1012,6 +997,11 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
                 }
             }
+        } else {
+            Log::print(
+                "[WARNING] Uniform attachment \"%s\" is not found (graphics pipeline \"%s\").",
+                uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
+            );
         }
 
         //
@@ -1096,10 +1086,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             const UniformTextureDescriptor& another_uniform_texture_descriptor = graphics_pipeline_descriptor.uniform_texture_descriptors[j];
 
             KW_ERROR(
-                std::strcmp(uniform_texture_descriptor.variable_name, another_uniform_texture_descriptor.variable_name) != 0 ||
-                (uniform_texture_descriptor.visibility != ShaderVisibility::ALL &&
-                 another_uniform_texture_descriptor.visibility != ShaderVisibility::ALL &&
-                 uniform_texture_descriptor.visibility != another_uniform_texture_descriptor.visibility),
+                std::strcmp(uniform_texture_descriptor.variable_name, another_uniform_texture_descriptor.variable_name) != 0,
                 "Variable \"%s\" is already defined (graphics pipeline \"%s\").", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1108,7 +1095,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = SHADER_VISILITY_MAPPING[static_cast<size_t>(uniform_texture_descriptor.visibility)];
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1174,8 +1161,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     vertex_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Texture \"%s\" is not found in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_VERTEX_BIT;
                 }
             }
@@ -1249,8 +1234,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     fragment_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Texture \"%s\" is not found in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
             }
@@ -1273,6 +1256,11 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                 KW_ASSERT(flattened_uniform_texture_index + j < graphics_pipeline_vulkan->uniform_texture_descriptor_count);
                 graphics_pipeline_vulkan->uniform_texture_mapping.push_back(flattened_uniform_texture_index + j);
             }
+        } else {
+            Log::print(
+                "[WARNING] Texture \"%s\" is not found (graphics pipeline \"%s\").",
+                uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
+            );
         }
 
         flattened_uniform_texture_index += uniform_texture_count;
@@ -1310,10 +1298,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             const UniformSamplerDescriptor& another_uniform_sampler_descriptor = graphics_pipeline_descriptor.uniform_sampler_descriptors[j];
 
             KW_ERROR(
-                std::strcmp(uniform_sampler_descriptor.variable_name, another_uniform_sampler_descriptor.variable_name) != 0 ||
-                (uniform_sampler_descriptor.visibility != ShaderVisibility::ALL &&
-                 another_uniform_sampler_descriptor.visibility != ShaderVisibility::ALL &&
-                 uniform_sampler_descriptor.visibility != another_uniform_sampler_descriptor.visibility),
+                std::strcmp(uniform_sampler_descriptor.variable_name, another_uniform_sampler_descriptor.variable_name) != 0,
                 "Variable \"%s\" is already defined (graphics pipeline \"%s\").", uniform_sampler_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1375,7 +1360,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = SHADER_VISILITY_MAPPING[static_cast<size_t>(uniform_sampler_descriptor.visibility)];
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1405,8 +1390,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     vertex_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Sampler \"%s\" is not found in \"%s\".", uniform_sampler_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_VERTEX_BIT;
                 }
             }
@@ -1444,8 +1427,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     fragment_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Sampler \"%s\" is not found in \"%s\".", uniform_sampler_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
             }
@@ -1463,6 +1444,11 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             descriptor_set_layout_binding.stageFlags = shader_stage_flags;
             descriptor_set_layout_binding.pImmutableSamplers = &graphics_pipeline_vulkan->uniform_samplers[i];
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
+        } else {
+            Log::print(
+                "[WARNING] Sampler \"%s\" is not found (graphics pipeline \"%s\").",
+                uniform_sampler_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
+            );
         }
     }
 
@@ -1524,10 +1510,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             const UniformBufferDescriptor& another_uniform_buffer_descriptor = graphics_pipeline_descriptor.uniform_buffer_descriptors[j];
 
             KW_ERROR(
-                std::strcmp(uniform_buffer_descriptor.variable_name, another_uniform_buffer_descriptor.variable_name) != 0 ||
-                (uniform_buffer_descriptor.visibility != ShaderVisibility::ALL &&
-                 another_uniform_buffer_descriptor.visibility != ShaderVisibility::ALL &&
-                 uniform_buffer_descriptor.visibility != another_uniform_buffer_descriptor.visibility),
+                std::strcmp(uniform_buffer_descriptor.variable_name, another_uniform_buffer_descriptor.variable_name) != 0,
                 "Variable \"%s\" is already defined (graphics pipeline \"%s\").", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1541,7 +1524,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = SHADER_VISILITY_MAPPING[static_cast<size_t>(uniform_buffer_descriptor.visibility)];
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1577,8 +1560,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     vertex_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Uniform buffer \"%s\" is not found in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_VERTEX_BIT;
                 }
             }
@@ -1622,8 +1603,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
                     fragment_shader_binding_count++;
                 } else {
-                    Log::print("[WARNING] Uniform buffer \"%s\" is not found in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename);
-
                     shader_stage_flags ^= VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
             }
@@ -1648,6 +1627,11 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             }
 
             graphics_pipeline_vulkan->uniform_buffer_sizes.insert(graphics_pipeline_vulkan->uniform_buffer_sizes.end(), uniform_buffer_count, static_cast<uint32_t>(uniform_buffer_descriptor.size));
+        } else {
+            Log::print(
+                "[WARNING] Uniform buffer \"%s\" is not found (graphics pipeline \"%s\").",
+                uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
+            );
         }
 
         flattened_uniform_buffer_index += uniform_buffer_count;
@@ -2080,7 +2064,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     // Set up push constants for pipeline layout.
     //
 
-    VkShaderStageFlags push_constants_shader_stage_flags = SHADER_VISILITY_MAPPING[static_cast<size_t>(graphics_pipeline_descriptor.push_constants_visibility)];
+    VkShaderStageFlags push_constants_shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
     if (graphics_pipeline_descriptor.push_constants_name != nullptr) {
         //
@@ -2107,8 +2091,6 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                         graphics_pipeline_descriptor.push_constants_size, vertex_shader_reflection.push_constant_blocks[0].size
                     );
                 } else {
-                    Log::print("[WARNING] Push constants are not found in \"%s\".", graphics_pipeline_descriptor.vertex_shader_filename);
-
                     push_constants_shader_stage_flags ^= VK_SHADER_STAGE_VERTEX_BIT;
                 }
             }
@@ -2138,11 +2120,16 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                         graphics_pipeline_descriptor.push_constants_size, fragment_shader_reflection.push_constant_blocks[0].size
                     );
                 } else {
-                    Log::print("[WARNING] Push constants are not found in \"%s\".", graphics_pipeline_descriptor.fragment_shader_filename);
-
                     push_constants_shader_stage_flags ^= VK_SHADER_STAGE_FRAGMENT_BIT;
                 }
             }
+        }
+
+        if (push_constants_shader_stage_flags == 0) {
+            Log::print(
+                "[WARNING] Push constants are not found (graphics pipeline \"%s\").",
+                graphics_pipeline_descriptor.graphics_pipeline_name
+            );
         }
     } else {
         //
