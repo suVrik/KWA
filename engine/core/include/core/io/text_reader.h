@@ -11,7 +11,7 @@
 namespace kw {
 
 // Allows to parse and tokenize a text file. Designed primarily for Backus–Naur form.
-template <typename Child, typename TokenType>
+template <typename Child>
 class TextParser {
 protected:
     class Token {
@@ -20,8 +20,6 @@ protected:
 
         // No-op by default.
         virtual void init(const char* begin, const char* end);
-
-        virtual TokenType get_type() const = 0;
 
         // Previous token in the same hieratchy.
         UniquePtr<Token> previous;

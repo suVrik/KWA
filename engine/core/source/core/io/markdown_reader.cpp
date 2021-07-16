@@ -68,10 +68,6 @@ void MarkdownReader::NumberToken::init(const char* begin, const char* end) {
     value = std::atof(begin);
 }
 
-MarkdownType MarkdownReader::NumberToken::get_type() const {
-    return MarkdownType::NUMBER;
-}
-
 void MarkdownReader::StringToken::init(const char* begin_, const char* end_) {
     if (*begin_ == '"') {
         // String literal.
@@ -82,24 +78,8 @@ void MarkdownReader::StringToken::init(const char* begin_, const char* end_) {
     }
 }
 
-MarkdownType MarkdownReader::StringToken::get_type() const {
-    return MarkdownType::STRING;
-}
-
 void MarkdownReader::BooleanToken::init(const char* begin, const char* end) {
     value = std::strncmp(begin, "true", 4) == 0;
-}
-
-MarkdownType MarkdownReader::BooleanToken::get_type() const {
-    return MarkdownType::BOOLEAN;
-}
-
-MarkdownType MarkdownReader::ObjectToken::get_type() const {
-    return MarkdownType::OBJECT;
-}
-
-MarkdownType MarkdownReader::ArrayToken::get_type() const {
-    return MarkdownType::ARRAY;
 }
 
 MarkdownReader::MarkdownReader(MemoryResource& memory_resource, const char* relative_path)
@@ -271,14 +251,13 @@ bool MarkdownReader::array() {
 UniquePtr<MarkdownNode> MarkdownReader::build_node_from_token(Token* token) {
     KW_ASSERT(token != nullptr, "Invalid token.");
 
-    switch (token->get_type()) {
-    case MarkdownType::NUMBER:
-        return static_pointer_cast<MarkdownNode>(allocate_unique<NumberNode>(m_memory_resource, static_cast<NumberToken*>(token)->value));
-    case MarkdownType::STRING:
-        return static_pointer_cast<MarkdownNode>(allocate_unique<StringNode>(m_memory_resource, String(static_cast<StringToken*>(token)->value, m_memory_resource)));
-    case MarkdownType::BOOLEAN:
-        return static_pointer_cast<MarkdownNode>(allocate_unique<BooleanNode>(m_memory_resource, static_cast<BooleanToken*>(token)->value));
-    case MarkdownType::OBJECT: {
+    if (NumberToken* number_token = dynamic_cast<NumberToken*>(token)) {
+        return static_pointer_cast<MarkdownNode>(allocate_unique<NumberNode>(m_memory_resource, number_token->value));
+    } else if (StringToken* string_token = dynamic_cast<StringToken*>(token)) {
+        return static_pointer_cast<MarkdownNode>(allocate_unique<StringNode>(m_memory_resource, String(string_token->value, m_memory_resource)));
+    } else if (BooleanToken* boolean_token = dynamic_cast<BooleanToken*>(token)) {
+        return static_pointer_cast<MarkdownNode>(allocate_unique<BooleanNode>(m_memory_resource, boolean_token->value));
+    } else if (dynamic_cast<ObjectToken*>(token) != nullptr) {
         Map<String, UniquePtr<MarkdownNode>, ObjectNode::TransparentLess> elements(m_memory_resource);
 
         Token* value_token = token->last.get();
@@ -286,17 +265,18 @@ UniquePtr<MarkdownNode> MarkdownReader::build_node_from_token(Token* token) {
             // Tokens are stored in reverse order.
             Token* key_token = value_token->previous.get();
             KW_ASSERT(key_token != nullptr, "Invalid object key token.");
-            KW_ASSERT(key_token->get_type() == MarkdownType::STRING, "Invalid object key token.");
 
-            auto [_, success] = elements.emplace(String(static_cast<StringToken*>(key_token)->value, m_memory_resource), build_node_from_token(value_token));
+            StringToken* string_key_token = dynamic_cast<StringToken*>(key_token);
+            KW_ASSERT(string_key_token != nullptr, "Invalid object key token.");
+
+            auto [_, success] = elements.emplace(String(string_key_token->value, m_memory_resource), build_node_from_token(value_token));
             KW_ASSERT(success, "Object key already exists.");
 
             value_token = key_token->previous.get();
         }
 
         return static_pointer_cast<MarkdownNode>(allocate_unique<ObjectNode>(m_memory_resource, std::move(elements)));
-    }
-    case MarkdownType::ARRAY: {
+    } else if (dynamic_cast<ArrayToken*>(token) != nullptr) {
         //
         // Calculate the number of elements in the node.
         //
@@ -326,8 +306,7 @@ UniquePtr<MarkdownNode> MarkdownReader::build_node_from_token(Token* token) {
         std::reverse(elements.begin(), elements.end());
 
         return static_pointer_cast<MarkdownNode>(allocate_unique<ArrayNode>(m_memory_resource, std::move(elements)));
-    }
-    default:
+    } else {
         KW_ASSERT(false, "Invalid token type.");
         return UniquePtr<MarkdownNode>();
     }

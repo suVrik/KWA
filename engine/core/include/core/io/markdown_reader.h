@@ -5,7 +5,7 @@
 
 namespace kw {
 
-class MarkdownReader : public TextParser<MarkdownReader, MarkdownType> {
+class MarkdownReader : public TextParser<MarkdownReader> {
 public:
     MarkdownReader(MemoryResource& memory_resource, const char* relative_path);
 
@@ -17,7 +17,6 @@ private:
     class NumberToken : public Token {
     public:
         void init(const char* begin, const char* end) override;
-        MarkdownType get_type() const override;
 
         double value = 0.0;
     };
@@ -25,7 +24,6 @@ private:
     class StringToken : public Token {
     public:
         void init(const char* begin, const char* end) override;
-        MarkdownType get_type() const override;
 
         StringView value;
     };
@@ -33,19 +31,16 @@ private:
     class BooleanToken : public Token {
     public:
         void init(const char* begin, const char* end) override;
-        MarkdownType get_type() const override;
 
         bool value = false;
     };
 
     class ObjectToken : public Token {
     public:
-        MarkdownType get_type() const override;
     };
 
     class ArrayToken : public Token {
     public:
-        MarkdownType get_type() const override;
     };
 
     bool letter();

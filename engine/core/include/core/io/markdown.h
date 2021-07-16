@@ -7,14 +7,6 @@
 
 namespace kw {
 
-enum class MarkdownType {
-    NUMBER,
-    STRING,
-    BOOLEAN,
-    OBJECT,
-    ARRAY,
-};
-
 class MarkdownNode {
 public:
     MarkdownNode() = default;
@@ -34,14 +26,15 @@ public:
 
     // Return nullptr for other node types.
     template <typename T>
-    T* is();
+    T* is() {
+        return dynamic_cast<T*>(this);
+    }
     
     // Return nullptr for other node types.
     template <typename T>
-    const T* is() const;
-
-protected:
-    virtual MarkdownType get_type() const = 0;
+    const T* is() const {
+        return dynamic_cast<const T*>(this);
+    }
 };
 
 class NumberNode : public MarkdownNode {
@@ -53,11 +46,6 @@ public:
         
     double get_value() const {
         return m_value;
-    }
-
-protected:
-    MarkdownType get_type() const override {
-        return MarkdownType::NUMBER;
     }
 
 private:
@@ -75,11 +63,6 @@ public:
         return m_value;
     }
 
-protected:
-    MarkdownType get_type() const override {
-        return MarkdownType::STRING;
-    }
-
 private:
     String m_value;
 };
@@ -93,11 +76,6 @@ public:
         
     bool get_value() const {
         return m_value;
-    }
-
-protected:
-    MarkdownType get_type() const override {
-        return MarkdownType::BOOLEAN;
     }
 
 private:
@@ -129,9 +107,6 @@ public:
     iterator begin() const;
     iterator end() const;
 
-protected:
-    MarkdownType get_type() const override;
-
 private:
     Map<String, UniquePtr<MarkdownNode>, TransparentLess> m_elements;
 };
@@ -148,9 +123,6 @@ public:
 
     iterator begin() const;
     iterator end() const;
-
-protected:
-    MarkdownType get_type() const override;
 
 private:
     Vector<UniquePtr<MarkdownNode>> m_elements;

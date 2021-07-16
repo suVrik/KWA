@@ -4,21 +4,18 @@
 
 namespace kw {
 
-template <typename Child, typename TokenType>
-void TextParser<Child, TokenType>::Token::init(const char* begin, const char* end) {
+template <typename Child>
+void TextParser<Child>::Token::init(const char* begin, const char* end) {
     // No-op.
 }
 
-template <typename Child, typename TokenType>
-class TextParser<Child, TokenType>::RootToken : public TextParser<Child, TokenType>::Token {
+template <typename Child>
+class TextParser<Child>::RootToken : public TextParser<Child>::Token {
 public:
-    virtual TokenType get_type() const {
-        return {};
-    }
 };
 
-template <typename Child, typename TokenType>
-TextParser<Child, TokenType>::TextParser(MemoryResource& memory_resource, const char* relative_path)
+template <typename Child>
+TextParser<Child>::TextParser(MemoryResource& memory_resource, const char* relative_path)
     : m_memory_resource(memory_resource)
     , m_data(memory_resource)
     , m_token(static_pointer_cast<Token>(allocate_unique<RootToken>(memory_resource)))
@@ -49,8 +46,8 @@ TextParser<Child, TokenType>::TextParser(MemoryResource& memory_resource, const 
     m_current = m_data.data();
 }
 
-template <typename Child, typename TokenType>
-bool TextParser<Child, TokenType>::parse(char c) {
+template <typename Child>
+bool TextParser<Child>::parse(char c) {
     if (*m_current == c) {
         m_current++;
         return true;
@@ -58,8 +55,8 @@ bool TextParser<Child, TokenType>::parse(char c) {
     return false;
 }
 
-template <typename Child, typename TokenType>
-bool TextParser<Child, TokenType>::parse(const char* string) {
+template <typename Child>
+bool TextParser<Child>::parse(const char* string) {
     const char* temp_current = m_current;
     while (*string != '\0') {
         if (*m_current != *(string++)) {
@@ -71,8 +68,8 @@ bool TextParser<Child, TokenType>::parse(const char* string) {
     return true;
 }
 
-template <typename Child, typename TokenType>
-bool TextParser<Child, TokenType>::parse(bool (Child::*func)()) {
+template <typename Child>
+bool TextParser<Child>::parse(bool (Child::*func)()) {
     const char* temp_current = m_current;
     Token* temp_last = m_token->last.get();
     if (!(static_cast<Child*>(this)->*func)()) {
@@ -83,9 +80,9 @@ bool TextParser<Child, TokenType>::parse(bool (Child::*func)()) {
     return true;
 }
 
-template <typename Child, typename TokenType>
+template <typename Child>
 template <typename Arg, typename... Args>
-bool TextParser<Child, TokenType>::parse(Arg arg, Args... args) {
+bool TextParser<Child>::parse(Arg arg, Args... args) {
     const char* temp_current = m_current;
     Token* temp_last = m_token->last.get();
     if (!parse(arg) || !parse(args...)) {
@@ -96,22 +93,22 @@ bool TextParser<Child, TokenType>::parse(Arg arg, Args... args) {
     return true;
 }
 
-template <typename Child, typename TokenType>
+template <typename Child>
 template <typename Arg>
-bool TextParser<Child, TokenType>::parse_recursive(Arg arg) {
+bool TextParser<Child>::parse_recursive(Arg arg) {
     while (parse(arg));
     return true;
 }
 
-template <typename Child, typename TokenType>
+template <typename Child>
 template <typename Arg, typename... Args>
-bool TextParser<Child, TokenType>::parse_recursive(Arg arg, Args... args) {
+bool TextParser<Child>::parse_recursive(Arg arg, Args... args) {
     while (parse(arg) && parse(args...));
     return true;
 }
 
-template <typename Child, typename TokenType>
-bool TextParser<Child, TokenType>::parse_any_of(const char* string) {
+template <typename Child>
+bool TextParser<Child>::parse_any_of(const char* string) {
     while (*string != '\0') {
         if (parse(*(string++))) {
             return true;
@@ -120,8 +117,8 @@ bool TextParser<Child, TokenType>::parse_any_of(const char* string) {
     return false;
 }
 
-template <typename Child, typename TokenType>
-bool TextParser<Child, TokenType>::parse_any_but(const char* string) {
+template <typename Child>
+bool TextParser<Child>::parse_any_but(const char* string) {
     do {
         if (*m_current == *string) {
             return false;
@@ -131,9 +128,9 @@ bool TextParser<Child, TokenType>::parse_any_but(const char* string) {
     return true;
 }
 
-template <typename Child, typename TokenType>
+template <typename Child>
 template <typename T, typename... Args>
-bool TextParser<Child, TokenType>::token(Args... args) {
+bool TextParser<Child>::token(Args... args) {
     const char* old_current = m_current;
     UniquePtr<Token> old_token = std::move(m_token);
 
@@ -151,13 +148,13 @@ bool TextParser<Child, TokenType>::token(Args... args) {
     return result;
 }
 
-template <typename Child, typename TokenType>
-typename TextParser<Child, TokenType>::Token* TextParser<Child, TokenType>::get_last() const {
+template <typename Child>
+typename TextParser<Child>::Token* TextParser<Child>::get_last() const {
     return m_token->last.get();
 }
 
-template <typename Child, typename TokenType>
-void TextParser<Child, TokenType>::pop_until(Token* token) {
+template <typename Child>
+void TextParser<Child>::pop_until(Token* token) {
     while (m_token->last.get() != token) {
         UniquePtr<Token> old_last = std::move(m_token->last);
         m_token->last = std::move(old_last->previous);
