@@ -1,3 +1,5 @@
+#pragma once
+
 #include "render/acceleration_structure/acceleration_structure.h"
 
 #include <shared_mutex>

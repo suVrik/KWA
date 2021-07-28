@@ -10,7 +10,7 @@ class AccelerationStructure;
 
 class AccelerationStructurePrimitive : public Primitive {
 public:
-    AccelerationStructurePrimitive();
+    explicit AccelerationStructurePrimitive(const transform& local_transform = transform());
     ~AccelerationStructurePrimitive() override;
 
     // Acceleration structure is set from AccelerationStructure's `add` method.
@@ -21,6 +21,9 @@ public:
     const aabbox& get_bounds() const {
         return m_bounds;
     }
+
+protected:
+    // TODO: Call acceleration structure's `update` from `global_transform_updated`.
 
 protected:
     AccelerationStructure* m_acceleration_structure;

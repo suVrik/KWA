@@ -3,8 +3,9 @@
 
 namespace kw {
 
-AccelerationStructurePrimitive::AccelerationStructurePrimitive()
-    : m_acceleration_structure(nullptr)
+AccelerationStructurePrimitive::AccelerationStructurePrimitive(const transform& local_transform)
+    : Primitive(local_transform)
+    , m_acceleration_structure(nullptr)
     , m_node(nullptr)
 {
 }

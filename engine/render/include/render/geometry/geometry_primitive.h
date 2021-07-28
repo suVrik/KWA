@@ -20,6 +20,9 @@ public:
     const SharedPtr<Material>& get_material() const;
     void set_material(SharedPtr<Material> geometry);
 
+protected:
+    // TODO: Update bounds in `global_transform_updated`.
+
 private:
     SharedPtr<Geometry> m_geometry;
     SharedPtr<Material> m_material;
