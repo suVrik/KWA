@@ -105,7 +105,7 @@ public:
 
         // Won't be used for solid geometry.
         UniformBufferDescriptor uniform_buffer_descriptor{};
-        uniform_buffer_descriptor.variable_name = "GeometryData";
+        uniform_buffer_descriptor.variable_name = "GeometryUniform";
         uniform_buffer_descriptor.size = sizeof(Material::UniformData);
 
         Vector<UniformTextureDescriptor> uniform_texture_descriptors(m_manager.m_transient_memory_resource);
@@ -150,11 +150,10 @@ public:
         graphics_pipeline_descriptor.uniform_sampler_descriptor_count = 1;
         graphics_pipeline_descriptor.uniform_buffer_descriptors = &uniform_buffer_descriptor;
         graphics_pipeline_descriptor.uniform_buffer_descriptor_count = m_graphics_pipeline_context.is_skinned ? 1 : 0;
-        graphics_pipeline_descriptor.push_constants_name = "geometry_data";
+        graphics_pipeline_descriptor.push_constants_name = "geometry_push_constants";
         graphics_pipeline_descriptor.push_constants_size = sizeof(Material::PushConstants);
 
         *m_graphics_pipeline_context.graphics_pipeline = m_manager.m_frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
-        KW_ASSERT(*m_graphics_pipeline_context.graphics_pipeline != nullptr, "Invalid graphics pipeline.");
     }
 
     const char* get_name() const override {

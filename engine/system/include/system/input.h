@@ -22,6 +22,7 @@ public:
 
     String get_text(MemoryResource& memory_resource) const;
 
+    // BUTTON_LEFT, BUTTON_MIDDLE, BUTTON_RIGHT...
     bool is_button_pressed(uint32_t button);
     bool is_button_released(uint32_t button);
     bool is_button_down(uint32_t button);

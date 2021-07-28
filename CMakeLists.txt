@@ -133,6 +133,27 @@ function(target_add_materials target materials)
     )
 endfunction()
 
+function(target_add_levels target levels)
+    foreach(absolute_path ${levels})
+        cmake_path(RELATIVE_PATH absolute_path BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path)
+
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
+            COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
+            MAIN_DEPENDENCY ${absolute_path}
+            COMMAND_EXPAND_LISTS
+        )
+    endforeach()
+
+    target_sources(${target} PRIVATE ${levels})
+
+    source_group(
+        TREE "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+        PREFIX "Resource Files"
+        FILES ${levels}
+    )
+endfunction()
+
 function(target_add_resources target)
     file(GLOB_RECURSE shaders "resource/*.hlsl")
     target_add_shaders(${target} "${shaders}")
@@ -145,6 +166,9 @@ function(target_add_resources target)
 
     file(GLOB_RECURSE materials "resource/*.kwm")
     target_add_materials(${target} "${materials}")
+
+    file(GLOB_RECURSE levels "resource/*.txt")
+    target_add_materials(${target} "${levels}")
 endfunction()
 
 add_subdirectory("thirdparty")
