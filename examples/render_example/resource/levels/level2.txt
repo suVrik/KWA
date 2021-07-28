@@ -1,0 +1,9 @@
+1 1
+primitives
+resource/geometry/primitives.kwg
+resource/materials/environment_2.kwm
+primitives
+1.0 0.0 0.0 0.0
+0.0 1.0 0.0 0.0
+0.0 0.0 1.0 0.0
+0.0 0.0 0.0 1.0

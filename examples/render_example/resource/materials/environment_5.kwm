@@ -1,0 +1,11 @@
+{
+  vertex_shader: "resource/shaders/geometry/solid_vertex.hlsl"
+  fragment_shader: "resource/shaders/geometry/solid_fragment.hlsl"
+  textures: {
+    albedo_alpha_uniform_attachment: "resource/textures/environment_5_aa.kwt"
+    normal_uniform_attachment: "resource/textures/environment_5_n.kwt"
+    ao_roughness_metalness_uniform_attachment: "resource/textures/environment_5_arm.kwt"
+    emission_uniform_attachment: "resource/textures/environment_5_e.kwt"
+  }
+  is_skinned: false
+}
