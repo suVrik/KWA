@@ -41,16 +41,11 @@ struct DrawCallDescriptor {
 
     uint8_t stencil_reference;
 
-    // When some attachments have `count` greater than 1, you can specify which of those attachments to use. Keep this
-    // `nullptr` and `0` accordingly to use only first attachments. Otherwise count must match flattened graphics pipeline.
-    const uint32_t* uniform_attachment_indices;
-    size_t uniform_attachment_index_count;
-
     const Texture* const* uniform_textures;
-    size_t uniform_texture_count; // Must match flattened graphics pipeline.
+    size_t uniform_texture_count; // Must match graphics pipeline.
 
     const UniformBuffer* const* uniform_buffers;
-    size_t uniform_buffer_count; // Must match flattened graphics pipeline.
+    size_t uniform_buffer_count; // Must match graphics pipeline.
 
     const void* push_constants;
     size_t push_constants_size; // Must match graphics pipeline.
@@ -65,22 +60,29 @@ public:
     virtual uint32_t get_attachment_width() const = 0;
     virtual uint32_t get_attachment_height() const = 0;
 
-    // Attachment index may be different than 0 for render passes with attachments that have count greater than 1.
-    virtual uint32_t get_attachemnt_index() const = 0;
+    virtual uint32_t get_context_index() const = 0;
 };
 
 class RenderPass {
 public:
     virtual ~RenderPass() = default;
 
-    // Must be called not more than once a frame for each attachment index. Must be called between first and second
-    // frame graph tasks. May return `nullptr` if window is minimized.
-    RenderPassContext* begin(uint32_t attachment_index = 0);
+    // Must be called between first and second frame graph tasks. May return `nullptr` if window is minimized.
+    // Multiple calls per frame are allowed (useful to render shadow maps and reflection probes). Different render pass
+    // contexts can be used in parallel on host, but they always execute sequentially on device. The order of execution
+    // on device is defined by context index. The previous attachment content is not guaranteed to be preserved.
+    RenderPassContext* begin(uint32_t context_index = 0);
 
     // If source attachment is smaller than destination host texture, the remaining host texture area is undefined.
     // If source attachment is larger than destination host texture, the source attachment is cropped.
     // Returns index that can be tested in `FrameGraph` on when host texture can be accessed on host.
-    uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture);
+    // Context index specifies after which context to run on device.
+    uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index = 0);
+
+    // If source attachment is smaller than destination texture, the remaining host texture area is undefined.
+    // If source attachment is larger than destination texture, the source attachment is cropped.
+    // Context index specifies after which context to run on device.
+    void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer = 0, uint32_t context_index = 0);
 
 private:
     // API-specific structure set by frame graph.
@@ -221,15 +223,11 @@ struct AttachmentBlendDescriptor {
 struct UniformAttachmentDescriptor {
     const char* variable_name;
     const char* attachment_name;
-
-    // Must be less or equal than `count` specified in attachment descriptor. 0 is interpreted as 1.
-    uint32_t count;
 };
 
 struct UniformTextureDescriptor {
     const char* variable_name;
     TextureType texture_type;
-    uint32_t count; // 0 is interpreted as 1.
 };
 
 enum class Filter : uint32_t {
@@ -287,7 +285,6 @@ struct UniformSamplerDescriptor {
 struct UniformBufferDescriptor {
     const char* variable_name;
     uint64_t size;
-    uint32_t count; // 0 is interpreted as 1.
 };
 
 struct GraphicsPipelineDescriptor {
@@ -409,14 +406,12 @@ struct AttachmentDescriptor {
     // Only color and depth stencil formats are allowed.
     TextureFormat format;
 
+    // Operation that is performed on first write access to the attachment.
+    LoadOp load_op;
+
     SizeClass size_class;
     float width; // 0 is interpreted as 1.
     float height; // 0 is interpreted as 1.
-
-    uint32_t count; // 0 is interpreted as 1.
-
-    // Operation that is performed on first write access to the attachment.
-    LoadOp load_op;
 
     // For color formats.
     float clear_color[4];

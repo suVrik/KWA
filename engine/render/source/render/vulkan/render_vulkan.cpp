@@ -451,6 +451,12 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
         uint64_t size_left = static_cast<uint64_t>(size);
         while (size_left > 0) {
             //
+            // Synchronously change both the staging memory pointers and buffer upload commands.
+            //
+
+            std::lock_guard lock(m_buffer_upload_command_mutex);
+
+            //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
             //
 
@@ -469,23 +475,14 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
             buffer_upload_command.staging_buffer_offset = allocation_offset;
             buffer_upload_command.staging_buffer_size = allocation_size;
             buffer_upload_command.device_buffer_offset = vertex_buffer_vulkan->get_available_size();
+            m_buffer_upload_commands.push_back(buffer_upload_command);
 
-            // If this resource is used in a draw call, the corresponding submit must wait for this semaphore value.
-            uint64_t semaphore_value;
+            //
+            // All the vertex buffer users must wait until next transfer is complete.
+            //
 
-            {
-                std::lock_guard lock(m_buffer_upload_command_mutex);
-
-                m_buffer_upload_commands.push_back(buffer_upload_command);
-
-                // The fact that we successfully locked `m_buffer_upload_command_mutex` means there's no
-                // `submit_upload_commands` running in parallel and therefore semaphore value will be increased
-                // only after new buffer upload command is processed.
-                semaphore_value = semaphore->value + 1;
-            }
-
-            KW_ASSERT(vertex_buffer_vulkan->transfer_semaphore_value <= semaphore_value);
-            vertex_buffer_vulkan->transfer_semaphore_value = semaphore_value;
+            KW_ASSERT(vertex_buffer_vulkan->transfer_semaphore_value <= semaphore->value + 1);
+            vertex_buffer_vulkan->transfer_semaphore_value = semaphore->value + 1;
 
             //
             // Advance input buffer.
@@ -574,6 +571,12 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
         uint64_t size_left = static_cast<uint64_t>(size);
         while (size_left > 0) {
             //
+            // Synchronously change both the staging memory pointers and buffer upload commands.
+            //
+
+            std::lock_guard lock(m_buffer_upload_command_mutex);
+
+            //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
             //
 
@@ -592,23 +595,14 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
             buffer_upload_command.staging_buffer_offset = allocation_offset;
             buffer_upload_command.staging_buffer_size = allocation_size;
             buffer_upload_command.device_buffer_offset = index_buffer_vulkan->get_available_size();
+            m_buffer_upload_commands.push_back(buffer_upload_command);
 
-            // If this resource is used in a draw call, the corresponding submit must wait for this semaphore value.
-            uint64_t semaphore_value;
+            //
+            // All the index buffer users must wait until next transfer is complete.
+            //
 
-            {
-                std::lock_guard lock(m_buffer_upload_command_mutex);
-
-                m_buffer_upload_commands.push_back(buffer_upload_command);
-
-                // The fact that we successfully locked `m_buffer_upload_command_mutex` means there's no
-                // `submit_upload_commands` running in parallel and therefore semaphore value will be increased
-                // only after new buffer upload command is processed.
-                semaphore_value = semaphore->value + 1;
-            }
-
-            KW_ASSERT(index_buffer_vulkan->transfer_semaphore_value <= semaphore_value);
-            index_buffer_vulkan->transfer_semaphore_value = semaphore_value;
+            KW_ASSERT(index_buffer_vulkan->transfer_semaphore_value <= semaphore->value + 1);
+            index_buffer_vulkan->transfer_semaphore_value = semaphore->value + 1;
 
             //
             // Advance input buffer.
@@ -884,50 +878,50 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
 #endif // KW_DEBUG
 
     if (upload_texture_descriptor.size <= m_staging_buffer_size / 2) {
-        //
-        // Find staging memory range to store the buffer data and upload the buffer data to this range.
-        //
-
-        uint64_t allocation_offset = allocate_from_staging_memory(upload_texture_descriptor.size, block_size);
-        KW_ASSERT(allocation_offset < m_staging_buffer_size);
-
-        std::memcpy(static_cast<uint8_t*>(m_staging_memory_mapping) + allocation_offset, upload_texture_descriptor.data, upload_texture_descriptor.size);
-
-        //
-        // Enqueue upload command and return.
-        //
-
         TextureUploadCommand texture_upload_command{};
-        texture_upload_command.texture = texture_vulkan;
-        texture_upload_command.staging_buffer_offset = allocation_offset;
-        texture_upload_command.staging_buffer_size = upload_texture_descriptor.size;
-        texture_upload_command.base_mip_level = upload_texture_descriptor.base_mip_level;
-        texture_upload_command.mip_level_count = std::max(upload_texture_descriptor.mip_level_count, 1U);
-        texture_upload_command.base_array_layer = upload_texture_descriptor.base_array_layer;
-        texture_upload_command.array_layer_count = std::max(upload_texture_descriptor.array_layer_count, 1U);
-        texture_upload_command.x = upload_texture_descriptor.x;
-        texture_upload_command.y = upload_texture_descriptor.y;
-        texture_upload_command.z = upload_texture_descriptor.z;
-        texture_upload_command.width = upload_texture_descriptor.width;
-        texture_upload_command.height = upload_texture_descriptor.height;
-        texture_upload_command.depth = std::max(upload_texture_descriptor.depth, 1U);
-
-        // If this resource is used in a draw call, the corresponding submit must wait for this semaphore value.
-        uint64_t semaphore_value;
 
         {
-            std::lock_guard lock(m_buffer_upload_command_mutex);
+            //
+            // Synchronously change both the staging memory pointers and texture upload commands.
+            //
 
+            std::lock_guard lock(m_texture_upload_command_mutex);
+
+            //
+            // Find staging memory range to store the buffer data and upload the buffer data to this range.
+            //
+
+            uint64_t allocation_offset = allocate_from_staging_memory(upload_texture_descriptor.size, block_size);
+            KW_ASSERT(allocation_offset < m_staging_buffer_size);
+
+            std::memcpy(static_cast<uint8_t*>(m_staging_memory_mapping) + allocation_offset, upload_texture_descriptor.data, upload_texture_descriptor.size);
+
+            //
+            // Enqueue upload command and return.
+            //
+
+            texture_upload_command.texture = texture_vulkan;
+            texture_upload_command.staging_buffer_offset = allocation_offset;
+            texture_upload_command.staging_buffer_size = upload_texture_descriptor.size;
+            texture_upload_command.base_mip_level = upload_texture_descriptor.base_mip_level;
+            texture_upload_command.mip_level_count = std::max(upload_texture_descriptor.mip_level_count, 1U);
+            texture_upload_command.base_array_layer = upload_texture_descriptor.base_array_layer;
+            texture_upload_command.array_layer_count = std::max(upload_texture_descriptor.array_layer_count, 1U);
+            texture_upload_command.x = upload_texture_descriptor.x;
+            texture_upload_command.y = upload_texture_descriptor.y;
+            texture_upload_command.z = upload_texture_descriptor.z;
+            texture_upload_command.width = upload_texture_descriptor.width;
+            texture_upload_command.height = upload_texture_descriptor.height;
+            texture_upload_command.depth = std::max(upload_texture_descriptor.depth, 1U);
             m_texture_upload_commands.push_back(texture_upload_command);
 
-            // The fact that we successfully locked `m_buffer_upload_command_mutex` means there's no
-            // `submit_upload_commands` running in parallel and therefore semaphore value will be increased
-            // only after new buffer upload command is processed.
-            semaphore_value = semaphore->value + 1;
-        }
+            //
+            // All the texture users must wait until next transfer is complete.
+            //
 
-        KW_ASSERT(texture_vulkan->transfer_semaphore_value <= semaphore_value);
-        texture_vulkan->transfer_semaphore_value = semaphore_value;
+            KW_ASSERT(texture_vulkan->transfer_semaphore_value <= semaphore->value + 1);
+            texture_vulkan->transfer_semaphore_value = semaphore->value + 1;
+        }
 
         //
         // If this upload completes a mip (or a few mips), create new image view and update available mip level count.

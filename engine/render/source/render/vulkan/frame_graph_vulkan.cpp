@@ -192,7 +192,6 @@ FrameGraphVulkan::AttachmentData::AttachmentData(MemoryResource& memory_resource
     , max_parallel_block_index(0)
     , usage_mask(0)
     , initial_layout(VK_IMAGE_LAYOUT_UNDEFINED)
-    , blit_data(memory_resource)
 {
 }
 
@@ -219,14 +218,14 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(MemoryResource& memory_resource)
     , bound_descriptor_sets(memory_resource)
     , unbound_descriptor_sets(memory_resource)
     , descriptor_set_count(1)
-    , uniform_attachment_descriptor_count(0)
+    , uniform_attachment_count(0)
     , uniform_attachment_indices(memory_resource)
-    , uniform_attachment_mapping(memory_resource)
-    , uniform_texture_descriptor_count(0)
+    , uniform_texture_count(0)
     , uniform_texture_first_binding(0)
     , uniform_texture_mapping(memory_resource)
+    , uniform_texture_types(memory_resource)
     , uniform_samplers(memory_resource)
-    , uniform_buffer_descriptor_count(0)
+    , uniform_buffer_count(0)
     , uniform_buffer_first_binding(0)
     , uniform_buffer_mapping(memory_resource)
     , uniform_buffer_sizes(memory_resource)
@@ -246,14 +245,14 @@ GraphicsPipelineVulkan::GraphicsPipelineVulkan(GraphicsPipelineVulkan&& other)
     , bound_descriptor_sets(std::move(other.bound_descriptor_sets))
     , unbound_descriptor_sets(std::move(other.unbound_descriptor_sets))
     , descriptor_set_count(other.descriptor_set_count)
-    , uniform_attachment_descriptor_count(other.uniform_attachment_descriptor_count)
+    , uniform_attachment_count(other.uniform_attachment_count)
     , uniform_attachment_indices(std::move(other.uniform_attachment_indices))
-    , uniform_attachment_mapping(std::move(other.uniform_attachment_mapping))
-    , uniform_texture_descriptor_count(other.uniform_texture_descriptor_count)
+    , uniform_texture_count(other.uniform_texture_count)
     , uniform_texture_first_binding(other.uniform_texture_first_binding)
     , uniform_texture_mapping(std::move(other.uniform_texture_mapping))
+    , uniform_texture_types(std::move(other.uniform_texture_types))
     , uniform_samplers(std::move(other.uniform_samplers))
-    , uniform_buffer_descriptor_count(other.uniform_buffer_descriptor_count)
+    , uniform_buffer_count(other.uniform_buffer_count)
     , uniform_buffer_first_binding(other.uniform_buffer_first_binding)
     , uniform_buffer_mapping(std::move(other.uniform_buffer_mapping))
     , uniform_buffer_sizes(std::move(other.uniform_buffer_sizes))
@@ -280,6 +279,7 @@ FrameGraphVulkan::FrameGraphVulkan(const FrameGraphDescriptor& descriptor)
     , m_swapchain_image_views{ VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE }
     , m_attachment_descriptors(m_render.persistent_memory_resource)
     , m_attachment_access_matrix(m_render.persistent_memory_resource)
+    , m_attachment_barrier_matrix(m_render.persistent_memory_resource)
     , m_attachment_data(m_render.persistent_memory_resource)
     , m_allocation_data(m_render.persistent_memory_resource)
     , m_render_pass_data(m_render.persistent_memory_resource)
@@ -529,13 +529,7 @@ ShaderReflection FrameGraphVulkan::get_shader_reflection(const char* relative_pa
                 }
                 break;
             }
-
-            uint32_t count = 1;
-            for (uint32_t j = 0; j < descriptor_bindings[i]->array.dims_count; j++) {
-                count *= descriptor_bindings[i]->array.dims[j];
-            }
-
-            (uniform_texture_descriptor++)->count = count;
+            uniform_texture_descriptor++;
             break;
         }
         case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
@@ -544,14 +538,7 @@ ShaderReflection FrameGraphVulkan::get_shader_reflection(const char* relative_pa
         case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
             uniform_buffer_descriptor->variable_name = data;
             uniform_buffer_descriptor->size = descriptor_bindings[i]->block.size;
-
-            uint32_t count = 1;
-
-            for (uint32_t j = 0; j < descriptor_bindings[i]->array.dims_count; j++) {
-                count *= descriptor_bindings[i]->array.dims[j];
-            }
-
-            (uniform_buffer_descriptor++)->count = count;
+            uniform_buffer_descriptor++;
             break;
         }
         }
@@ -803,36 +790,22 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_attachment_descriptor_count == 0,
+        graphics_pipeline_vulkan->uniform_attachment_count == 0,
         "Graphics pipeline's uniform attachment descriptor count is expected to be zero."
     );
 
-    for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_attachment_descriptor_count; i++) {
-        graphics_pipeline_vulkan->uniform_attachment_descriptor_count += std::max(graphics_pipeline_descriptor.uniform_attachment_descriptors[i].count, 1U);
-    }
+    graphics_pipeline_vulkan->uniform_attachment_count = graphics_pipeline_descriptor.uniform_attachment_descriptor_count;
 
     KW_ASSERT(
         graphics_pipeline_vulkan->uniform_attachment_indices.empty(),
-        "Graphics pipeline's uniform attachment indices is expected to be empty."
+        "Graphics pipeline's uniform attachment indices are expected to be empty."
     );
     
-    graphics_pipeline_vulkan->uniform_attachment_indices.reserve(graphics_pipeline_vulkan->uniform_attachment_descriptor_count);
-
-    KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_attachment_mapping.empty(),
-        "Graphics pipeline's uniform attachment mapping is expected to be empty"
-    );
-
-    graphics_pipeline_vulkan->uniform_attachment_mapping.reserve(graphics_pipeline_vulkan->uniform_attachment_descriptor_count);
-
-    uint32_t flattened_uniform_attachment_index = 0;
+    graphics_pipeline_vulkan->uniform_attachment_indices.reserve(graphics_pipeline_vulkan->uniform_attachment_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_attachment_descriptor_count; i++) {
         const UniformAttachmentDescriptor& uniform_attachment_descriptor = graphics_pipeline_descriptor.uniform_attachment_descriptors[i];
 
-        // Basically flattened array size.
-        uint32_t uniform_attachment_count = std::max(uniform_attachment_descriptor.count, 1U);
-        
         //
         // Validation.
         //
@@ -860,7 +833,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -885,8 +858,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_attachment_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
                     );
 
                     SPV_ERROR(
@@ -928,8 +901,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_attachment_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
                     );
 
                     SPV_ERROR(
@@ -970,31 +943,26 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             // `create_graphics_pipeline` could be called from multiple threads.
             std::lock_guard lock(m_attachment_access_matrix_mutex);
 
-            uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-            KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                KW_ASSERT(access_index < m_attachment_access_matrix.size());
+            if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
+                if ((m_attachment_access_matrix[access_index] & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::NONE) {
+                    m_attachment_access_matrix[access_index] |= AttachmentAccess::VERTEX_SHADER;
 
-                if ((shader_stage_flags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT) {
-                    if ((m_attachment_access_matrix[access_index] & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::NONE) {
-                        m_attachment_access_matrix[access_index] |= AttachmentAccess::VERTEX_SHADER;
-
-                        // The next render pass that accesses this attachment
-                        // may need to wait for vertex shader to complete.
-                        attachment_access_matrix_changed = true;
-                    }
+                    // The next render pass that accesses this attachment
+                    // may need to wait for vertex shader to complete.
+                    attachment_access_matrix_changed = true;
                 }
+            }
 
-                if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
-                    if ((m_attachment_access_matrix[access_index] & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::NONE) {
-                        m_attachment_access_matrix[access_index] |= AttachmentAccess::FRAGMENT_SHADER;
+            if ((shader_stage_flags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT) {
+                if ((m_attachment_access_matrix[access_index] & AttachmentAccess::FRAGMENT_SHADER) == AttachmentAccess::NONE) {
+                    m_attachment_access_matrix[access_index] |= AttachmentAccess::FRAGMENT_SHADER;
 
-                        // The next render pass that accesses this attachment
-                        // may need to wait for fragment shader to complete.
-                        attachment_access_matrix_changed = true;
-                    }
+                    // The next render pass that accesses this attachment
+                    // may need to wait for fragment shader to complete.
+                    attachment_access_matrix_changed = true;
                 }
             }
         } else {
@@ -1012,42 +980,28 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             VkDescriptorSetLayoutBinding descriptor_set_layout_binding{};
             descriptor_set_layout_binding.binding = current_binding++;
             descriptor_set_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-            descriptor_set_layout_binding.descriptorCount = uniform_attachment_count;
+            descriptor_set_layout_binding.descriptorCount = 1;
             descriptor_set_layout_binding.stageFlags = shader_stage_flags;
             descriptor_set_layout_binding.pImmutableSamplers = nullptr;
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
 
-            graphics_pipeline_vulkan->uniform_attachment_indices.insert(graphics_pipeline_vulkan->uniform_attachment_indices.end(), uniform_attachment_count, attachment_index);
-
-            for (uint32_t j = 0; j < uniform_attachment_count; j++) {
-                KW_ASSERT(flattened_uniform_attachment_index + j < graphics_pipeline_vulkan->uniform_attachment_descriptor_count);
-                graphics_pipeline_vulkan->uniform_attachment_mapping.push_back(flattened_uniform_attachment_index + j);
-            }
+            graphics_pipeline_vulkan->uniform_attachment_indices.push_back(attachment_index);
         }
-
-        flattened_uniform_attachment_index += uniform_attachment_count;
     }
-
-    KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_attachment_indices.size() == graphics_pipeline_vulkan->uniform_attachment_mapping.size(),
-        "Uniform attachment indices/mapping mismatch."
-    );
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////// Uniforms textures. ///////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_texture_descriptor_count == 0,
+        graphics_pipeline_vulkan->uniform_texture_count == 0,
         "Graphics pipeline's uniform texture descriptor count is expected to be zero."
     );
 
-    for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_texture_descriptor_count; i++) {
-        graphics_pipeline_vulkan->uniform_texture_descriptor_count += std::max(graphics_pipeline_descriptor.uniform_texture_descriptors[i].count, 1U);
-    }
+    graphics_pipeline_vulkan->uniform_texture_count = graphics_pipeline_descriptor.uniform_texture_descriptor_count;
 
     KW_ERROR(
-        graphics_pipeline_vulkan->uniform_attachment_descriptor_count + graphics_pipeline_vulkan->uniform_texture_descriptor_count <= m_uniform_texture_count_per_descriptor_pool,
+        graphics_pipeline_vulkan->uniform_attachment_count + graphics_pipeline_vulkan->uniform_texture_count <= m_uniform_texture_count_per_descriptor_pool,
         "The number of image descriptors in graphics pipeline is greater than the number of image descriptors in descriptor pool."
     );
 
@@ -1063,16 +1017,18 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         "Graphics pipeline's uniform texture mapping is expected to be empty."
     );
 
-    graphics_pipeline_vulkan->uniform_texture_mapping.reserve(graphics_pipeline_vulkan->uniform_texture_descriptor_count);
+    graphics_pipeline_vulkan->uniform_texture_mapping.reserve(graphics_pipeline_vulkan->uniform_texture_count);
 
-    uint32_t flattened_uniform_texture_index = 0;
+    KW_ASSERT(
+        graphics_pipeline_vulkan->uniform_texture_types.empty(),
+        "Graphics pipeline's uniform texture types are expected to be empty."
+    );
+
+    graphics_pipeline_vulkan->uniform_texture_types.reserve(graphics_pipeline_vulkan->uniform_buffer_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_texture_descriptor_count; i++) {
         const UniformTextureDescriptor& uniform_texture_descriptor = graphics_pipeline_descriptor.uniform_texture_descriptors[i];
 
-        // Basically flattened array size.
-        uint32_t uniform_texture_count = std::max(uniform_texture_descriptor.count, 1U);
-        
         //
         // Validation.
         //
@@ -1095,7 +1051,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1150,8 +1106,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_texture_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
                     );
 
                     SPV_ERROR(
@@ -1223,8 +1179,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_texture_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
                     );
 
                     SPV_ERROR(
@@ -1247,15 +1203,13 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             VkDescriptorSetLayoutBinding descriptor_set_layout_binding{};
             descriptor_set_layout_binding.binding = current_binding++;
             descriptor_set_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-            descriptor_set_layout_binding.descriptorCount = uniform_texture_count;
+            descriptor_set_layout_binding.descriptorCount = 1;
             descriptor_set_layout_binding.stageFlags = shader_stage_flags;
             descriptor_set_layout_binding.pImmutableSamplers = nullptr;
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
 
-            for (uint32_t j = 0; j < uniform_texture_count; j++) {
-                KW_ASSERT(flattened_uniform_texture_index + j < graphics_pipeline_vulkan->uniform_texture_descriptor_count);
-                graphics_pipeline_vulkan->uniform_texture_mapping.push_back(flattened_uniform_texture_index + j);
-            }
+            KW_ASSERT(static_cast<uint32_t>(i) < graphics_pipeline_vulkan->uniform_texture_count);
+            graphics_pipeline_vulkan->uniform_texture_mapping.push_back(static_cast<uint32_t>(i));
         } else {
             Log::print(
                 "[WARNING] Texture \"%s\" is not found (graphics pipeline \"%s\").",
@@ -1263,7 +1217,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             );
         }
 
-        flattened_uniform_texture_index += uniform_texture_count;
+        graphics_pipeline_vulkan->uniform_texture_types.push_back(uniform_texture_descriptor.texture_type);
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1360,7 +1314,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1457,16 +1411,14 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_buffer_descriptor_count == 0,
+        graphics_pipeline_vulkan->uniform_buffer_count == 0,
         "Graphics pipeline's uniform buffer descriptor count is expected to be zero."
     );
 
-    for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_buffer_descriptor_count; i++) {
-        graphics_pipeline_vulkan->uniform_buffer_descriptor_count += std::max(graphics_pipeline_descriptor.uniform_buffer_descriptors[i].count, 1U);
-    }
+    graphics_pipeline_vulkan->uniform_buffer_count = graphics_pipeline_descriptor.uniform_buffer_descriptor_count;
 
     KW_ERROR(
-        graphics_pipeline_vulkan->uniform_buffer_descriptor_count <= m_uniform_buffer_count_per_descriptor_pool,
+        graphics_pipeline_vulkan->uniform_buffer_count <= m_uniform_buffer_count_per_descriptor_pool,
         "The number of image descriptors in graphics pipeline is greater than the number of image descriptors in descriptor pool."
     );
 
@@ -1482,20 +1434,17 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         "Graphics pipeline's uniform buffer mapping is expected to be empty."
     );
     
-    graphics_pipeline_vulkan->uniform_buffer_mapping.reserve(graphics_pipeline_vulkan->uniform_buffer_descriptor_count);
+    graphics_pipeline_vulkan->uniform_buffer_mapping.reserve(graphics_pipeline_vulkan->uniform_buffer_count);
 
     KW_ASSERT(
         graphics_pipeline_vulkan->uniform_buffer_sizes.empty(),
         "Graphics pipeline's uniform buffer sizes is expected to be empty."
     );
 
-    graphics_pipeline_vulkan->uniform_buffer_sizes.reserve(graphics_pipeline_vulkan->uniform_buffer_descriptor_count);
-
-    uint32_t flattened_uniform_buffer_index = 0;
+    graphics_pipeline_vulkan->uniform_buffer_sizes.reserve(graphics_pipeline_vulkan->uniform_buffer_count);
 
     for (size_t i = 0; i < graphics_pipeline_descriptor.uniform_buffer_descriptor_count; i++) {
         const UniformBufferDescriptor& uniform_buffer_descriptor = graphics_pipeline_descriptor.uniform_buffer_descriptors[i];
-        uint32_t uniform_buffer_count = std::max(uniform_buffer_descriptor.count, 1U);
 
         //
         // Validation
@@ -1524,7 +1473,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
         // Validate vertex shader uniform variable or check whether it was optimized away.
         //
 
-        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        VkShaderStageFlags shader_stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         /*if (graphics_pipeline_descriptor.vertex_shader_filename != nullptr)*/ {
             if ((shader_stage_flags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) {
@@ -1549,8 +1498,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_buffer_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.vertex_shader_filename
                     );
 
                     SPV_ERROR(
@@ -1592,8 +1541,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                     }
 
                     KW_ERROR(
-                        uniform_buffer_count == count,
-                        "Descriptor binding \"%s\" has mismatching array size in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
+                        count == 1,
+                        "Uniform arrays are not supported for \"%s\" in \"%s\".", uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.fragment_shader_filename
                     );
 
                     SPV_ERROR(
@@ -1616,17 +1565,13 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             VkDescriptorSetLayoutBinding descriptor_set_layout_binding{};
             descriptor_set_layout_binding.binding = current_binding++;
             descriptor_set_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-            descriptor_set_layout_binding.descriptorCount = uniform_buffer_count;
+            descriptor_set_layout_binding.descriptorCount = 1;
             descriptor_set_layout_binding.stageFlags = shader_stage_flags;
             descriptor_set_layout_binding.pImmutableSamplers = nullptr;
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
 
-            for (uint32_t j = 0; j < uniform_buffer_count; j++) {
-                KW_ASSERT(flattened_uniform_buffer_index + j < graphics_pipeline_vulkan->uniform_buffer_descriptor_count);
-                graphics_pipeline_vulkan->uniform_buffer_mapping.push_back(flattened_uniform_buffer_index + j);
-            }
-
-            graphics_pipeline_vulkan->uniform_buffer_sizes.insert(graphics_pipeline_vulkan->uniform_buffer_sizes.end(), uniform_buffer_count, static_cast<uint32_t>(uniform_buffer_descriptor.size));
+            KW_ASSERT(static_cast<uint32_t>(i) < graphics_pipeline_vulkan->uniform_buffer_count);
+            graphics_pipeline_vulkan->uniform_buffer_mapping.push_back(static_cast<uint32_t>(i));
         } else {
             Log::print(
                 "[WARNING] Uniform buffer \"%s\" is not found (graphics pipeline \"%s\").",
@@ -1634,13 +1579,8 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             );
         }
 
-        flattened_uniform_buffer_index += uniform_buffer_count;
+        graphics_pipeline_vulkan->uniform_buffer_sizes.push_back(static_cast<uint32_t>(uniform_buffer_descriptor.size));
     }
-
-    KW_ASSERT(
-        graphics_pipeline_vulkan->uniform_buffer_mapping.size() == graphics_pipeline_vulkan->uniform_buffer_sizes.size(),
-        "Uniform buffer mapping/sizes mismatch."
-    );
 
     //
     // Check whether all descriptor bindings were specified in the graphics pipeline descriptor.
@@ -2028,19 +1968,14 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
                 // `create_graphics_pipeline` could be called from multiple threads.
                 std::lock_guard lock(m_attachment_access_matrix_mutex);
 
-                uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-                KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+                KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-                for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                    size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                    KW_ASSERT(access_index < m_attachment_access_matrix.size());
+                if ((m_attachment_access_matrix[access_index] & AttachmentAccess::BLEND) == AttachmentAccess::NONE) {
+                    m_attachment_access_matrix[access_index] |= AttachmentAccess::BLEND;
 
-                    if ((m_attachment_access_matrix[access_index] & AttachmentAccess::BLEND) == AttachmentAccess::NONE) {
-                        m_attachment_access_matrix[access_index] |= AttachmentAccess::BLEND;
-
-                        // This render pass must read this attachment from memory even if it has load_op = DONT_CARE.
-                        attachment_access_matrix_changed = true;
-                    }
+                    // This render pass must read this attachment from memory even if it has load_op = DONT_CARE.
+                    attachment_access_matrix_changed = true;
                 }
 
                 break;
@@ -2064,7 +1999,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     // Set up push constants for pipeline layout.
     //
 
-    VkShaderStageFlags push_constants_shader_stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS;
+    VkShaderStageFlags push_constants_shader_stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     if (graphics_pipeline_descriptor.push_constants_name != nullptr) {
         //
@@ -2337,26 +2272,33 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     //
 
     if (attachment_access_matrix_changed) {
+        // All of the following functions access only frame graph descriptor's `render_pass_descriptor_count`.
         FrameGraphDescriptor frame_graph_descriptor{};
         frame_graph_descriptor.render_pass_descriptor_count = m_render_pass_data.size();
 
         CreateContext create_context{
             frame_graph_descriptor,
             UnorderedMap<StringView, uint32_t>(m_render.transient_memory_resource),
-            Vector<AttachmentBoundsData>(m_render.transient_memory_resource),
-            Vector<AttachmentBarrierData>(m_render.transient_memory_resource)
+            Vector<AttachmentBoundsData>(m_render.transient_memory_resource)
         };
 
-        // These two only access frame graph descriptor's `render_pass_descriptor_count`.
-        // They don't access attachment mapping. They don't write to any shared variables.
+        // All of the following functions read from `m_attachment_access_matrix`.
+        std::shared_lock shared_lock(m_attachment_access_matrix_mutex);
+
+        // This one doesn't write to any shared variables. No synchronization required.
         compute_attachment_bounds_data(create_context);
-        compute_attachment_barrier_data(create_context);
 
-        // `create_graphics_pipeline` could be called from multiple threads.
-        // `compute_parallel_blocks` writes to shared `m_parallel_block_data`.
-        std::lock_guard lock(m_parallel_block_data_mutex);
+        {
+            // `compute_attachment_barrier_data` writes to shared `m_attachment_barrier_matrix`.
+            std::lock_guard lock(m_attachment_barrier_matrix_mutex);
+            compute_attachment_barrier_data(create_context);
+        }
 
-        compute_parallel_blocks(create_context);
+        {
+            // `compute_parallel_blocks` writes to shared `m_parallel_block_data`.
+            std::lock_guard lock(m_parallel_block_data_mutex);
+            compute_parallel_blocks(create_context);
+        }
     }
 
     return graphics_pipeline_vulkan;
@@ -2365,7 +2307,10 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 void FrameGraphVulkan::destroy_graphics_pipeline(GraphicsPipeline* graphics_pipeline) {
     if (graphics_pipeline != nullptr) {
         std::lock_guard lock(m_graphics_pipeline_destroy_command_mutex);
-        m_graphics_pipeline_destroy_commands.push(GraphicsPipelineDestroyCommand{ static_cast<GraphicsPipelineVulkan*>(graphics_pipeline), m_render_finished_timeline_semaphore->value + 1 });
+        m_graphics_pipeline_destroy_commands.push(GraphicsPipelineDestroyCommand{
+            static_cast<GraphicsPipelineVulkan*>(graphics_pipeline),
+            m_render_finished_timeline_semaphore->value + 1
+        });
     }
 }
 
@@ -2404,9 +2349,11 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
     CreateContext create_context{
         descriptor,
         UnorderedMap<StringView, uint32_t>(m_render.transient_memory_resource),
-        Vector<AttachmentBoundsData>(m_render.transient_memory_resource),
-        Vector<AttachmentBarrierData>(m_render.transient_memory_resource)
+        Vector<AttachmentBoundsData>(m_render.transient_memory_resource)
     };
+
+    // `m_attachment_access_matrix`, `m_attachment_barrier_matrix` and `m_parallel_block_data` are used in many of the following functions.
+    std::scoped_lock lock(m_attachment_access_matrix_mutex, m_attachment_barrier_matrix_mutex, m_parallel_block_data_mutex);
 
     create_surface(create_context);
     compute_present_mode(create_context);
@@ -2420,7 +2367,6 @@ void FrameGraphVulkan::create_lifetime_resources(const FrameGraphDescriptor& des
     compute_attachment_ranges(create_context);
     compute_attachment_usage_mask(create_context);
     compute_attachment_layouts(create_context);
-    compute_attachment_blit_data(create_context);
 
     create_render_passes(create_context);
     create_synchronization(create_context);
@@ -2463,10 +2409,14 @@ void FrameGraphVulkan::destroy_lifetime_resources() {
     }
     m_render_pass_data.clear();
 
+    m_attachment_data.clear();
+    m_attachment_barrier_matrix.clear();
+    m_attachment_access_matrix.clear();
+
     for (AttachmentDescriptor& attachment_descriptor : m_attachment_descriptors) {
         m_render.persistent_memory_resource.deallocate(const_cast<char*>(attachment_descriptor.name));
     }
-    m_attachment_data.clear();
+    m_attachment_descriptors.clear();
 
     vkDestroySurfaceKHR(m_render.instance, m_surface, nullptr);
     m_surface = VK_NULL_HANDLE;
@@ -2522,17 +2472,9 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
     // Calculate attachment count to avoid extra allocations.
     //
 
-    uint32_t attachment_count = 1; // One for swapchain attachment.
-
-    for (size_t i = 0; i < frame_graph_descriptor.color_attachment_descriptor_count; i++) {
-        uint32_t count = std::max(frame_graph_descriptor.color_attachment_descriptors[i].count, 1U);
-        attachment_count += count;
-    }
-
-    for (size_t i = 0; i < frame_graph_descriptor.depth_stencil_attachment_descriptor_count; i++) {
-        uint32_t count = std::max(frame_graph_descriptor.depth_stencil_attachment_descriptors[i].count, 1U);
-        attachment_count += count;
-    }
+    uint32_t attachment_count = 1 +
+        frame_graph_descriptor.color_attachment_descriptor_count +
+        frame_graph_descriptor.depth_stencil_attachment_descriptor_count;
 
     KW_ASSERT(
         m_attachment_descriptors.empty(),
@@ -2549,21 +2491,14 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
     swapchain_attachment_descriptor.name = frame_graph_descriptor.swapchain_attachment_name;
     swapchain_attachment_descriptor.load_op = LoadOp::DONT_CARE;
     swapchain_attachment_descriptor.format = TextureFormat::BGRA8_UNORM;
-    swapchain_attachment_descriptor.is_blit_source = true;
     m_attachment_descriptors.push_back(swapchain_attachment_descriptor);
 
     for (size_t i = 0; i < frame_graph_descriptor.color_attachment_descriptor_count; i++) {
-        uint32_t count = std::max(frame_graph_descriptor.color_attachment_descriptors[i].count, 1U);
-        for (uint32_t j = 0; j < count; j++) {
-            m_attachment_descriptors.push_back(frame_graph_descriptor.color_attachment_descriptors[i]);
-        }
+        m_attachment_descriptors.push_back(frame_graph_descriptor.color_attachment_descriptors[i]);
     }
 
     for (size_t i = 0; i < frame_graph_descriptor.depth_stencil_attachment_descriptor_count; i++) {
-        uint32_t count = std::max(frame_graph_descriptor.depth_stencil_attachment_descriptors[i].count, 1U);
-        for (uint32_t j = 0; j < count; j++) {
-            m_attachment_descriptors.push_back(frame_graph_descriptor.depth_stencil_attachment_descriptors[i]);
-        }
+        m_attachment_descriptors.push_back(frame_graph_descriptor.depth_stencil_attachment_descriptors[i]);
     }
 
     //
@@ -2585,8 +2520,6 @@ void FrameGraphVulkan::compute_attachment_descriptors(CreateContext& create_cont
         if (attachment_descriptor.height == 0.f) {
             attachment_descriptor.height = 1.f;
         }
-
-        attachment_descriptor.count = std::max(attachment_descriptor.count, 1U);
     }
 }
 
@@ -2625,17 +2558,12 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
             uint32_t attachment_index = create_context.attachment_mapping[color_attachment_name];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
 
-            uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-            KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                KW_ASSERT(access_index < m_attachment_access_matrix.size());
-
-                // For now assume the attachment is not accessed in any shader.
-                // When graphics pipelines are added, they will refine the shader access.
-                m_attachment_access_matrix[access_index] |= AttachmentAccess::READ;
-            }
+            // For now assume the attachment is not accessed in any shader.
+            // When graphics pipelines are added, they will refine the shader access.
+            m_attachment_access_matrix[access_index] |= AttachmentAccess::READ;
         }
         
         for (size_t color_attachment_index = 0; color_attachment_index < render_pass_descriptor.write_color_attachment_name_count; color_attachment_index++) {
@@ -2645,17 +2573,12 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
             uint32_t attachment_index = create_context.attachment_mapping[color_attachment_name];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
 
-            uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-            KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                KW_ASSERT(access_index < m_attachment_access_matrix.size());
-
-                // For now assume that the attachment is not blended.
-                // When graphics pipelines are added, they will refine the shader access.
-                m_attachment_access_matrix[access_index] |= AttachmentAccess::WRITE | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
-            }
+            // For now assume that the attachment is not blended.
+            // When graphics pipelines are added, they will refine the shader access.
+            m_attachment_access_matrix[access_index] |= AttachmentAccess::WRITE | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
         }
 
         if (render_pass_descriptor.read_depth_stencil_attachment_name != nullptr) {
@@ -2665,17 +2588,12 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
             uint32_t attachment_index = create_context.attachment_mapping[depth_stencil_attachment_name];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
 
-            uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-            KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                KW_ASSERT(access_index < m_attachment_access_matrix.size());
-
-                // For now assume that depth stencil attachment is only depth tested.
-                // When graphics pipelines are added, they will refine the shader access.
-                m_attachment_access_matrix[access_index] |= AttachmentAccess::READ | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
-            }
+            // For now assume that depth stencil attachment is only depth tested.
+            // When graphics pipelines are added, they will refine the shader access.
+            m_attachment_access_matrix[access_index] |= AttachmentAccess::READ | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
         }
 
         if (render_pass_descriptor.write_depth_stencil_attachment_name != nullptr) {
@@ -2685,15 +2603,10 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
             uint32_t attachment_index = create_context.attachment_mapping[depth_stencil_attachment_name];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
 
-            uint32_t attachment_count = m_attachment_descriptors[attachment_index].count;
-            KW_ASSERT(attachment_index + attachment_count <= m_attachment_descriptors.size());
+            size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
+            KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            for (uint32_t offset = 0; offset < attachment_count; offset++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index + offset;
-                KW_ASSERT(access_index < m_attachment_access_matrix.size());
-
-                m_attachment_access_matrix[access_index] |= AttachmentAccess::WRITE | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
-            }
+            m_attachment_access_matrix[access_index] |= AttachmentAccess::WRITE | AttachmentAccess::ATTACHMENT | AttachmentAccess::LOAD | AttachmentAccess::STORE;
         }
     }
 
@@ -2734,6 +2647,11 @@ void FrameGraphVulkan::compute_attachment_access(CreateContext& create_context) 
                      attachment_bounds.max_read_render_pass_index < attachment_bounds.max_write_render_pass_index),
                     "Swapchain image must not be read before the first write nor after the last write."
                 );
+            }
+
+            if (attachment_descriptor.is_blit_source) {
+                // Store blit attachments even if they are not used in the pipeline.
+                continue;
             }
 
             if (attachment_bounds.max_write_render_pass_index != UINT32_MAX) {
@@ -2820,18 +2738,13 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         "Attachment bounds must be computed first."
     );
 
-    KW_ASSERT(
-        create_context.attachment_barrier_matrix.empty(),
-        "Attachment barriers are initialized twice."
-    );
-
-    create_context.attachment_barrier_matrix.resize(
+    m_attachment_barrier_matrix.assign(
         frame_graph_descriptor.render_pass_descriptor_count * m_attachment_descriptors.size(),
         AttachmentBarrierData{}
     );
 
     KW_ASSERT(
-        m_attachment_access_matrix.size() == create_context.attachment_barrier_matrix.size(),
+        m_attachment_access_matrix.size() == m_attachment_barrier_matrix.size(),
         "Attachment access matrix must be computed first."
     );
 
@@ -2860,7 +2773,7 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                 size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
                 KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-                AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+                AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
                 if (attachment_index == 0) {
                     attachment_barrier_data.source_image_layout = attachment_barrier_data.destination_image_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -2910,10 +2823,10 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
                 // Read render pass can't change image layout, so previous render pass must have set it to read only.
@@ -2972,10 +2885,10 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
             size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
                 // Read render pass can't change image layout, so keep read only image layout.
@@ -3020,7 +2933,7 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
             size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            previous_image_layout = create_context.attachment_barrier_matrix[access_index].destination_image_layout;
+            previous_image_layout = m_attachment_barrier_matrix[access_index].destination_image_layout;
         } else {
             KW_ASSERT(
                 attachment_bounds.max_read_render_pass_index != UINT32_MAX || attachment_bounds.max_write_render_pass_index != UINT32_MAX,
@@ -3032,16 +2945,16 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
             size_t access_index = max_render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
 
-            previous_image_layout = create_context.attachment_barrier_matrix[access_index].destination_image_layout;
+            previous_image_layout = m_attachment_barrier_matrix[access_index].destination_image_layout;
         }
 
         for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if (attachment_access == AttachmentAccess::NONE) {
                 attachment_barrier_data.source_image_layout = attachment_barrier_data.destination_image_layout = previous_image_layout;
@@ -3059,17 +2972,17 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
             size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
                 // `...READ_BIT` in source access mask is a no-op.
                 attachment_barrier_data.source_access_mask = VK_ACCESS_NONE_KHR;
 
                 if ((next_attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                    if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) != AttachmentAccess::NONE) {
+                    if ((attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) == AttachmentAccess::NONE) {
                         // Attachment is marked as read attachment in this render pass, yet no graphics pipeline has
                         // read from it yet. The next writing render pass shouldn't wait for anything.
                         attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -3083,7 +2996,7 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                         if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
                             // We perform depth test with this attachment on current render pass, which means
                             // that the next writing render pass needs to wait for early fragment tests to complete.
-                            KW_ASSERT(TextureFormatUtils::is_depth_stencil(attachment_descriptor.format));
+                            KW_ASSERT(TextureFormatUtils::is_depth(attachment_descriptor.format));
                             attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
                         }
 
@@ -3106,17 +3019,21 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                     "Write access must be ATTACHMENT."
                 );
 
-                // LOAD and BLEND checks are omitted here because they produce `...READ_BIT` access masks,
-                // which are redundant for source access mask. STORE is taken into consideration though.
-                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
                     // We write to this depth stencil attachment on current render pass, which means that the next
                     // render pass needs to wait for late fragment tests to complete to start rendering.
                     attachment_barrier_data.source_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
+                        attachment_barrier_data.source_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+                    }
                     attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
                 } else {
                     // We write to this color attachment on current render pass, which means that the next
                     // render pass needs to wait for color attachment output to start rendering.
                     attachment_barrier_data.source_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    if ((attachment_access & (AttachmentAccess::LOAD | AttachmentAccess::BLEND)) != AttachmentAccess::NONE) {
+                        attachment_barrier_data.source_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+                    }
                     attachment_barrier_data.source_pipeline_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
                 }
 
@@ -3139,10 +3056,10 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if (attachment_access == AttachmentAccess::NONE) {
                 attachment_barrier_data.source_access_mask = previous_access_mask;
@@ -3164,18 +3081,18 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
             size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if (attachment_access != AttachmentAccess::NONE) {
                 if ((next_attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
                     if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
-                        if ((next_attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) != AttachmentAccess::NONE) {
+                        if ((next_attachment_access & (AttachmentAccess::VERTEX_SHADER | AttachmentAccess::FRAGMENT_SHADER | AttachmentAccess::ATTACHMENT)) == AttachmentAccess::NONE) {
                             // Attachment is marked as read attachment in the next render pass, yet no graphics
                             // pipeline has read from it yet. The next render pass can execute all the pipeline stages.
-                            attachment_barrier_data.source_pipeline_stage_mask |= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+                            attachment_barrier_data.destination_pipeline_stage_mask |= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
                         } else {
                             if ((next_attachment_access & AttachmentAccess::VERTEX_SHADER) == AttachmentAccess::VERTEX_SHADER) {
                                 // We read this attachment in vertex shader in the next render pass after writing to it in
@@ -3189,7 +3106,7 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                                 // We perform depth test in the next render pass after writing to it in current render pass.
                                 // The next render pass is allowed to execute every pipeline stage before early fragment
                                 // tests without waiting.
-                                KW_ASSERT(TextureFormatUtils::is_depth_stencil(attachment_descriptor.format));
+                                KW_ASSERT(TextureFormatUtils::is_depth(attachment_descriptor.format));
                                 attachment_barrier_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
                                 attachment_barrier_data.destination_pipeline_stage_mask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
                             }
@@ -3214,11 +3131,11 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                         "Write access must be ATTACHMENT."
                     );
 
-                    if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                    if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
                         // Next render pass writes to this depth stencil attachment, so it is allowed to execute
                         // every stage before early fragment tests without waiting.
                         attachment_barrier_data.destination_access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                        if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
+                        if ((next_attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::LOAD) {
                             attachment_barrier_data.destination_access_mask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
                         }
                         attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
@@ -3226,7 +3143,7 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                         // Next parallel block writes to this color attachment, so it is allowed to execute every stage
                         // before color attachment output without waiting.
                         attachment_barrier_data.destination_access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                        if ((attachment_access & (AttachmentAccess::LOAD | AttachmentAccess::BLEND)) != AttachmentAccess::NONE) {
+                        if ((next_attachment_access & (AttachmentAccess::LOAD | AttachmentAccess::BLEND)) != AttachmentAccess::NONE) {
                             attachment_barrier_data.destination_access_mask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
                         }
                         attachment_barrier_data.destination_pipeline_stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -3256,10 +3173,10 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
         for (size_t render_pass_index = frame_graph_descriptor.render_pass_descriptor_count; render_pass_index > 0; render_pass_index--) {
             size_t access_index = (render_pass_index - 1) * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if (attachment_access == AttachmentAccess::NONE) {
                 attachment_barrier_data.source_access_mask = next_access_mask;
@@ -3268,8 +3185,6 @@ void FrameGraphVulkan::compute_attachment_barrier_data(CreateContext& create_con
                 next_access_mask = attachment_barrier_data.destination_access_mask;
                 next_pipeline_stage_mask = attachment_barrier_data.destination_pipeline_stage_mask;
             }
-
-            KW_ASSERT(attachment_barrier_data.destination_pipeline_stage_mask != VK_PIPELINE_STAGE_NONE_KHR);
         }
     }
 }
@@ -3349,7 +3264,7 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
     );
 
     KW_ASSERT(
-        m_render_pass_data.empty() || !create_context.attachment_barrier_matrix.empty(),
+        m_render_pass_data.empty() || !m_attachment_barrier_matrix.empty(),
         "Attachments barrier matrix must be computed first."
     );
 
@@ -3368,10 +3283,10 @@ void FrameGraphVulkan::compute_parallel_blocks(CreateContext& create_context) {
 
             size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
             KW_ASSERT(access_index < m_attachment_access_matrix.size());
-            KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+            KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-            AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+            AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
             if (attachment_access != AttachmentAccess::NONE) {
                 parallel_block_data.source_stage_mask |= attachment_barrier_data.source_pipeline_stage_mask;
@@ -3505,7 +3420,7 @@ void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_conte
             AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
 
             if ((attachment_access & AttachmentAccess::READ) == AttachmentAccess::READ) {
-                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
                     if ((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT) {
                         attachment_data.usage_mask |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                     }
@@ -3521,7 +3436,7 @@ void FrameGraphVulkan::compute_attachment_usage_mask(CreateContext& create_conte
             } else if ((attachment_access & AttachmentAccess::WRITE) == AttachmentAccess::WRITE) {
                 KW_ASSERT((attachment_access & AttachmentAccess::ATTACHMENT) == AttachmentAccess::ATTACHMENT);
 
-                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
                     attachment_data.usage_mask |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                 } else {
                     attachment_data.usage_mask |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -3592,42 +3507,6 @@ void FrameGraphVulkan::compute_attachment_layouts(CreateContext& create_context)
     }
 }
 
-void FrameGraphVulkan::compute_attachment_blit_data(CreateContext& create_context) {
-    const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
-
-    KW_ASSERT(
-        !m_attachment_descriptors.empty(),
-        "Attachments descriptors must be computed first."
-    );
-
-    KW_ASSERT(
-        !m_attachment_data.empty(),
-        "Attachment ranges must be computed first."
-    );
-
-    KW_ASSERT(
-        m_render_pass_data.empty() || !create_context.attachment_barrier_matrix.empty(),
-        "Attachments barrier matrix must be computed first."
-    );
-
-    for (size_t attachment_index = 0; attachment_index < m_attachment_descriptors.size(); attachment_index++) {
-        AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-        AttachmentData& attachment_data = m_attachment_data[attachment_index];
-
-        if (attachment_descriptor.is_blit_source) {
-            KW_ASSERT(attachment_data.blit_data.empty());
-            attachment_data.blit_data.reserve(frame_graph_descriptor.render_pass_descriptor_count);
-
-            for (size_t render_pass_index = 0; render_pass_index < frame_graph_descriptor.render_pass_descriptor_count; render_pass_index++) {
-                size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
-                KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
-
-                attachment_data.blit_data.push_back(create_context.attachment_barrier_matrix[access_index]);
-            }
-        }
-    }
-}
-
 void FrameGraphVulkan::create_render_passes(CreateContext& create_context) {
     const FrameGraphDescriptor& frame_graph_descriptor = create_context.frame_graph_descriptor;
 
@@ -3658,7 +3537,7 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
     );
 
     KW_ASSERT(
-        m_render_pass_data.empty() || !create_context.attachment_barrier_matrix.empty(),
+        m_render_pass_data.empty() || !m_attachment_barrier_matrix.empty(),
         "Attachments barrier matrix must be computed first."
     );
 
@@ -3751,10 +3630,10 @@ void FrameGraphVulkan::create_render_pass(CreateContext& create_context, uint32_
 
         size_t access_index = render_pass_index * m_attachment_descriptors.size() + attachment_index;
         KW_ASSERT(access_index < m_attachment_access_matrix.size());
-        KW_ASSERT(access_index < create_context.attachment_barrier_matrix.size());
+        KW_ASSERT(access_index < m_attachment_barrier_matrix.size());
 
         AttachmentAccess attachment_access = m_attachment_access_matrix[access_index];
-        AttachmentBarrierData& attachment_barrier_data = create_context.attachment_barrier_matrix[access_index];
+        AttachmentBarrierData& attachment_barrier_data = m_attachment_barrier_matrix[access_index];
 
         if ((attachment_access & AttachmentAccess::LOAD) == AttachmentAccess::NONE) {
             attachment_description.loadOp = LOAD_OP_MAPPING[static_cast<size_t>(attachment_descriptor.load_op)];
@@ -3883,6 +3762,60 @@ void FrameGraphVulkan::create_synchronization(CreateContext& create_context) {
 
     // Render must wait for this frame to finish before destroying a resource that could be used in this frame.
     m_render.add_resource_dependency(m_render_finished_timeline_semaphore);
+}
+
+FrameGraphVulkan::CommandPoolData& FrameGraphVulkan::acquire_command_pool() {
+    UnorderedMap<std::thread::id, CommandPoolData>& command_pool_map = m_command_pool_data[m_semaphore_index];
+
+    {
+        std::shared_lock lock(m_command_pool_mutex);
+
+        auto result = command_pool_map.find(std::this_thread::get_id());
+        if (result != command_pool_map.end()) {
+            return result->second;
+        }
+    }
+
+    {
+        std::unique_lock lock(m_command_pool_mutex);
+
+        VkCommandPoolCreateInfo command_pool_create_info{};
+        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        command_pool_create_info.queueFamilyIndex = m_render.graphics_queue_family_index;
+
+        CommandPoolData command_pool_data(m_render.persistent_memory_resource);
+        VK_ERROR(
+            vkCreateCommandPool(m_render.device, &command_pool_create_info, &m_render.allocation_callbacks, &command_pool_data.command_pool),
+            "Failed to create a command pool."
+        );
+
+        return command_pool_map.emplace(std::this_thread::get_id(), std::move(command_pool_data)).first->second;
+    }
+}
+
+VkCommandBuffer FrameGraphVulkan::acquire_command_buffer() {
+    CommandPoolData& command_pool_data = acquire_command_pool();
+
+    size_t command_buffer_index = command_pool_data.current_command_buffer++;
+
+    if (command_buffer_index == command_pool_data.command_buffers.size()) {
+        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        command_buffer_allocate_info.commandPool = command_pool_data.command_pool;
+        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        command_buffer_allocate_info.commandBufferCount = 1;
+
+        VkCommandBuffer command_buffer;
+        VK_ERROR(
+            vkAllocateCommandBuffers(m_render.device, &command_buffer_allocate_info, &command_buffer),
+            "Failed to allocate a command buffer."
+        );
+
+        command_pool_data.command_buffers.push_back(command_buffer);
+    }
+
+    return command_pool_data.command_buffers[command_buffer_index];
 }
 
 void FrameGraphVulkan::create_temporary_resources() {
@@ -4288,17 +4221,12 @@ void FrameGraphVulkan::create_framebuffers() {
         // Query framebuffer size from any attachment, because they all must have equal size.
         //
 
-        uint32_t framebuffer_count;
-
         {
             uint32_t attachment_index = render_pass_data.write_attachment_indices[0];
             KW_ASSERT(attachment_index < m_attachment_descriptors.size());
 
             const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-            KW_ASSERT(attachment_descriptor.count > 0);
 
-            framebuffer_count = attachment_descriptor.count;
-            
             if (attachment_descriptor.size_class == SizeClass::RELATIVE) {
                 render_pass_data.framebuffer_width = static_cast<uint32_t>(attachment_descriptor.width * m_swapchain_width);
                 render_pass_data.framebuffer_height = static_cast<uint32_t>(attachment_descriptor.height * m_swapchain_height);
@@ -4324,11 +4252,11 @@ void FrameGraphVulkan::create_framebuffers() {
         // Create framebuffers.
         //
 
+        // TODO: Perhaps `framebuffers` should be an array then?
         if (is_swapchain_attachment_present) {
-            KW_ASSERT(framebuffer_count == 1);
             render_pass_data.framebuffers.resize(static_cast<uint32_t>(SWAPCHAIN_IMAGE_COUNT));
         } else {
-            render_pass_data.framebuffers.resize(framebuffer_count);
+            render_pass_data.framebuffers.resize(1);
         }
 
         for (size_t framebuffer_index = 0; framebuffer_index < render_pass_data.framebuffers.size(); framebuffer_index++) {
@@ -4342,14 +4270,8 @@ void FrameGraphVulkan::create_framebuffers() {
                     // Swapchain attachment.
                     attachments[i] = m_swapchain_image_views[framebuffer_index];
                 } else {
-                    const AttachmentDescriptor& attachment_descriptor = m_attachment_descriptors[attachment_index];
-                    if (attachment_descriptor.count > 1) {
-                        // Attachments with count > 1 (swapchain attachment is not allowed).
-                        attachments[i] = m_attachment_data[attachment_index + framebuffer_index].image_view;
-                    } else {
-                        // Swapchain attachment + other attachments.
-                        attachments[i] = m_attachment_data[attachment_index].image_view;
-                    }
+                    // Other attachments.
+                    attachments[i] = m_attachment_data[attachment_index].image_view;
                 }
             }
 
@@ -4403,14 +4325,14 @@ FrameGraphVulkan::CommandPoolData::CommandPoolData(CommandPoolData&& other)
 {
 }
 
-FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index, uint32_t framebuffer_index)
+FrameGraphVulkan::RenderPassContextVulkan::RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index, uint32_t context_index)
     : command_buffer(VK_NULL_HANDLE)
     , transfer_semaphore_value(0)
     , m_frame_graph(frame_graph)
     , m_render_pass_index(render_pass_index)
-    , m_framebuffer_index(framebuffer_index)
     , m_framebuffer_width(frame_graph.m_render_pass_data[render_pass_index].framebuffer_width)
     , m_framebuffer_height(frame_graph.m_render_pass_data[render_pass_index].framebuffer_height)
+    , m_context_index(context_index)
     , m_graphics_pipeline_vulkan(nullptr)
 {
 }
@@ -4437,19 +4359,28 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
     );
 
     KW_ASSERT(
-        descriptor.uniform_attachment_index_count == 0 || descriptor.uniform_attachment_index_count == graphics_pipeline_vulkan->uniform_attachment_descriptor_count,
-        "Mismatching uniform attachment count. Expected %u, got %zu.", graphics_pipeline_vulkan->uniform_attachment_descriptor_count, descriptor.uniform_attachment_index_count
+        descriptor.uniform_texture_count == graphics_pipeline_vulkan->uniform_texture_count,
+        "Mismatching uniform texture count. Expected %u, got %zu.", graphics_pipeline_vulkan->uniform_texture_count, descriptor.uniform_texture_count
     );
 
-    KW_ASSERT(
-        descriptor.uniform_texture_count == graphics_pipeline_vulkan->uniform_texture_descriptor_count,
-        "Mismatching uniform texture count. Expected %u, got %zu.", graphics_pipeline_vulkan->uniform_texture_descriptor_count, descriptor.uniform_texture_count
-    );
+    for (uint32_t i = 0; i < descriptor.uniform_texture_count; i++) {
+        KW_ASSERT(
+            graphics_pipeline_vulkan->uniform_texture_types[i] == descriptor.uniform_textures[i]->get_type(),
+            "Mismatching uniform texture type."
+        );
+    }
 
     KW_ASSERT(
-        descriptor.uniform_buffer_count == graphics_pipeline_vulkan->uniform_buffer_descriptor_count,
-        "Mismatching uniform buffer count. Expected %u, got %zu.", graphics_pipeline_vulkan->uniform_buffer_descriptor_count, descriptor.uniform_buffer_count
+        descriptor.uniform_buffer_count == graphics_pipeline_vulkan->uniform_buffer_count,
+        "Mismatching uniform buffer count. Expected %u, got %zu.", graphics_pipeline_vulkan->uniform_buffer_count, descriptor.uniform_buffer_count
     );
+
+    for (uint32_t i = 0; i < descriptor.uniform_buffer_count; i++) {
+        KW_ASSERT(
+            graphics_pipeline_vulkan->uniform_buffer_sizes[i] == descriptor.uniform_buffers[i]->get_size(),
+            "Mismatching uniform buffer size."
+        );
+    }
 
     if (descriptor.push_constants != nullptr && graphics_pipeline_vulkan->push_constants_size > 0) {
         KW_ASSERT(
@@ -4581,29 +4512,6 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
 
     uint64_t crc = 0;
 
-    for (size_t i = 0; i < graphics_pipeline_vulkan->uniform_attachment_mapping.size(); i++) {
-        uint32_t uniform_attachment_mapping = graphics_pipeline_vulkan->uniform_attachment_mapping[i];
-
-        uint32_t attachment_index = graphics_pipeline_vulkan->uniform_attachment_indices[i];
-        KW_ASSERT(attachment_index < m_frame_graph.m_attachment_data.size());
-
-        uint32_t attachment_offset;
-        
-        if (descriptor.uniform_attachment_index_count > 0) {
-            KW_ASSERT(uniform_attachment_mapping < descriptor.uniform_attachment_index_count);
-
-            attachment_offset = descriptor.uniform_attachment_indices[uniform_attachment_mapping];
-            KW_ASSERT(attachment_index + attachment_offset < m_frame_graph.m_attachment_data.size());
-        } else {
-            attachment_offset = 0;
-        }
-
-        AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index + attachment_offset];
-        KW_ASSERT(attachment_data.image_view != VK_NULL_HANDLE);
-
-        crc = CrcUtils::crc64(crc, &attachment_data.image_view, sizeof(VkImageView));
-    }
-
     for (uint32_t uniform_texture_mapping : graphics_pipeline_vulkan->uniform_texture_mapping) {
         KW_ASSERT(uniform_texture_mapping < descriptor.uniform_texture_count);
 
@@ -4633,7 +4541,7 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
 
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
 
-    if (!graphics_pipeline_vulkan->uniform_attachment_mapping.empty() || !graphics_pipeline_vulkan->uniform_texture_mapping.empty() || !graphics_pipeline_vulkan->uniform_buffer_mapping.empty()) {
+    if (!graphics_pipeline_vulkan->uniform_attachment_indices.empty() || !graphics_pipeline_vulkan->uniform_texture_mapping.empty() || !graphics_pipeline_vulkan->uniform_buffer_mapping.empty()) {
         std::shared_lock bound_descriptor_sets_shared_lock(graphics_pipeline_vulkan->bound_descriptor_sets_mutex);
 
         auto bound_descriptor_set_it = graphics_pipeline_vulkan->bound_descriptor_sets.find(crc);
@@ -4697,28 +4605,15 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
             // Fill attachment descriptors.
             //
 
-            Vector<VkDescriptorImageInfo> attachment_descriptors(graphics_pipeline_vulkan->uniform_attachment_mapping.size(), m_frame_graph.m_render.transient_memory_resource);
+            Vector<VkDescriptorImageInfo> attachment_descriptors(graphics_pipeline_vulkan->uniform_attachment_indices.size(), m_frame_graph.m_render.transient_memory_resource);
             if (!attachment_descriptors.empty()) {
-                for (size_t i = 0; i < graphics_pipeline_vulkan->uniform_attachment_mapping.size(); i++) {
-                    uint32_t uniform_attachment_mapping = graphics_pipeline_vulkan->uniform_attachment_mapping[i];
-
+                for (size_t i = 0; i < graphics_pipeline_vulkan->uniform_attachment_indices.size(); i++) {
                     uint32_t attachment_index = graphics_pipeline_vulkan->uniform_attachment_indices[i];
                     KW_ASSERT(attachment_index < m_frame_graph.m_attachment_descriptors.size());
                     KW_ASSERT(attachment_index < m_frame_graph.m_attachment_data.size());
 
-                    uint32_t attachment_offset;
-
-                    if (descriptor.uniform_attachment_index_count > 0) {
-                        KW_ASSERT(uniform_attachment_mapping < descriptor.uniform_attachment_index_count);
-
-                        attachment_offset = descriptor.uniform_attachment_indices[uniform_attachment_mapping];
-                        KW_ASSERT(attachment_index + attachment_offset < m_frame_graph.m_attachment_data.size());
-                    } else {
-                        attachment_offset = 0;
-                    }
-
-                    AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index + attachment_offset];
-                    AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index + attachment_offset];
+                    AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+                    AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
 
                     VkDescriptorImageInfo& descriptor_image_info = attachment_descriptors[i];
                     descriptor_image_info.sampler = VK_NULL_HANDLE;
@@ -4794,13 +4689,10 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
                     uint32_t uniform_buffer_mapping = graphics_pipeline_vulkan->uniform_buffer_mapping[i];
                     KW_ASSERT(uniform_buffer_mapping < descriptor.uniform_buffer_count);
 
-                    const BufferVulkan* buffer_vulkan = reinterpret_cast<const BufferVulkan*>(descriptor.uniform_buffers[uniform_buffer_mapping]);
-                    KW_ASSERT(buffer_vulkan != nullptr);
-
                     VkDescriptorBufferInfo& descriptor_buffer_info = uniform_buffer_descriptors[i];
-                    descriptor_buffer_info.buffer = buffer_vulkan->buffer;
+                    descriptor_buffer_info.buffer = m_frame_graph.m_render.get_transient_buffer();
                     descriptor_buffer_info.offset = 0;
-                    descriptor_buffer_info.range = graphics_pipeline_vulkan->uniform_buffer_sizes[i];
+                    descriptor_buffer_info.range = graphics_pipeline_vulkan->uniform_buffer_sizes[uniform_buffer_mapping];
                 }
 
                 VkWriteDescriptorSet write_descriptor_set{};
@@ -4889,16 +4781,8 @@ uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachment_height() cons
     return m_framebuffer_height;
 }
 
-uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_attachemnt_index() const {
-    return m_framebuffer_index;
-}
-
-void FrameGraphVulkan::RenderPassContextVulkan::reset() {
-    command_buffer = VK_NULL_HANDLE;
-    transfer_semaphore_value = 0;
-    m_framebuffer_width = m_frame_graph.m_render_pass_data[m_render_pass_index].framebuffer_width;
-    m_framebuffer_height  = m_frame_graph.m_render_pass_data[m_render_pass_index].framebuffer_height;
-    m_graphics_pipeline_vulkan = nullptr;
+uint32_t FrameGraphVulkan::RenderPassContextVulkan::get_context_index() const {
+    return m_context_index;
 }
 
 bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets() {
@@ -4909,12 +4793,12 @@ bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets() {
 
         uint32_t descriptor_sets_to_allocate = std::min(m_graphics_pipeline_vulkan->descriptor_set_count, descriptor_pool_data.descriptor_sets_left);
 
-        if (!m_graphics_pipeline_vulkan->uniform_attachment_mapping.empty() || !m_graphics_pipeline_vulkan->uniform_texture_mapping.empty()) {
-            descriptor_sets_to_allocate = std::min(descriptor_sets_to_allocate, descriptor_pool_data.textures_left / static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_mapping.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size()));
+        if (!m_graphics_pipeline_vulkan->uniform_attachment_indices.empty() || !m_graphics_pipeline_vulkan->uniform_texture_mapping.empty()) {
+            descriptor_sets_to_allocate = std::min(descriptor_sets_to_allocate, descriptor_pool_data.textures_left / static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_indices.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size()));
         }
 
-        if (!m_graphics_pipeline_vulkan->uniform_attachment_mapping.empty()) {
-            descriptor_sets_to_allocate = std::min(descriptor_sets_to_allocate, descriptor_pool_data.uniform_buffers_left / static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_mapping.size()));
+        if (!m_graphics_pipeline_vulkan->uniform_attachment_indices.empty()) {
+            descriptor_sets_to_allocate = std::min(descriptor_sets_to_allocate, descriptor_pool_data.uniform_buffers_left / static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_indices.size()));
         }
 
         if (descriptor_sets_to_allocate > 0) {
@@ -4923,8 +4807,8 @@ bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets() {
             KW_ASSERT(descriptor_sets_to_allocate <= descriptor_pool_data.descriptor_sets_left);
             descriptor_pool_data.descriptor_sets_left -= descriptor_sets_to_allocate;
 
-            KW_ASSERT(descriptor_sets_to_allocate * (m_graphics_pipeline_vulkan->uniform_attachment_mapping.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size()) <= descriptor_pool_data.textures_left);
-            descriptor_pool_data.textures_left -= descriptor_sets_to_allocate * static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_mapping.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size());
+            KW_ASSERT(descriptor_sets_to_allocate * (m_graphics_pipeline_vulkan->uniform_attachment_indices.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size()) <= descriptor_pool_data.textures_left);
+            descriptor_pool_data.textures_left -= descriptor_sets_to_allocate * static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_attachment_indices.size() + m_graphics_pipeline_vulkan->uniform_texture_mapping.size());
             
             KW_ASSERT(descriptor_sets_to_allocate * (m_graphics_pipeline_vulkan->uniform_samplers.size()) <= descriptor_pool_data.samplers_left);
             descriptor_pool_data.samplers_left -= descriptor_sets_to_allocate * static_cast<uint32_t>(m_graphics_pipeline_vulkan->uniform_samplers.size());
@@ -4957,31 +4841,14 @@ bool FrameGraphVulkan::RenderPassContextVulkan::allocate_descriptor_sets() {
 
 FrameGraphVulkan::RenderPassImplVulkan::RenderPassImplVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index)
     : contexts(frame_graph.m_render.persistent_memory_resource)
-    , blit_command_buffer(VK_NULL_HANDLE)
+    , blits(frame_graph.m_render.persistent_memory_resource)
     , m_frame_graph(frame_graph)
     , m_render_pass_index(render_pass_index)
 {
     KW_ASSERT(m_render_pass_index < m_frame_graph.m_render_pass_data.size());
-
-    RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[m_render_pass_index];
-    KW_ASSERT(!render_pass_data.write_attachment_indices.empty());
-
-    uint32_t attachment_index = render_pass_data.write_attachment_indices[0];
-    KW_ASSERT(attachment_index < m_frame_graph.m_attachment_descriptors.size());
-
-    const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
-    KW_ASSERT(attachment_descriptor.count > 0);
-
-    contexts.reserve(attachment_descriptor.count);
-
-    for (uint32_t i = 0; i < attachment_descriptor.count; i++) {
-        contexts.push_back(RenderPassContextVulkan{ m_frame_graph, render_pass_index, i });
-    }
 }
 
-FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulkan::begin(uint32_t framebuffer_index) {
-    KW_ASSERT(framebuffer_index < contexts.size());
-
+FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulkan::begin(uint32_t context_index) {
     //
     // Swapchain image index is set to `UINT32_MAX` when window is minimized.
     //
@@ -4991,68 +4858,34 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
     }
 
     //
+    // Create render pass context.
+    //
+
+    RenderPassContextVulkan* context;
+
+    {
+        std::lock_guard lock(mutex);
+
+        auto [it, success] = contexts.emplace(context_index, RenderPassContextVulkan(m_frame_graph, m_render_pass_index, context_index));
+        KW_ASSERT(success, "Context with specified context index %u already exists.", context_index);
+
+        context = &it->second;
+    }
+
+    //
     // Acquire a command buffer and begin its recording.
     //
 
-    VkCommandBuffer command_buffer = acquire_command_buffer();
+    context->command_buffer = m_frame_graph.acquire_command_buffer();
 
     VkCommandBufferBeginInfo command_buffer_begin_info{};
     command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
     VK_ERROR(
-        vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+        vkBeginCommandBuffer(context->command_buffer, &command_buffer_begin_info),
         "Failed to begin frame command buffer."
     );
-
-    //
-    // After swapchain recreation attachment layouts must be set.
-    //
-
-    if (!m_frame_graph.m_is_attachment_layout_set && m_render_pass_index == 0 && framebuffer_index == 0) {
-        Vector<VkImageMemoryBarrier> image_memory_barriers(m_frame_graph.m_attachment_data.size(), m_frame_graph.m_render.transient_memory_resource);
-        for (size_t attachment_index = 0; attachment_index < m_frame_graph.m_attachment_data.size(); attachment_index++) {
-            const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
-            AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
-
-            VkImage attachment_image = attachment_index == 0 ? m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index] : attachment_data.image;
-            KW_ASSERT(attachment_image != VK_NULL_HANDLE);
-
-            VkImageAspectFlags aspect_mask;
-            if (attachment_descriptor.format == TextureFormat::D24_UNORM_S8_UINT || attachment_descriptor.format == TextureFormat::D32_FLOAT_S8X24_UINT) {
-                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-            } else if (attachment_descriptor.format == TextureFormat::D16_UNORM || attachment_descriptor.format == TextureFormat::D32_FLOAT) {
-                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            } else {
-                aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
-            }
-
-            VkImageSubresourceRange image_subresource_range{};
-            image_subresource_range.aspectMask = aspect_mask;
-            image_subresource_range.baseMipLevel = 0;
-            image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
-            image_subresource_range.baseArrayLayer = 0;
-            image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-            VkImageMemoryBarrier& image_memory_barrier = image_memory_barriers[attachment_index];
-            image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            image_memory_barrier.srcAccessMask = 0;
-            image_memory_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            image_memory_barrier.newLayout = attachment_data.initial_layout;
-            image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            image_memory_barrier.image = attachment_image;
-            image_memory_barrier.subresourceRange = image_subresource_range;
-        }
-
-        vkCmdPipelineBarrier(
-            command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0,
-            0, nullptr, 0, nullptr, static_cast<uint32_t>(image_memory_barriers.size()), image_memory_barriers.data()
-        );
-
-        m_frame_graph.m_is_attachment_layout_set = true;
-    }
 
     //
     // Begin render pass.
@@ -5065,12 +4898,11 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
 
     VkFramebuffer framebuffer;
 
-    if (contexts.size() == 1 && render_pass_data.framebuffers.size() == SWAPCHAIN_IMAGE_COUNT) {
-        KW_ASSERT(framebuffer_index == 0);
+    if (render_pass_data.framebuffers.size() == SWAPCHAIN_IMAGE_COUNT) {
         framebuffer = render_pass_data.framebuffers[m_frame_graph.m_swapchain_image_index];
     } else {
-        KW_ASSERT(framebuffer_index < render_pass_data.framebuffers.size());
-        framebuffer = render_pass_data.framebuffers[framebuffer_index];
+        KW_ASSERT(render_pass_data.framebuffers.size() == 1);
+        framebuffer = render_pass_data.framebuffers[0];
     }
 
     VkRect2D render_area{};
@@ -5085,7 +4917,7 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
         KW_ASSERT(attachment_index < m_frame_graph.m_attachment_descriptors.size());
 
         AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
-        if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+        if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
             clear_values[i].depthStencil.depth = attachment_descriptor.clear_depth;
             clear_values[i].depthStencil.stencil = attachment_descriptor.clear_stencil;
         } else {
@@ -5104,7 +4936,7 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
     render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
     render_pass_begin_info.pClearValues = clear_values.data();
 
-    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(context->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
     //
     // Viewport size is equal to framebuffer size.
@@ -5118,34 +4950,269 @@ FrameGraphVulkan::RenderPassContextVulkan* FrameGraphVulkan::RenderPassImplVulka
     viewport.minDepth = 0.f;
     viewport.maxDepth = 1.f;
 
-    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetViewport(context->command_buffer, 0, 1, &viewport);
 
-    //
-    // Set context's command buffer. Must be null handle, because only one begin per context is allowed.
-    //
-
-    KW_ASSERT(contexts[framebuffer_index].command_buffer == VK_NULL_HANDLE);
-    contexts[framebuffer_index].command_buffer = command_buffer;
-
-    return &contexts[framebuffer_index];
+    return context;
 }
 
-uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment, HostTexture* destination_host_texture) {
+void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer, uint32_t context_index) {
+    KW_ASSERT(source_attachment != nullptr, "Source attachment must be a valid string.");
+    KW_ASSERT(destination_texture != nullptr, "Destination texture must be a valid Texture.");
+
+    VkCommandBuffer command_buffer;
+
+    {
+        std::lock_guard lock(mutex);
+
+        auto it = blits.find(context_index);
+        if (it != blits.end()) {
+            command_buffer = it->second;
+        } else {
+            command_buffer = m_frame_graph.acquire_command_buffer();
+            KW_ERROR(command_buffer != VK_NULL_HANDLE);
+
+            VkCommandBufferBeginInfo command_buffer_begin_info{};
+            command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            VK_ERROR(
+                vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+                "Failed to begin blit command buffer."
+            );
+
+            blits.emplace(context_index, command_buffer);
+        }
+    }
+
+    TextureVulkan* texture_vulkan = static_cast<TextureVulkan*>(destination_texture);
+    KW_ASSERT(texture_vulkan != nullptr);
+
+    uint32_t attachment_index = 0;
+    for (; attachment_index < m_frame_graph.m_attachment_descriptors.size(); attachment_index++) {
+        if (std::strcmp(m_frame_graph.m_attachment_descriptors[attachment_index].name, source_attachment) == 0) {
+            break;
+        }
+    }
+
+    KW_ASSERT(
+        attachment_index < m_frame_graph.m_attachment_descriptors.size(),
+        "Invalid source attachment \"%s\".", source_attachment
+    );
+
+    AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+    AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+
+    KW_ASSERT(
+        attachment_descriptor.format == texture_vulkan->get_format(),
+        "Blit formats must match."
+    );
+
+    VkImageAspectFlags aspect_mask;
+    if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
+        // Depth-stencil blit is performed only for depth component.
+        aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    } else {
+        aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+
+    uint32_t width;
+    uint32_t height;
+    if (attachment_descriptor.size_class == SizeClass::RELATIVE) {
+        width = static_cast<uint32_t>(attachment_descriptor.width * m_frame_graph.m_swapchain_width);
+        height = static_cast<uint32_t>(attachment_descriptor.height * m_frame_graph.m_swapchain_height);
+    } else {
+        width = static_cast<uint32_t>(attachment_descriptor.width);
+        height = static_cast<uint32_t>(attachment_descriptor.height);
+    }
+
+    VkImageSubresourceRange source_image_subresource_range{};
+    source_image_subresource_range.aspectMask = aspect_mask;
+    source_image_subresource_range.baseMipLevel = 0;
+    source_image_subresource_range.levelCount = 1;
+    source_image_subresource_range.baseArrayLayer = 0;
+    source_image_subresource_range.layerCount = 1;
+    
+    VkImageSubresourceRange destination_image_subresource_range{};
+    destination_image_subresource_range.aspectMask = aspect_mask;
+    destination_image_subresource_range.baseMipLevel = 0;
+    destination_image_subresource_range.levelCount = 1;
+    destination_image_subresource_range.baseArrayLayer = destination_layer;
+    destination_image_subresource_range.layerCount = 1;
+
+    VkImage attachment_image = attachment_data.image;
+    if (attachment_index == 0) {
+        attachment_image = m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index];
+    }
+    KW_ASSERT(attachment_image != VK_NULL_HANDLE);
+
+    size_t access_index = m_render_pass_index * m_frame_graph.m_attachment_descriptors.size() + attachment_index;
+    KW_ASSERT(access_index < m_frame_graph.m_attachment_barrier_matrix.size());
+
+    // We read from this matrix and store reference to the result for a while.
+    std::shared_lock lock(m_frame_graph.m_attachment_barrier_matrix_mutex);
+
+    const AttachmentBarrierData& attachment_barrier_data = m_frame_graph.m_attachment_barrier_matrix[access_index];
+
+    VkImageMemoryBarrier image_acquire_barriers[2]{};
+    image_acquire_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_acquire_barriers[0].srcAccessMask = attachment_barrier_data.source_access_mask;
+    image_acquire_barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_acquire_barriers[0].oldLayout = attachment_barrier_data.destination_image_layout;
+    image_acquire_barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_acquire_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barriers[0].image = attachment_image;
+    image_acquire_barriers[0].subresourceRange = source_image_subresource_range;
+    image_acquire_barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_acquire_barriers[1].srcAccessMask = VK_ACCESS_NONE_KHR;
+    image_acquire_barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_acquire_barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image_acquire_barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_acquire_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_acquire_barriers[1].image = texture_vulkan->image;
+    image_acquire_barriers[1].subresourceRange = destination_image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        command_buffer, attachment_barrier_data.source_pipeline_stage_mask, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        0, nullptr, 0, nullptr, 2, image_acquire_barriers
+    );
+
+    VkImageSubresourceLayers source_subresource_layers{};
+    source_subresource_layers.aspectMask = aspect_mask;
+    source_subresource_layers.mipLevel = 0;
+    source_subresource_layers.baseArrayLayer = 0;
+    source_subresource_layers.layerCount = 1;
+
+    VkImageSubresourceLayers destination_subresource_layers{};
+    destination_subresource_layers.aspectMask = aspect_mask;
+    destination_subresource_layers.mipLevel = 0;
+    destination_subresource_layers.baseArrayLayer = destination_layer;
+    destination_subresource_layers.layerCount = 1;
+
+    VkExtent3D extent{};
+    extent.width = std::min(width, texture_vulkan->get_width());
+    extent.height = std::min(height, texture_vulkan->get_height());
+    extent.depth = 1;
+
+    VkImageCopy image_copy{};
+    image_copy.srcSubresource = source_subresource_layers;
+    image_copy.srcOffset = VkOffset3D{};
+    image_copy.dstSubresource = destination_subresource_layers;
+    image_copy.dstOffset = VkOffset3D{};
+    image_copy.extent = extent;
+
+    vkCmdCopyImage(
+        command_buffer, attachment_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture_vulkan->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+    );
+
+    VkImageMemoryBarrier image_release_barriers[2]{};
+    image_release_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_release_barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    image_release_barriers[0].dstAccessMask = attachment_barrier_data.destination_access_mask;
+    image_release_barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    image_release_barriers[0].newLayout = attachment_barrier_data.destination_image_layout;
+    image_release_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barriers[0].image = attachment_image;
+    image_release_barriers[0].subresourceRange = source_image_subresource_range;
+    image_release_barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    image_release_barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    image_release_barriers[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    image_release_barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    image_release_barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    image_release_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    image_release_barriers[1].image = texture_vulkan->image;
+    image_release_barriers[1].subresourceRange = destination_image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, attachment_barrier_data.destination_pipeline_stage_mask, 0,
+        0, nullptr, 0, nullptr, 2, image_release_barriers
+    );
+
+    KW_ASSERT(
+        texture_vulkan->get_available_mip_level_count() == texture_vulkan->get_mip_level_count() || texture_vulkan->get_available_mip_level_count() == 0,
+        "Texture must be either fully available or not available at all for blitting."
+    );
+
+    if (texture_vulkan->get_available_mip_level_count() == 0) {
+        KW_ASSERT(
+            texture_vulkan->image_view == VK_NULL_HANDLE,
+            "Image view is expected to be null."
+        );
+
+        VkImageViewType image_view_type;
+
+        switch (texture_vulkan->get_type()) {
+        case TextureType::TEXTURE_2D:
+            image_view_type = VK_IMAGE_VIEW_TYPE_2D;
+            break;
+        case TextureType::TEXTURE_CUBE:
+            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE;
+            break;
+        case TextureType::TEXTURE_3D:
+            image_view_type = VK_IMAGE_VIEW_TYPE_3D;
+            break;
+        case TextureType::TEXTURE_2D_ARRAY:
+            image_view_type = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            break;
+        case TextureType::TEXTURE_CUBE_ARRAY:
+            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+            break;
+        }
+
+        VkImageSubresourceRange image_view_subresource_range{};
+        image_view_subresource_range.aspectMask = aspect_mask;
+        image_view_subresource_range.baseMipLevel = 0;
+        image_view_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+        image_view_subresource_range.baseArrayLayer = 0;
+        image_view_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+        VkImageViewCreateInfo image_view_create_info{};
+        image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        image_view_create_info.flags = 0;
+        image_view_create_info.image = texture_vulkan->image;
+        image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+        image_view_create_info.format = TextureFormatUtils::convert_format_vulkan(texture_vulkan->get_format());
+        image_view_create_info.subresourceRange = image_view_subresource_range;
+
+        VK_ERROR(
+            vkCreateImageView(m_frame_graph.m_render.device, &image_view_create_info, &m_frame_graph.m_render.allocation_callbacks, &texture_vulkan->image_view),
+            "Failed to create image view."
+        );
+
+        texture_vulkan->set_available_mip_level_count(texture_vulkan->get_mip_level_count());
+    }
+}
+
+uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index) {
     KW_ASSERT(source_attachment != nullptr, "Source attachment must be a valid string.");
     KW_ASSERT(destination_host_texture != nullptr, "Destination host texture must be a valid HostTexture.");
 
-    if (blit_command_buffer == VK_NULL_HANDLE) {
-        blit_command_buffer = acquire_command_buffer();
-        KW_ERROR(blit_command_buffer != VK_NULL_HANDLE);
+    VkCommandBuffer command_buffer;
 
-        VkCommandBufferBeginInfo command_buffer_begin_info{};
-        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    {
+        std::lock_guard lock(mutex);
 
-        VK_ERROR(
-            vkBeginCommandBuffer(blit_command_buffer, &command_buffer_begin_info),
-            "Failed to begin blit command buffer."
-        );
+        auto it = blits.find(context_index);
+        if (it != blits.end()) {
+            command_buffer = it->second;
+        } else {
+            command_buffer = m_frame_graph.acquire_command_buffer();
+            KW_ERROR(command_buffer != VK_NULL_HANDLE);
+
+            VkCommandBufferBeginInfo command_buffer_begin_info{};
+            command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            VK_ERROR(
+                vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+                "Failed to begin blit command buffer."
+            );
+
+            blits.emplace(context_index, command_buffer);
+        }
     }
 
     HostTextureVulkan* host_texture_vulkan = static_cast<HostTextureVulkan*>(destination_host_texture);
@@ -5202,8 +5269,13 @@ uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachm
     }
     KW_ASSERT(attachment_image != VK_NULL_HANDLE);
 
-    KW_ASSERT(m_render_pass_index < attachment_data.blit_data.size());
-    const AttachmentBarrierData& attachment_barrier_data = attachment_data.blit_data[m_render_pass_index];
+    size_t access_index = m_render_pass_index * m_frame_graph.m_attachment_descriptors.size() + attachment_index;
+    KW_ASSERT(access_index < m_frame_graph.m_attachment_barrier_matrix.size());
+
+    // We read from this matrix and store reference to the result for a while.
+    std::shared_lock lock(m_frame_graph.m_attachment_barrier_matrix_mutex);
+
+    const AttachmentBarrierData& attachment_barrier_data = m_frame_graph.m_attachment_barrier_matrix[access_index];
 
     VkBufferMemoryBarrier buffer_acquire_barrier{};
     buffer_acquire_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -5227,7 +5299,7 @@ uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachm
     image_acquire_barrier.subresourceRange = image_subresource_range;
 
     vkCmdPipelineBarrier(
-        blit_command_buffer, attachment_barrier_data.source_pipeline_stage_mask, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        command_buffer, attachment_barrier_data.source_pipeline_stage_mask, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
         0, nullptr, 1, &buffer_acquire_barrier, 1, &image_acquire_barrier
     );
 
@@ -5245,7 +5317,7 @@ uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachm
     buffer_image_copy.imageExtent.depth = 1;
 
     vkCmdCopyImageToBuffer(
-        blit_command_buffer, attachment_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, host_texture_vulkan->buffer,
+        command_buffer, attachment_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, host_texture_vulkan->buffer,
         1, &buffer_image_copy
     );
 
@@ -5271,65 +5343,11 @@ uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachm
     image_release_barrier.subresourceRange = image_subresource_range;
 
     vkCmdPipelineBarrier(
-        blit_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, attachment_barrier_data.destination_pipeline_stage_mask, 0,
+        command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, attachment_barrier_data.destination_pipeline_stage_mask, 0,
         0, nullptr, 1, &buffer_release_barrier, 1, &image_release_barrier
     );
 
     return m_frame_graph.m_render_finished_timeline_semaphore->value;
-}
-
-FrameGraphVulkan::CommandPoolData& FrameGraphVulkan::RenderPassImplVulkan::acquire_command_pool() {
-    UnorderedMap<std::thread::id, CommandPoolData>& command_pool_map = m_frame_graph.m_command_pool_data[m_frame_graph.m_semaphore_index];
-
-    {
-        std::shared_lock lock(m_frame_graph.m_command_pool_mutex);
-
-        auto result = command_pool_map.find(std::this_thread::get_id());
-        if (result != command_pool_map.end()) {
-            return result->second;
-        }
-    }
-
-    {
-        std::unique_lock lock(m_frame_graph.m_command_pool_mutex);
-
-        VkCommandPoolCreateInfo command_pool_create_info{};
-        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        command_pool_create_info.queueFamilyIndex = m_frame_graph.m_render.graphics_queue_family_index;
-
-        CommandPoolData command_pool_data(m_frame_graph.m_render.persistent_memory_resource);
-        VK_ERROR(
-            vkCreateCommandPool(m_frame_graph.m_render.device, &command_pool_create_info, &m_frame_graph.m_render.allocation_callbacks, &command_pool_data.command_pool),
-            "Failed to create a command pool."
-        );
-
-        return command_pool_map.emplace(std::this_thread::get_id(), std::move(command_pool_data)).first->second;
-    }
-}
-
-VkCommandBuffer FrameGraphVulkan::RenderPassImplVulkan::acquire_command_buffer() {
-    CommandPoolData& command_pool_data = acquire_command_pool();
-
-    size_t command_buffer_index = command_pool_data.current_command_buffer++;
-
-    if (command_buffer_index == command_pool_data.command_buffers.size()) {
-        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
-        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.commandPool = command_pool_data.command_pool;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandBufferCount = 1;
-
-        VkCommandBuffer command_buffer;
-        VK_ERROR(
-            vkAllocateCommandBuffers(m_frame_graph.m_render.device, &command_buffer_allocate_info, &command_buffer),
-            "Failed to allocate a command buffer."
-        );
-
-        command_pool_data.command_buffers.push_back(command_buffer);
-    }
-
-    return command_pool_data.command_buffers[command_buffer_index];
 }
 
 FrameGraphVulkan::RenderPassData::RenderPassData(MemoryResource& memory_resource)
@@ -5371,8 +5389,8 @@ void FrameGraphVulkan::AcquireTask::run() {
         m_frame_graph.recreate_swapchain();
 
         if (m_frame_graph.m_swapchain == VK_NULL_HANDLE) {
-            // Most likely the window is minimized. Invalid swapchain image index notifies other subsystems that
-            // frame must be skipped.
+            // Most likely the window is minimized. Invalid swapchain image index
+            // notifies other subsystems that frame must be skipped.
             m_frame_graph.m_swapchain_image_index = UINT32_MAX;
             return;
         }
@@ -5483,14 +5501,12 @@ void FrameGraphVulkan::AcquireTask::run() {
     }
 
     //
-    // Reset render pass contexts.
+    // Reset render pass contexts and blit command buffers.
     //
 
     for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
-        for (RenderPassContextVulkan& render_pass_context : render_pass_data.render_pass_impl->contexts) {
-            render_pass_context.reset();
-        }
-        render_pass_data.render_pass_impl->blit_command_buffer = VK_NULL_HANDLE;
+        render_pass_data.render_pass_impl->contexts.clear();
+        render_pass_data.render_pass_impl->blits.clear();
     }
 }
 
@@ -5516,86 +5532,243 @@ void FrameGraphVulkan::PresentTask::run() {
     // Query render pass command buffers and required transfer semaphore value.
     //
 
-    size_t framebuffer_count = 0;
+    size_t command_buffer_count = m_frame_graph.m_is_attachment_layout_set ? 0 : 1;
 
     for (RenderPassData& render_pass_data : m_frame_graph.m_render_pass_data) {
         KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
-        framebuffer_count += render_pass_data.render_pass_impl->contexts.size();
-
-        if (render_pass_data.render_pass_impl->blit_command_buffer != VK_NULL_HANDLE) {
-            framebuffer_count++;
-        }
+        command_buffer_count += render_pass_data.render_pass_impl->contexts.size();
+        command_buffer_count += render_pass_data.render_pass_impl->blits.size();
     }
 
     Vector<VkCommandBuffer> render_pass_command_buffers(m_frame_graph.m_render.transient_memory_resource);
-    render_pass_command_buffers.reserve(framebuffer_count);
+    render_pass_command_buffers.reserve(command_buffer_count);
 
     uint64_t transfer_semaphore_value = 0;
 
-    for (size_t render_pass_index = 0; render_pass_index < m_frame_graph.m_render_pass_data.size(); render_pass_index++) {
-        RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[render_pass_index];
-        KW_ASSERT(render_pass_data.parallel_block_index < m_frame_graph.m_parallel_block_data.size());
-        KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
+    //
+    // The first frame after swapchain recreation, proper image layouts must be set.
+    //
 
-        for (size_t framebuffer_index = 0; framebuffer_index < render_pass_data.render_pass_impl->contexts.size(); framebuffer_index++) {
-            RenderPassContextVulkan& render_pass_context = render_pass_data.render_pass_impl->contexts[framebuffer_index];
+    if (!m_frame_graph.m_is_attachment_layout_set) {
+        VkCommandBuffer command_buffer = m_frame_graph.acquire_command_buffer();
 
-            // Every render pass and framebuffer must begin, because besides draw calls there's a synchronization layer
-            // that must execute.
-            if (render_pass_context.command_buffer == VK_NULL_HANDLE) {
-                render_pass_data.render_pass_impl->begin(static_cast<uint32_t>(framebuffer_index));
-                KW_ASSERT(render_pass_context.command_buffer != VK_NULL_HANDLE);
+        VkCommandBufferBeginInfo command_buffer_begin_info{};
+        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        VK_ERROR(
+            vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+            "Failed to begin command buffer."
+        );
+
+        Vector<VkImageMemoryBarrier> image_memory_barriers(m_frame_graph.m_attachment_data.size(), m_frame_graph.m_render.transient_memory_resource);
+        for (size_t attachment_index = 0; attachment_index < m_frame_graph.m_attachment_data.size(); attachment_index++) {
+            const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+            AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+
+            VkImage attachment_image = attachment_index == 0 ? m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index] : attachment_data.image;
+            KW_ASSERT(attachment_image != VK_NULL_HANDLE);
+
+            VkImageAspectFlags aspect_mask;
+            if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            } else if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
+                aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            } else {
+                aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
             }
 
-            // Insert pipeline barrier between two render passes.
-            if (render_pass_data.render_pass_impl->blit_command_buffer == VK_NULL_HANDLE &&
-                framebuffer_index + 1 == render_pass_data.render_pass_impl->contexts.size() &&
-                render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
-                m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
-            {
-                ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+            VkImageSubresourceRange image_subresource_range{};
+            image_subresource_range.aspectMask = aspect_mask;
+            image_subresource_range.baseMipLevel = 0;
+            image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+            image_subresource_range.baseArrayLayer = 0;
+            image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-                VkMemoryBarrier memory_barrier{};
-                memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-                memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
-                memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
-
-                vkCmdPipelineBarrier(
-                    render_pass_context.command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
-                    1, &memory_barrier, 0, nullptr, 0, nullptr
-                );
-            }
-
-            // End all render passes sequentially here.
-            vkCmdEndRenderPass(render_pass_context.command_buffer);
-            vkEndCommandBuffer(render_pass_context.command_buffer);
-
-            render_pass_command_buffers.push_back(render_pass_context.command_buffer);
-
-            transfer_semaphore_value = std::max(transfer_semaphore_value, render_pass_context.transfer_semaphore_value);
+            VkImageMemoryBarrier& image_memory_barrier = image_memory_barriers[attachment_index];
+            image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image_memory_barrier.srcAccessMask = VK_ACCESS_NONE_KHR;
+            image_memory_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+            image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            image_memory_barrier.newLayout = attachment_data.initial_layout;
+            image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            image_memory_barrier.image = attachment_image;
+            image_memory_barrier.subresourceRange = image_subresource_range;
         }
 
-        if (render_pass_data.render_pass_impl->blit_command_buffer != VK_NULL_HANDLE) {
-            // Insert pipeline barrier between two render passes.
-            if (render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
-                m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
-            {
-                ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+        vkCmdPipelineBarrier(
+            command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, 0,
+            0, nullptr, 0, nullptr, static_cast<uint32_t>(image_memory_barriers.size()), image_memory_barriers.data()
+        );
 
-                VkMemoryBarrier memory_barrier{};
-                memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-                memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
-                memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+        vkEndCommandBuffer(command_buffer);
 
-                vkCmdPipelineBarrier(
-                    render_pass_data.render_pass_impl->blit_command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
-                    1, &memory_barrier, 0, nullptr, 0, nullptr
-                );
+        m_frame_graph.m_is_attachment_layout_set = true;
+
+        render_pass_command_buffers.push_back(command_buffer);
+    }
+
+    //
+    // Collect render pass command buffers.
+    //
+
+    {
+        std::shared_lock attachment_barrier_matrix_lock(m_frame_graph.m_attachment_barrier_matrix_mutex, std::defer_lock);
+        std::shared_lock parallel_block_data_lock(m_frame_graph.m_parallel_block_data_mutex, std::defer_lock);
+
+        std::lock(attachment_barrier_matrix_lock, parallel_block_data_lock);
+
+        for (size_t render_pass_index = 0; render_pass_index < m_frame_graph.m_render_pass_data.size(); render_pass_index++) {
+            RenderPassData& render_pass_data = m_frame_graph.m_render_pass_data[render_pass_index];
+            KW_ASSERT(render_pass_data.parallel_block_index < m_frame_graph.m_parallel_block_data.size());
+            KW_ASSERT(render_pass_data.render_pass_impl != nullptr);
+
+            if (render_pass_data.render_pass_impl->contexts.empty() && render_pass_data.render_pass_impl->blits.empty()) {
+                if (render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
+                    m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
+                {
+                    VkCommandBuffer command_buffer = m_frame_graph.acquire_command_buffer();
+
+                    VkCommandBufferBeginInfo command_buffer_begin_info{};
+                    command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                    command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                    VK_ERROR(
+                        vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+                        "Failed to begin command buffer."
+                    );
+
+                    ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+
+                    VkMemoryBarrier memory_barrier{};
+                    memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
+                    memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+
+                    vkCmdPipelineBarrier(
+                        command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
+                        1, &memory_barrier, 0, nullptr, 0, nullptr
+                    );
+
+                    vkEndCommandBuffer(command_buffer);
+                }
+            } else {
+                auto context_it = render_pass_data.render_pass_impl->contexts.begin();
+                auto blit_it = render_pass_data.render_pass_impl->blits.begin();
+                while (context_it != render_pass_data.render_pass_impl->contexts.end() ||
+                       blit_it != render_pass_data.render_pass_impl->blits.end())
+                {
+                    VkCommandBuffer command_buffer;
+
+                    if (context_it != render_pass_data.render_pass_impl->contexts.end() &&
+                        (blit_it == render_pass_data.render_pass_impl->blits.end() || context_it->first <= blit_it->first))
+                    {
+                        command_buffer = context_it->second.command_buffer;
+                        transfer_semaphore_value = std::max(transfer_semaphore_value, context_it->second.transfer_semaphore_value);
+
+                        ++context_it;
+
+                        vkCmdEndRenderPass(command_buffer);
+
+                        // We execute this render pass multiple times. We need to transition image back to this pass's beginning.
+                        if (context_it != render_pass_data.render_pass_impl->contexts.end()) {
+                            Vector<VkImageMemoryBarrier> image_memory_barriers(m_frame_graph.m_render.transient_memory_resource);
+                            image_memory_barriers.reserve(render_pass_data.write_attachment_indices.size());
+
+                            VkPipelineStageFlags source_pipeline_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+                            VkPipelineStageFlags destination_pipeline_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+                            for (uint32_t attachment_index : render_pass_data.write_attachment_indices) {
+                                const AttachmentDescriptor& attachment_descriptor = m_frame_graph.m_attachment_descriptors[attachment_index];
+                                AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+
+                                VkImage attachment_image = attachment_index == 0 ? m_frame_graph.m_swapchain_images[m_frame_graph.m_swapchain_image_index] : attachment_data.image;
+                                KW_ASSERT(attachment_image != VK_NULL_HANDLE);
+
+                                VkImageAspectFlags aspect_mask;
+                                if (TextureFormatUtils::is_depth_stencil(attachment_descriptor.format)) {
+                                    aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+
+                                    // The next render pass must wait on late fragment tests.
+                                    destination_pipeline_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+                                } else if (TextureFormatUtils::is_depth(attachment_descriptor.format)) {
+                                    aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+                                    // The next render pass must wait on late fragment tests.
+                                    destination_pipeline_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+                                } else {
+                                    aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+                                    // The next render pass must wait for color attachment output.
+                                    source_pipeline_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                                }
+
+                                size_t access_index = render_pass_index * m_frame_graph.m_attachment_descriptors.size() + attachment_index;
+                                KW_ASSERT(access_index < m_frame_graph.m_attachment_barrier_matrix.size());
+
+                                const AttachmentBarrierData& attachment_barrier_data = m_frame_graph.m_attachment_barrier_matrix[access_index];
+
+                                if (attachment_barrier_data.source_image_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+                                    // No need to transition this attachment.
+                                    continue;
+                                }
+
+                                VkImageSubresourceRange image_subresource_range{};
+                                image_subresource_range.aspectMask = aspect_mask;
+                                image_subresource_range.baseMipLevel = 0;
+                                image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+                                image_subresource_range.baseArrayLayer = 0;
+                                image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+                                VkImageMemoryBarrier image_memory_barrier{};
+                                image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                                image_memory_barrier.srcAccessMask = VK_ACCESS_NONE_KHR;
+                                image_memory_barrier.dstAccessMask = attachment_barrier_data.source_access_mask;
+                                image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                                image_memory_barrier.newLayout = attachment_barrier_data.source_image_layout;
+                                image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                image_memory_barrier.image = attachment_image;
+                                image_memory_barrier.subresourceRange = image_subresource_range;
+
+                                image_memory_barriers.push_back(image_memory_barrier);
+                            }
+
+                            vkCmdPipelineBarrier(
+                                command_buffer, source_pipeline_stage, destination_pipeline_stage, 0,
+                                0, nullptr, 0, nullptr, static_cast<uint32_t>(image_memory_barriers.size()), image_memory_barriers.data()
+                            );
+                        }
+                    } else {
+                        command_buffer = blit_it->second;
+
+                        ++blit_it;
+                    }
+
+                    if (context_it == render_pass_data.render_pass_impl->contexts.end() &&
+                        blit_it == render_pass_data.render_pass_impl->blits.end() &&
+                        render_pass_index + 1 < m_frame_graph.m_render_pass_data.size() &&
+                        m_frame_graph.m_render_pass_data[render_pass_index + 1].parallel_block_index != render_pass_data.parallel_block_index)
+                    {
+                        ParallelBlockData& parallel_block_data = m_frame_graph.m_parallel_block_data[render_pass_data.parallel_block_index];
+
+                        VkMemoryBarrier memory_barrier{};
+                        memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                        memory_barrier.srcAccessMask = parallel_block_data.source_access_mask;
+                        memory_barrier.dstAccessMask = parallel_block_data.destination_access_mask;
+
+                        vkCmdPipelineBarrier(
+                            command_buffer, parallel_block_data.source_stage_mask, parallel_block_data.destination_stage_mask, 0,
+                            1, &memory_barrier, 0, nullptr, 0, nullptr
+                        );
+                    }
+
+                    vkEndCommandBuffer(command_buffer);
+
+                    render_pass_command_buffers.push_back(command_buffer);
+                }
             }
-            
-            vkEndCommandBuffer(render_pass_data.render_pass_impl->blit_command_buffer);
-
-            render_pass_command_buffers.push_back(render_pass_data.render_pass_impl->blit_command_buffer);
         }
     }
 

@@ -92,7 +92,7 @@ bool is_depth(TextureFormat format) {
 }
 
 bool is_depth_stencil(TextureFormat format) {
-    return TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].is_depth != 0 ||
+    return TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].is_depth != 0 &&
            TEXTURE_FORMAT_PROPERTIES[static_cast<size_t>(format)].is_stencil != 0;
 }
 

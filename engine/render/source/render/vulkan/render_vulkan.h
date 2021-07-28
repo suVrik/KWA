@@ -417,9 +417,9 @@ private:
 
     // Queued upload commands that will be submitted together in one batch.
     Vector<BufferUploadCommand> m_buffer_upload_commands;
-    std::mutex m_buffer_upload_command_mutex;
+    std::recursive_mutex m_buffer_upload_command_mutex;
     Vector<TextureUploadCommand> m_texture_upload_commands;
-    std::mutex m_texture_upload_command_mutex;
+    std::recursive_mutex m_texture_upload_command_mutex;
 
     // Queued resource destroy commands waiting for its dependencies to signal.
     Queue<BufferDestroyCommand> m_buffer_destroy_commands;

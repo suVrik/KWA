@@ -3,6 +3,7 @@
 #include "render/render_pass_impl.h"
 
 #include <core/concurrency/task.h>
+#include <core/containers/map.h>
 #include <core/containers/queue.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
@@ -68,19 +69,16 @@ public:
     // descriptor sets don't waste CPU time to allocate them.
     uint32_t descriptor_set_count;
 
-    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-    // because of shader optimizations.
-    uint32_t uniform_attachment_descriptor_count;
+    // This is needed for draw call validation. The number of uniform attachments specified in graphics pipeline
+    // descriptor. Actual number of descriptors written to descriptor set may be less because of shader optimizations.
+    uint32_t uniform_attachment_count;
 
-    // Mapping from `VkWriteDescriptorSet` indices to `m_attachment_data` indices.
+    // The actual number of uniform attachment can be less.
     Vector<uint32_t> uniform_attachment_indices;
 
-    // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
-    Vector<uint32_t> uniform_attachment_mapping;
-
-    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-    // because of shader optimizations.
-    uint32_t uniform_texture_descriptor_count;
+    // This is needed for draw call validation. The number of uniform textures specified in graphics pipeline
+    // descriptor. Actual number of descriptors written to descriptor set may be less because of shader optimizations.
+    uint32_t uniform_texture_count;
 
     // First texture from `uniform_texture_mapping` goes to this binding.
     uint32_t uniform_texture_first_binding;
@@ -88,13 +86,16 @@ public:
     // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
     Vector<uint32_t> uniform_texture_mapping;
 
+    // Type of each uniform texture in graphics pipeline.
+    Vector<TextureType> uniform_texture_types;
+
     // These are immutable samplers and there's no need to bind them to descriptor set.
     // They are stored to be destroyed after descriptor set layout is destroyed.
     Vector<VkSampler> uniform_samplers;
 
-    // This is needed for draw call validation. Actual number of descriptors written to descriptor set may be less
-    // because of shader optimizations.
-    uint32_t uniform_buffer_descriptor_count;
+    // This is needed for draw call validation. The number of uniform buffers specified in graphics pipeline
+    // descriptor. Actual number of descriptors written to descriptor set may be less because of shader optimizations.
+    uint32_t uniform_buffer_count;
 
     // First buffer from `uniform_buffer_mapping` goes to this binding.
     uint32_t uniform_buffer_first_binding;
@@ -102,16 +103,15 @@ public:
     // Mapping from `VkWriteDescriptorSet` indices to `DrawCallDescriptor` indices.
     Vector<uint32_t> uniform_buffer_mapping;
 
-    // Sizes of each uniform buffer in descriptor set.
+    // Size of each uniform buffer in graphics pipeline.
     Vector<uint32_t> uniform_buffer_sizes;
 
     // This is needed for draw call validation and for push constants command. When push constants are optimized
     // away from the shader stages, this value is equal to the expected one anyway.
     uint32_t push_constants_size;
 
-    // This is needed for push constants command. Might be different than graphics pipeline descriptor value
-    // because of shader optimizations. Value of 0 means push constants were optimized away from all stages and
-    // won't be pushed.
+    // This is needed for push constants command. Value of 0 means push constants were optimized away from all stages
+    // and won't be pushed.
     VkShaderStageFlags push_constants_visibility;
 };
 
@@ -176,10 +176,6 @@ private:
 
         // Min/max read/write render pass indices for each attachment.
         Vector<AttachmentBoundsData> attachment_bounds_data;
-
-        // Attachment_count x render_pass_count matrix of access masks and image layouts for pipeline barriers,
-        // render passes and blit requests.
-        Vector<AttachmentBarrierData> attachment_barrier_matrix;
     };
 
     struct AttachmentData {
@@ -203,9 +199,6 @@ private:
         // Layout transition from `VK_IMAGE_LAYOUT_UNDEFINED` to specified image layout is performed manually
         // before the first render pass once after the attachment is created.
         VkImageLayout initial_layout;
-
-        // Empty if attachment is not blit-allowed.
-        Vector<AttachmentBarrierData> blit_data;
     };
 
     struct AllocationData {
@@ -251,17 +244,16 @@ private:
     public:
         // Called from a thread that constructs render passes. May be different than the one that submits draw calls.
         // Therefore command buffer at this point is undefined.
-        RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index, uint32_t framebuffer_index);
+        RenderPassContextVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index, uint32_t context_index);
 
         void draw(const DrawCallDescriptor& descriptor) override;
 
         Render& get_render() const override;
+
         uint32_t get_attachment_width() const override;
         uint32_t get_attachment_height() const override;
-        uint32_t get_attachemnt_index() const override;
 
-        // Reset command buffer, transfer semaphore value, framebuffer size and etc.
-        void reset();
+        uint32_t get_context_index() const override;
 
         // Command buffer is set from render pass implementation. Queried by `PresentTask`.
         VkCommandBuffer command_buffer;
@@ -279,6 +271,8 @@ private:
         uint32_t m_framebuffer_width;
         uint32_t m_framebuffer_height;
 
+        uint32_t m_context_index;
+
         GraphicsPipelineVulkan* m_graphics_pipeline_vulkan;
     };
 
@@ -286,20 +280,21 @@ private:
     public:
         RenderPassImplVulkan(FrameGraphVulkan& frame_graph, uint32_t render_pass_index);
 
-        RenderPassContextVulkan* begin(uint32_t framebuffer_index) override;
+        RenderPassContextVulkan* begin(uint32_t context_index) override;
 
-        uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture) override;
+        uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index) override;
+        void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer, uint32_t context_index) override;
 
-        // Queried by `PresentTask`.
-        Vector<RenderPassContextVulkan> contexts;
+        // Sequential render pass executions.
+        Map<uint32_t, RenderPassContextVulkan> contexts;
 
-        // Stores blit commands. Most likely `VK_NULL_HANDLE`.
-        VkCommandBuffer blit_command_buffer;
+        // Blit commands that must be executed after a particular context.
+        Map<uint32_t, VkCommandBuffer> blits;
+
+        // `contexts` and `blits` must be synchronized.
+        std::mutex mutex;
 
     private:
-        CommandPoolData& acquire_command_pool();
-        VkCommandBuffer acquire_command_buffer();
-
         FrameGraphVulkan& m_frame_graph;
         uint32_t m_render_pass_index;
     };
@@ -317,6 +312,7 @@ private:
         uint32_t framebuffer_width;
         uint32_t framebuffer_height;
 
+        // TODO: Now only either 1 or `SWAPCHAIN_IMAGE_COUNT`. Use array instead.
         // A render pass has multiple framebuffers if its attachments have `count` greater than 1.
         // A render pass has `SWAPCHAIN_IMAGE_COUNT` framebuffers if one of its attachments is a swapchain attachment.
         Vector<VkFramebuffer> framebuffers;
@@ -377,12 +373,14 @@ private:
     void compute_attachment_ranges(CreateContext& create_context);
     void compute_attachment_usage_mask(CreateContext& create_context);
     void compute_attachment_layouts(CreateContext& create_context);
-    void compute_attachment_blit_data(CreateContext& create_context);
 
     void create_render_passes(CreateContext& create_context);
     void create_render_pass(CreateContext& create_context, uint32_t render_pass_index);
 
     void create_synchronization(CreateContext& create_context);
+
+    CommandPoolData& acquire_command_pool();
+    VkCommandBuffer acquire_command_buffer();
 
     void create_temporary_resources();
     void destroy_temporary_resources();
@@ -422,9 +420,14 @@ private:
     // Flattened attachment descriptors from frame graph descriptor.
     Vector<AttachmentDescriptor> m_attachment_descriptors;
 
-    // Attachment_count x render_pass_count matrix of access to a certain attachment on a certain render pass.
+    // `attachment_count` x `render_pass_count` matrix of access to a certain attachment on a certain render pass.
     Vector<AttachmentAccess> m_attachment_access_matrix;
-    std::mutex m_attachment_access_matrix_mutex;
+    std::shared_mutex m_attachment_access_matrix_mutex;
+
+    // `attachment_count` x `render_pass_count` matrix of access masks and image layouts for pipeline barriers,
+    // render passes and blit requests.
+    Vector<AttachmentBarrierData> m_attachment_barrier_matrix;
+    std::shared_mutex m_attachment_barrier_matrix_mutex;
 
     Vector<AttachmentData> m_attachment_data;
     Vector<AllocationData> m_allocation_data;
@@ -432,7 +435,7 @@ private:
 
     // The number of parallel blocks can (and is encouraged to) be less than the number of render passes.
     Vector<ParallelBlockData> m_parallel_block_data;
-    std::mutex m_parallel_block_data_mutex;
+    std::shared_mutex m_parallel_block_data_mutex;
 
     // Each frame in flight and each thread requires own set of command pools.
     UnorderedMap<std::thread::id, CommandPoolData> m_command_pool_data[SWAPCHAIN_IMAGE_COUNT];

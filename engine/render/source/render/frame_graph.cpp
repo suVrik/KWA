@@ -10,36 +10,40 @@
 
 namespace kw {
 
-RenderPassContext* RenderPass::begin(uint32_t attachment_index) {
+RenderPassContext* RenderPass::begin(uint32_t context_index) {
     KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
 
-    return m_impl->begin(attachment_index);
+    return m_impl->begin(context_index);
 }
 
-uint64_t RenderPass::blit(const char* source_attachment, HostTexture* destination_host_texture) {
+uint64_t RenderPass::blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index) {
     KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
 
-    return m_impl->blit(source_attachment, destination_host_texture);
+    return m_impl->blit(source_attachment, destination_host_texture, context_index);
 }
 
-template <typename T>
-inline bool check_equal(T a, T b) {
-    return a == b || (a == static_cast<T>(0) && b == static_cast<T>(1)) || (a == static_cast<T>(1) && b == static_cast<T>(0));
+void RenderPass::blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer, uint32_t context_index) {
+    KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
+
+    m_impl->blit(source_attachment, destination_texture, destination_layer, context_index);
 }
 
-static bool validate_size(bool& is_set, SizeClass& size_class, float& width, float& height, uint32_t& count, SizeClass attachment_size_class, float attachment_width, float attachment_height, uint32_t attachment_count) {
+inline bool check_equal(float a, float b) {
+    return a == b || (a == 0.f && b == 1.f) || (a == 1.f && b == 0.f);
+}
+
+static bool validate_size(bool& is_set, SizeClass& size_class, float& width, float& height, SizeClass attachment_size_class, float attachment_width, float attachment_height) {
     if (!is_set) {
         is_set = true;
 
         size_class = attachment_size_class;
         width = attachment_width;
         height = attachment_height;
-        count = attachment_count;
 
         return true;
     }
 
-    return attachment_size_class == size_class && check_equal(attachment_width, width) && check_equal(attachment_height, height) && check_equal(attachment_count, count);
+    return attachment_size_class == size_class && check_equal(attachment_width, width) && check_equal(attachment_height, height);
 }
 
 static void validate_attachments(const FrameGraphDescriptor& frame_graph_descriptor, size_t render_pass_index) {
@@ -88,7 +92,6 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
     SizeClass size_class = SizeClass::RELATIVE;
     float width = 0.f;
     float height = 0.f;
-    uint32_t count = 0;
 
     KW_ERROR(
         render_pass_descriptor.write_color_attachment_names != nullptr || render_pass_descriptor.write_color_attachment_name_count == 0,
@@ -107,7 +110,7 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
 
         if (std::strcmp(color_attachment_name, frame_graph_descriptor.swapchain_attachment_name) == 0) {
             KW_ERROR(
-                validate_size(is_set, size_class, width, height, count, SizeClass::RELATIVE, 1.f, 1.f, 1),
+                validate_size(is_set, size_class, width, height, SizeClass::RELATIVE, 1.f, 1.f),
                 "Attachment \"%s\" size doesn't match (render pass \"%s\").", color_attachment_name, render_pass_descriptor.name
             );
 
@@ -119,7 +122,7 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
 
             if (std::strcmp(color_attachment_name, attachment_descriptor.name) == 0) {
                 KW_ERROR(
-                    validate_size(is_set, size_class, width, height, count, attachment_descriptor.size_class, attachment_descriptor.width, attachment_descriptor.height, attachment_descriptor.count),
+                    validate_size(is_set, size_class, width, height, attachment_descriptor.size_class, attachment_descriptor.width, attachment_descriptor.height),
                     "Attachment \"%s\" size doesn't match (render pass \"%s\").", color_attachment_name, render_pass_descriptor.name
                 );
 
@@ -176,7 +179,7 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
 
             if (std::strcmp(depth_stencil_attachment_name, attachment_descriptor.name) == 0) {
                 KW_ERROR(
-                    validate_size(is_set, size_class, width, height, count, attachment_descriptor.size_class, attachment_descriptor.width, attachment_descriptor.height, attachment_descriptor.count),
+                    validate_size(is_set, size_class, width, height, attachment_descriptor.size_class, attachment_descriptor.width, attachment_descriptor.height),
                     "Attachment \"%s\" size doesn't match (render pass \"%s\").", depth_stencil_attachment_name, render_pass_descriptor.name
                 );
 
@@ -189,11 +192,13 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
             "Depth stencil attachment \"%s\" is not found (render pass \"%s\").", depth_stencil_attachment_name, render_pass_descriptor.name
         );
 
-        for (size_t i = 0; i < render_pass_descriptor.read_attachment_name_count; i++) {
-            KW_ERROR(
-                std::strcmp(depth_stencil_attachment_name, render_pass_descriptor.read_attachment_names[i]) != 0,
-                "Write depth stencil attachment \"%s\" is already specified in read attachments (render pass \"%s\").", depth_stencil_attachment_name, render_pass_descriptor.name
-            );
+        if (render_pass_descriptor.write_depth_stencil_attachment_name != nullptr) {
+            for (size_t i = 0; i < render_pass_descriptor.read_attachment_name_count; i++) {
+                KW_ERROR(
+                    std::strcmp(depth_stencil_attachment_name, render_pass_descriptor.read_attachment_names[i]) != 0,
+                    "Write depth stencil attachment \"%s\" is already specified in read attachments (render pass \"%s\").", depth_stencil_attachment_name, render_pass_descriptor.name
+                );
+            }
         }
     }
 }
@@ -271,7 +276,7 @@ static void validate_depth_stencil_attachments(const FrameGraphDescriptor& frame
         }
 
         KW_ERROR(
-            TextureFormatUtils::is_depth_stencil(attachment_descriptor.format),
+            TextureFormatUtils::is_depth(attachment_descriptor.format),
             "Invalid depth stencil attachment \"%s\" format.", attachment_descriptor.name
         );
 
@@ -298,7 +303,7 @@ static void validate_depth_stencil_attachments(const FrameGraphDescriptor& frame
         }
 
         KW_ERROR(
-            attachment_descriptor.clear_depth >= 0.f && attachment_descriptor.clear_depth >= 1.f,
+            attachment_descriptor.clear_depth >= 0.f && attachment_descriptor.clear_depth <= 1.f,
             "Invalid attachment \"%s\" clear depth.", attachment_descriptor.name
         );
     }
