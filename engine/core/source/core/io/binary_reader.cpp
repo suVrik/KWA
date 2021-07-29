@@ -9,7 +9,7 @@ BinaryReader::BinaryReader(const char* path)
 }
 
 bool BinaryReader::read(void* output, size_t size) {
-    KW_ASSERT(output != nullptr);
+    KW_ASSERT(output != nullptr || size == 0);
     return static_cast<bool>(m_stream.read(static_cast<char*>(output), size));
 }
 

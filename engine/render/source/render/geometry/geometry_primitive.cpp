@@ -2,8 +2,9 @@
 
 namespace kw {
 
-GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material)
-    : m_geometry(std::move(geometry))
+GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, const transform& local_transform)
+    : AccelerationStructurePrimitive(local_transform)
+    , m_geometry(std::move(geometry))
     , m_material(std::move(material))
 {
 }

@@ -201,7 +201,7 @@ void subscribe_to_segfault() {
 
 #else
 
-const char* get_stacktrace(uint32_t hide_calls) {
+char* get_stacktrace(uint32_t hide_calls) {
     return "";
 }
 

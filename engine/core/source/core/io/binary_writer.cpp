@@ -9,7 +9,7 @@ BinaryWriter::BinaryWriter(const char* path)
 }
 
 bool BinaryWriter::write(const void* data, size_t size) {
-    KW_ASSERT(data != nullptr);
+    KW_ASSERT(data != nullptr || size == 0);
     return static_cast<bool>(m_stream.write(reinterpret_cast<const char*>(data), size));
 }
 

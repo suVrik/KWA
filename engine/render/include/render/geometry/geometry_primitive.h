@@ -11,7 +11,7 @@ class Material;
 
 class GeometryPrimitive : public AccelerationStructurePrimitive {
 public:
-    explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr, SharedPtr<Material> material = nullptr);
+    explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr, SharedPtr<Material> material = nullptr, const transform& local_transform = transform());
     ~GeometryPrimitive() override;
 
     const SharedPtr<Geometry>& get_geometry() const;
