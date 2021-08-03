@@ -11,6 +11,7 @@ public:
 
     // Root node is an array. Throws when out of bounds.
     MarkdownNode& operator[](size_t index) const;
+
     size_t get_size() const;
 
 private:

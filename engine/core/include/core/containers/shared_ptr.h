@@ -18,5 +18,6 @@ SharedPtr<T> allocate_shared(MemoryResource& memory_resource, Args&&... args) {
 }
 
 using std::static_pointer_cast;
+using std::dynamic_pointer_cast;
 
 } // namespace kw

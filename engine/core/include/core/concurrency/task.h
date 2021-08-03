@@ -54,6 +54,7 @@ public:
     NoopTask(const char* name);
 
     void run() override;
+
     const char* get_name() const override;
 
 private:

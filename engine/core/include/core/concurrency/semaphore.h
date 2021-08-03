@@ -7,7 +7,7 @@ namespace kw {
 
 class Semaphore {
 public:
-    Semaphore(size_t initial = 0);
+    explicit Semaphore(size_t initial = 0);
 
     // Decrement the internal counter or wait.
     void lock(size_t count = 1);

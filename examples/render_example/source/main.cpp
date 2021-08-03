@@ -33,6 +33,7 @@
 #include <core/concurrency/task.h>
 #include <core/concurrency/task_scheduler.h>
 #include <core/debug/assert.h>
+#include <core/debug/debug_utils.h>
 #include <core/debug/log.h>
 #include <core/error.h>
 #include <core/math/float4x4.h>
@@ -44,6 +45,8 @@
 using namespace kw;
 
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*lpCmdLine*/, int /*nCmdShow*/) {
+    DebugUtils::subscribe_to_segfault();
+
     MallocMemoryResource& persistent_memory_resource = MallocMemoryResource::instance();
     LinearMemoryResource transient_memory_resource(persistent_memory_resource, 32 * 1024 * 1024);
 

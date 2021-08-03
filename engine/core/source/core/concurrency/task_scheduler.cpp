@@ -4,10 +4,6 @@
 #include "core/concurrency/task_node.h"
 #include "core/debug/assert.h"
 
-#ifdef TASK_SCHEDULER_DEBUG
-#include "core/debug/log.h"
-#endif // TASK_SCHEDULER_DEBUG
-
 namespace kw {
 
 TaskScheduler::TaskScheduler(MemoryResource& persistent_memory_resource, size_t thread_count)
@@ -118,15 +114,7 @@ void TaskScheduler::worker_thread() {
 void TaskScheduler::run_task(Task* task) {
     // Run task.
 
-#ifdef TASK_SCHEDULER_DEBUG
-    Log::print("Start task \"%s\"", task->get_name());
-#endif // TASK_SCHEDULER_DEBUG
-
     task->run();
-
-#ifdef TASK_SCHEDULER_DEBUG
-    Log::print("Finish task \"%s\"", task->get_name());
-#endif // TASK_SCHEDULER_DEBUG
 
     // Notify future dependencies that this task has completed.
 

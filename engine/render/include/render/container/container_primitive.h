@@ -20,7 +20,7 @@ public:
     // Given primitive must be a child of this container. Updates child's global transform and bounds.
     void remove_child(Primitive& primitive);
 
-    inline const Vector<Primitive*>& get_children() const {
+    const Vector<Primitive*>& get_children() const {
         return m_children;
     }
 
