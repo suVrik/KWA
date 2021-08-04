@@ -164,6 +164,7 @@ bool Input::is_mouse_capture() const {
 void Input::toggle_mouse_capture(bool is_capture) {
     if (m_is_mouse_capture != is_capture) {
         SDL_CaptureMouse(is_capture ? SDL_TRUE : SDL_FALSE);
+        m_is_mouse_capture = is_capture;
     }
 }
 
@@ -176,6 +177,5 @@ void Input::stop_mouse_propagation() {
     m_button_current = 0;
     m_current_mouse_wheel = 0;
 }
-
 
 } // namespace kw

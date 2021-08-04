@@ -4512,6 +4512,16 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
 
     uint64_t crc = 0;
 
+    for (size_t i = 0; i < graphics_pipeline_vulkan->uniform_attachment_indices.size(); i++) {
+        uint32_t attachment_index = graphics_pipeline_vulkan->uniform_attachment_indices[i];
+        KW_ASSERT(attachment_index < m_frame_graph.m_attachment_data.size());
+
+        AttachmentData& attachment_data = m_frame_graph.m_attachment_data[attachment_index];
+        KW_ASSERT(attachment_data.image_view != VK_NULL_HANDLE);
+
+        crc = CrcUtils::crc64(crc, &attachment_data.image_view, sizeof(VkImageView));
+    }
+
     for (uint32_t uniform_texture_mapping : graphics_pipeline_vulkan->uniform_texture_mapping) {
         KW_ASSERT(uniform_texture_mapping < descriptor.uniform_texture_count);
 
