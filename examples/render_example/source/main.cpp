@@ -87,31 +87,31 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     ShadowRenderPass shadow_render_pass(*render, scene, task_scheduler, persistent_memory_resource, transient_memory_resource);
     GeometryRenderPass geometry_render_pass(*render, scene, transient_memory_resource);
     LightingRenderPass lighting_render_pass(*render, scene, shadow_render_pass, transient_memory_resource);
-    HdrRenderPass hdr_render_pass(*render, transient_memory_resource);
+    TonemappingRenderPass tonemapping_render_pass(*render, transient_memory_resource);
     DebugDrawRenderPass debug_draw_render_pass(*render, scene, debug_draw_manager, transient_memory_resource);
     ImguiRenderPass imgui_render_pass(*render, imgui_manager, transient_memory_resource);
 
-    Vector<AttachmentDescriptor> color_attachment_descriptors(transient_memory_resource);
+    Vector<AttachmentDescriptor> color_attachment_descriptors(persistent_memory_resource);
     shadow_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     geometry_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     lighting_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
-    hdr_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
+    tonemapping_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     debug_draw_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     imgui_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
 
-    Vector<AttachmentDescriptor> depth_stencil_attachment_descriptors(transient_memory_resource);
+    Vector<AttachmentDescriptor> depth_stencil_attachment_descriptors(persistent_memory_resource);
     shadow_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     geometry_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     lighting_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
-    hdr_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
+    tonemapping_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     debug_draw_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     imgui_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
 
-    Vector<RenderPassDescriptor> render_pass_descriptors(transient_memory_resource);
+    Vector<RenderPassDescriptor> render_pass_descriptors(persistent_memory_resource);
     shadow_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     geometry_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     lighting_render_pass.get_render_pass_descriptors(render_pass_descriptors);
-    hdr_render_pass.get_render_pass_descriptors(render_pass_descriptors);
+    tonemapping_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     debug_draw_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     imgui_render_pass.get_render_pass_descriptors(render_pass_descriptors);
 
@@ -137,7 +137,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     shadow_render_pass.create_graphics_pipelines(*frame_graph);
     geometry_render_pass.create_graphics_pipelines(*frame_graph);
     lighting_render_pass.create_graphics_pipelines(*frame_graph);
-    hdr_render_pass.create_graphics_pipelines(*frame_graph);
+    tonemapping_render_pass.create_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.create_graphics_pipelines(*frame_graph);
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
 
@@ -402,7 +402,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         auto [shadow_render_pass_task_begin, shadow_render_pass_task_end] = shadow_render_pass.create_tasks();
         Task* geometry_render_pass_task = geometry_render_pass.create_task();
         Task* lighting_render_pass_task = lighting_render_pass.create_task();
-        Task* hdr_render_pass_task = hdr_render_pass.create_task();
+        Task* tonemapping_render_pass_task = tonemapping_render_pass.create_task();
         Task* debug_draw_render_pass_task = debug_draw_render_pass.create_task();
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
         Task* flush_task = render->create_task();
@@ -417,10 +417,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         shadow_render_pass_task_end->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_begin });
         geometry_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         lighting_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
-        hdr_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        tonemapping_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         debug_draw_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         imgui_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
-        flush_task->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_end, geometry_render_pass_task, lighting_render_pass_task, hdr_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task });
+        flush_task->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_end, geometry_render_pass_task, lighting_render_pass_task, tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task });
         present_frame_task->add_input_dependencies(transient_memory_resource, { flush_task });
 
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.begin);
@@ -435,7 +435,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, shadow_render_pass_task_end);
         task_scheduler.enqueue_task(transient_memory_resource, geometry_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, lighting_render_pass_task);
-        task_scheduler.enqueue_task(transient_memory_resource, hdr_render_pass_task);
+        task_scheduler.enqueue_task(transient_memory_resource, tonemapping_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, debug_draw_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, imgui_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, flush_task);
@@ -443,6 +443,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
         task_scheduler.join();
     }
+    
+    imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
+    debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
+    tonemapping_render_pass.destroy_graphics_pipelines(*frame_graph);
+    lighting_render_pass.destroy_graphics_pipelines(*frame_graph);
+    geometry_render_pass.destroy_graphics_pipelines(*frame_graph);
+    shadow_render_pass.destroy_graphics_pipelines(*frame_graph);
 
     return 0;
 }

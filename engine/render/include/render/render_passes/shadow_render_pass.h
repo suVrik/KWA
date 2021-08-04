@@ -18,6 +18,7 @@ public:
     };
 
     ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& task_scheduler, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource);
+    ~ShadowRenderPass();
 
     // Fill color attachments created by this render pass.
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors);
@@ -31,11 +32,16 @@ public:
     // Create graphics pipelines for this render pass.
     void create_graphics_pipelines(FrameGraph& frame_graph);
 
+    // Destroy graphics pipelines for this render pass.
+    void destroy_graphics_pipelines(FrameGraph& frame_graph);
+
     // The first task creates other tasks that render different cubemap faces. The second task runs after all of
     // those tasks. Both must run between first and second frame graph's tasks.
     std::pair<Task*, Task*> create_tasks();
 
     const Vector<ShadowMap>& get_shadow_maps() const;
+
+    // With this shadow map, everything is considered to be lit.
     Texture* get_dummy_shadow_map() const;
 
 private:

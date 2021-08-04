@@ -1,4 +1,5 @@
 #include "render/geometry/geometry_primitive.h"
+#include "render/container/container_primitive.h"
 #include "render/geometry/geometry.h"
 #include "render/geometry/skeleton.h"
 
@@ -11,7 +12,14 @@ GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Mat
 {
 }
 
-GeometryPrimitive::~GeometryPrimitive() = default;
+GeometryPrimitive::~GeometryPrimitive() {
+    // Scene must know whether the removed object is geometry, light or container to properly clean up acceleration
+    // structures. If `remove_child` is called from `Primitive`, there's no way to know whether this was geometry,
+    // light or container anymore.
+    if (m_parent != nullptr) {
+        m_parent->remove_child(*this);
+    }
+}
 
 const SharedPtr<Geometry>& GeometryPrimitive::get_geometry() const {
     return m_geometry;

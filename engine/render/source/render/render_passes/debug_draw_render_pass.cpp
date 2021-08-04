@@ -136,6 +136,10 @@ void DebugDrawRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     m_graphics_pipeline = frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
 }
 
+void DebugDrawRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    frame_graph.destroy_graphics_pipeline(m_graphics_pipeline);
+}
+
 Task* DebugDrawRenderPass::create_task() {
     return new (m_transient_memory_resource.allocate<Task>()) Task(*this);
 }

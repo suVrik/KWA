@@ -320,7 +320,8 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
     , m_shadow_maps(persistent_memory_resource)
 {
     m_shadow_maps.resize(3);
-    for (size_t i = 0; i < 3; i++) {
+
+    for (ShadowMap& shadow_map : m_shadow_maps) {
         CreateTextureDescriptor create_texture_descriptor{};
         create_texture_descriptor.name = "shadow_texture";
         create_texture_descriptor.type = TextureType::TEXTURE_CUBE;
@@ -329,8 +330,8 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
         create_texture_descriptor.width = 512;
         create_texture_descriptor.height = 512;
 
-        m_shadow_maps[i].light_primitive = nullptr;
-        m_shadow_maps[i].texture = render.create_texture(create_texture_descriptor);
+        shadow_map.light_primitive = nullptr;
+        shadow_map.texture = render.create_texture(create_texture_descriptor);
     }
 
     CreateTextureDescriptor create_texture_descriptor{};
@@ -356,6 +357,14 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
 
     render.upload_texture(upload_texture_descriptor);
 
+}
+
+ShadowRenderPass::~ShadowRenderPass() {
+    m_render.destroy_texture(m_dummy_shadow_map);
+
+    for (ShadowMap& shadow_map : m_shadow_maps) {
+        m_render.destroy_texture(shadow_map.texture);
+    }
 }
 
 void ShadowRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
@@ -482,6 +491,11 @@ void ShadowRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     skinned_graphics_pipeline_descriptor.push_constants_size = sizeof(ShadowPushConstants);
 
     m_skinned_graphics_pipeline = frame_graph.create_graphics_pipeline(skinned_graphics_pipeline_descriptor);
+}
+
+void ShadowRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    frame_graph.destroy_graphics_pipeline(m_skinned_graphics_pipeline);
+    frame_graph.destroy_graphics_pipeline(m_solid_graphics_pipeline);
 }
 
 std::pair<Task*, Task*> ShadowRenderPass::create_tasks() {

@@ -5049,7 +5049,7 @@ void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment,
     KW_ASSERT(access_index < m_frame_graph.m_attachment_barrier_matrix.size());
 
     // We read from this matrix and store reference to the result for a while.
-    std::shared_lock lock(m_frame_graph.m_attachment_barrier_matrix_mutex);
+    std::shared_lock lock1(m_frame_graph.m_attachment_barrier_matrix_mutex);
 
     const AttachmentBarrierData& attachment_barrier_data = m_frame_graph.m_attachment_barrier_matrix[access_index];
 
@@ -5136,6 +5136,8 @@ void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment,
         "Texture must be either fully available or not available at all for blitting."
     );
 
+    std::lock_guard lock2(m_frame_graph.m_blit_mutex);
+
     if (texture_vulkan->get_available_mip_level_count() == 0) {
         KW_ASSERT(
             texture_vulkan->image_view == VK_NULL_HANDLE,
@@ -5173,7 +5175,7 @@ void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment,
         image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         image_view_create_info.flags = 0;
         image_view_create_info.image = texture_vulkan->image;
-        image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+        image_view_create_info.viewType = image_view_type;
         image_view_create_info.format = TextureFormatUtils::convert_format_vulkan(texture_vulkan->get_format());
         image_view_create_info.subresourceRange = image_view_subresource_range;
 

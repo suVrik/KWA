@@ -202,6 +202,7 @@ public:
 
         for (auto it = m_manager.m_geometry.begin(); it != m_manager.m_geometry.end(); ) {
             if (it->second.use_count() == 1) {
+                m_manager.m_render.destroy_vertex_buffer(it->second->get_skinned_vertex_buffer());
                 m_manager.m_render.destroy_vertex_buffer(it->second->get_vertex_buffer());
                 m_manager.m_render.destroy_index_buffer(it->second->get_index_buffer());
 
@@ -244,6 +245,7 @@ GeometryManager::~GeometryManager() {
     for (auto& [relative_path, geometry] : m_geometry) {
         KW_ASSERT(geometry.use_count() == 1, "Not all geometry are released.");
 
+        m_render.destroy_vertex_buffer(geometry->get_skinned_vertex_buffer());
         m_render.destroy_vertex_buffer(geometry->get_vertex_buffer());
         m_render.destroy_index_buffer(geometry->get_index_buffer());
     }

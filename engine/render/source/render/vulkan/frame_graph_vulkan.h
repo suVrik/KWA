@@ -472,6 +472,10 @@ private:
 
     // Current swapchain image to use.
     uint32_t m_swapchain_image_index;
+
+    // When we blit to a texture that was not uploaded, we must make it fully available.
+    // Multiple threads may want to blit to the same texture, but we must do it only once.
+    std::mutex m_blit_mutex;
 };
 
 KW_DEFINE_ENUM_BITMASK(FrameGraphVulkan::AttachmentAccess);

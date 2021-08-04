@@ -4,9 +4,9 @@
 
 namespace kw {
 
-class HdrRenderPass::Task : public kw::Task {
+class TonemappingRenderPass::Task : public kw::Task {
 public:
-    Task(HdrRenderPass& render_pass)
+    Task(TonemappingRenderPass& render_pass)
         : m_render_pass(render_pass)
     {
     }
@@ -29,24 +29,24 @@ public:
     }
 
 private:
-    HdrRenderPass& m_render_pass;
+    TonemappingRenderPass& m_render_pass;
 };
 
-HdrRenderPass::HdrRenderPass(Render& render, MemoryResource& transient_memory_resource)
+TonemappingRenderPass::TonemappingRenderPass(Render& render, MemoryResource& transient_memory_resource)
     : FullScreenQuadRenderPass(render)
     , m_transient_memory_resource(transient_memory_resource)
 {
 }
 
-void HdrRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+void TonemappingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
     // None.
 }
 
-void HdrRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+void TonemappingRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
     // None.
 }
 
-void HdrRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
+void TonemappingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
     static const char* const READ_COLOR_ATTACHMENT_NAME = "lighting_attachment";
     static const char* const WRITE_COLOR_ATTACHMENT_NAME = "swapchain_attachment";
 
@@ -60,7 +60,7 @@ void HdrRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& re
     render_pass_descriptors.push_back(render_pass_descriptor);
 }
 
-void HdrRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
+void TonemappingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     AttributeDescriptor attribute_descriptors[2]{};
     attribute_descriptors[0].semantic = Semantic::POSITION;
     attribute_descriptors[0].format = TextureFormat::RG32_FLOAT;
@@ -97,7 +97,11 @@ void HdrRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     m_graphics_pipeline = frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
 }
 
-Task* HdrRenderPass::create_task() {
+void TonemappingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    frame_graph.destroy_graphics_pipeline(m_graphics_pipeline);
+}
+
+Task* TonemappingRenderPass::create_task() {
     return new (m_transient_memory_resource.allocate<Task>()) Task(*this);
 }
 

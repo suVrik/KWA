@@ -125,6 +125,7 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
     , m_scene(scene)
     , m_shadow_render_pass(shadow_render_pass)
     , m_transient_memory_resource(transient_memory_resource)
+    , m_pcf_rotation_texture(nullptr)
     , m_point_light_vertex_buffer(nullptr)
     , m_point_light_index_buffer(nullptr)
     , m_point_light_graphics_pipelines{ nullptr, nullptr }
@@ -166,6 +167,7 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
 LightingRenderPass::~LightingRenderPass() {
     m_render.destroy_index_buffer(m_point_light_index_buffer);
     m_render.destroy_vertex_buffer(m_point_light_vertex_buffer);
+    m_render.destroy_texture(m_pcf_rotation_texture);
 }
 
 void LightingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
@@ -365,6 +367,11 @@ void LightingRenderPass::create_point_light_graphics_pipelines(FrameGraph& frame
     inside_graphics_pipeline_descriptor.push_constants_size = sizeof(PointLightPushConstants);
 
     m_point_light_graphics_pipelines[1] = frame_graph.create_graphics_pipeline(inside_graphics_pipeline_descriptor);
+}
+
+void LightingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    frame_graph.destroy_graphics_pipeline(m_point_light_graphics_pipelines[1]);
+    frame_graph.destroy_graphics_pipeline(m_point_light_graphics_pipelines[0]);
 }
 
 } // namespace kw

@@ -199,6 +199,10 @@ void GeometryRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     // All graphics pipelines are stored in geometry primirives' materials.
 }
 
+void GeometryRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    // All geometry graphics pipelines are destroyed by material manager.
+}
+
 Task* GeometryRenderPass::create_task() {
     return new (m_transient_memory_resource.allocate<Task>()) Task(*this);
 }

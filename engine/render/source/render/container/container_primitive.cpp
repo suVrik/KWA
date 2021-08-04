@@ -19,6 +19,13 @@ ContainerPrimitive::~ContainerPrimitive() {
         // Update primitive's global transform and bounds recursively.
         child->global_transform_updated();
     }
+
+    // Scene must know whether the removed object is geometry, light or container to properly clean up acceleration
+    // structures. If `remove_child` is called from `Primitive`, there's no way to know whether this was geometry,
+    // light or container anymore.
+    if (m_parent != nullptr) {
+        m_parent->remove_child(*this);
+    }
 }
 
 void ContainerPrimitive::add_child(Primitive& primitive) {

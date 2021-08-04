@@ -25,7 +25,6 @@ public:
 protected:
     // TODO: Call acceleration structure's `update` from `global_transform_updated`.
 
-protected:
     AccelerationStructure* m_acceleration_structure;
     aabbox m_bounds;
     void* m_node;

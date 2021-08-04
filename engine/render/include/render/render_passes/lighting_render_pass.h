@@ -26,6 +26,9 @@ public:
     // Create graphics pipelines for this render pass
     void create_graphics_pipelines(FrameGraph& frame_graph);
 
+    // Destroy graphics pipelines for this render pass.
+    void destroy_graphics_pipelines(FrameGraph& frame_graph);
+
     // Create task that performs lighting. Must be placed between frame first and second graph tasks.
     Task* create_task();
 

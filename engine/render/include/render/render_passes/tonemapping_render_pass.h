@@ -6,9 +6,9 @@
 
 namespace kw {
 
-class HdrRenderPass : public FullScreenQuadRenderPass {
+class TonemappingRenderPass : public FullScreenQuadRenderPass {
 public:
-    HdrRenderPass(Render& render, MemoryResource& transient_memory_resource);
+    TonemappingRenderPass(Render& render, MemoryResource& transient_memory_resource);
 
     // Fill color attachments created by this render pass.
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors);
@@ -22,7 +22,10 @@ public:
     // Create graphics pipelines for this render pass
     void create_graphics_pipelines(FrameGraph& frame_graph);
 
-    // Create task that performs gamma correction. Must be placed between frame first and second graph tasks.
+    // Destroy graphics pipelines for this render pass.
+    void destroy_graphics_pipelines(FrameGraph& frame_graph);
+
+    // Create task that performs tonemapping. Must be placed between frame first and second graph tasks.
     Task* create_task();
 
 private:

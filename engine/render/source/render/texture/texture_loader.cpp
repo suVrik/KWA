@@ -33,6 +33,10 @@ TextureLoader::TextureLoader(const char* relative_path)
     m_create_texture_descriptor.height = read_next();
     m_create_texture_descriptor.depth = read_next();
 
+    if (m_create_texture_descriptor.format == TextureFormat::BC7_UNORM) {
+        m_create_texture_descriptor.format = TextureFormat::BC7_UNORM_SRGB;
+    }
+
     m_current_mip_level = m_create_texture_descriptor.mip_level_count - 1;
     m_current_array_layer = 0;
     m_current_z = 0;

@@ -24,7 +24,10 @@ public:
     // Create graphics pipelines for this render pass.
     void create_graphics_pipelines(FrameGraph& frame_graph);
 
-    // Create task that renders the scene to g-buffer. Must be placed between frame first and second graph tasks.
+    // Destroy graphics pipelines for this render pass.
+    void destroy_graphics_pipelines(FrameGraph& frame_graph);
+
+    // Create task that renders the scene to G-buffer. Must be placed between frame first and second graph tasks.
     Task* create_task();
 
 private:

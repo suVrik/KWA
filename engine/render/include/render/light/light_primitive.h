@@ -6,7 +6,8 @@ namespace kw {
 
 class LightPrimitive : public AccelerationStructurePrimitive {
 public:
-    LightPrimitive(float3 color = float3(1.f, 1.f, 1.f), float power = 1.f, const transform& local_transform = transform());
+    explicit LightPrimitive(float3 color = float3(1.f, 1.f, 1.f), float power = 1.f, const transform& local_transform = transform());
+    ~LightPrimitive();
 
     const float3& get_color() const;
     void set_color(const float3& value);
