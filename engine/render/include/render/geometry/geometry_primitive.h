@@ -4,6 +4,7 @@
 
 #include <core/containers/shared_ptr.h>
 #include <core/containers/vector.h>
+#include <core/math/aabbox.h>
 
 namespace kw {
 
@@ -16,6 +17,8 @@ public:
                                const transform& local_transform = transform());
     ~GeometryPrimitive() override;
 
+    const aabbox& get_bounds() const override;
+
     const SharedPtr<Geometry>& get_geometry() const;
     virtual void set_geometry(SharedPtr<Geometry> geometry);
 
@@ -27,9 +30,12 @@ public:
     virtual Vector<float4x4> get_model_space_joint_matrices(MemoryResource& memory_resource);
 
 protected:
-    // TODO: Update bounds in `global_transform_updated`.
+    void global_transform_updated() override;
 
 private:
+    mutable aabbox m_bounds;
+    mutable bool m_bounds_set;
+
     SharedPtr<Geometry> m_geometry;
     SharedPtr<Material> m_material;
 };

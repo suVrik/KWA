@@ -7,6 +7,8 @@ namespace kw {
 
 GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
+    , m_bounds(float3(-FLT_MAX), float3())
+    , m_bounds_set(false)
     , m_geometry(std::move(geometry))
     , m_material(std::move(material))
 {
@@ -21,11 +23,23 @@ GeometryPrimitive::~GeometryPrimitive() {
     }
 }
 
+const aabbox& GeometryPrimitive::get_bounds() const {
+    if (!m_bounds_set && m_geometry && m_geometry->get_vertex_buffer() != nullptr) {
+        m_bounds = m_geometry->get_bounds() * m_global_transform;
+        m_bounds_set = true;
+    }
+
+    return m_bounds;
+}
+
 const SharedPtr<Geometry>& GeometryPrimitive::get_geometry() const {
     return m_geometry;
 }
 
 void GeometryPrimitive::set_geometry(SharedPtr<Geometry> geometry) {
+    m_bounds = aabbox(float3(-FLT_MAX), float3());
+    m_bounds_set = false;
+
     m_geometry = std::move(geometry);
 }
 
@@ -59,6 +73,10 @@ Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResourc
     }
 
     return Vector<float4x4>(memory_resource);
+}
+
+void GeometryPrimitive::global_transform_updated() {
+    m_bounds_set = false;
 }
 
 } // namespace kw

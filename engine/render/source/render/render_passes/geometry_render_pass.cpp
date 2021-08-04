@@ -25,8 +25,7 @@ public:
     void run() override {
         RenderPassContext* context = m_render_pass.begin();
         if (context != nullptr) {
-            // TODO: Use camera bounds.
-            Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(aabbox(float3(), float3(500.f)));
+            Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
 
             // Sort primitives by graphics pipeline (to avoid graphics pipeline switches),
             // by material (to avoid rebinding uniform data), by geometry (for instancing).

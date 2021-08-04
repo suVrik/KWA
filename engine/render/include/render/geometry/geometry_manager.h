@@ -30,6 +30,9 @@ public:
     // Enqueue geometry loading if it's not yet loaded. Concurrent loads are allowed.
     SharedPtr<Geometry> load(const char* relative_path);
 
+    // O(n) where n is the total number of loaded geometry. Designed for tools.
+    const String& get_relative_path(const SharedPtr<Geometry>& geometry) const;
+
     // The first task creates worker tasks that load all enqueued geometry at the moment. Those tasks will be finished
     // before the second task starts. If you are planning to load geometry on this frame, you need to place your task
     // before the first task. If you are planning to use geometry loaded on this frame, you need to place your task

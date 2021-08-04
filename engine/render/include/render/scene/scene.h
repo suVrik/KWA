@@ -25,13 +25,14 @@ public:
     Vector<LightPrimitive*> query_lights(const aabbox& bounds);
     Vector<LightPrimitive*> query_lights(const frustum& frustum);
 
-    Camera& get_camera() {
-        return m_camera;
-    }
+    const Camera& get_camera() const;
+    Camera& get_camera();
 
-    const Camera& get_camera() const {
-        return m_camera;
-    }
+    const Camera& get_occlusion_camera() const;
+    Camera& get_occlusion_camera();
+
+    bool is_occlusion_camera_used() const;
+    void toggle_occlusion_camera_used(bool value);
 
 protected:
     void child_added(Primitive& primitive) override;
@@ -48,6 +49,8 @@ private:
     UniquePtr<AccelerationStructure> m_light_acceleration_structure;
 
     Camera m_camera;
+    Camera m_occlusion_camera;
+    bool m_is_occlusion_camera_used;
 };
 
 } // namespace kw

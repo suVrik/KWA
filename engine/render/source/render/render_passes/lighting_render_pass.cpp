@@ -47,8 +47,7 @@ public:
             light_uniform.specular_diffuse = float2(specular_factor, diffuse_factor);
             m_transient_uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&light_uniform, sizeof(light_uniform));
 
-            // TODO: Use camera bounds.
-            Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(aabbox(float3(), float3(500.f)));
+            Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
             
             for (LightPrimitive* light_primitive : primitives) {
                 if (PointLightPrimitive* point_light_primitive = dynamic_cast<PointLightPrimitive*>(light_primitive)) {
@@ -66,7 +65,7 @@ private:
         float power = point_light_primitive->get_power();
         float radius = point_light_primitive->get_radius();
         float3 luminance = color * power / (4.0 * radius * radius * PI * PI);
-        float attenuation_radius = std::sqrt(power / 0.1f);
+        float attenuation_radius = std::sqrt(power * 10.f);
 
         const PointLightPrimitive::ShadowParams& shadow_params = point_light_primitive->get_shadow_params();
 

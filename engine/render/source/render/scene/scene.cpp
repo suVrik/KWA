@@ -13,6 +13,7 @@ Scene::Scene(MemoryResource& persistent_memory_resource, MemoryResource& transie
     , m_transient_memory_resource(transient_memory_resource)
     , m_geometry_acceleration_structure(static_pointer_cast<AccelerationStructure>(allocate_unique<LinearAccelerationStructure>(persistent_memory_resource, persistent_memory_resource)))
     , m_light_acceleration_structure(static_pointer_cast<AccelerationStructure>(allocate_unique<LinearAccelerationStructure>(persistent_memory_resource, persistent_memory_resource)))
+    , m_is_occlusion_camera_used(false)
 {
 }
 
@@ -90,6 +91,38 @@ void Scene::remove_container_primitive(ContainerPrimitive& container_primitive) 
     for (Primitive* primitive : children) {
         child_removed(*primitive);
     }
+}
+
+const Camera& Scene::get_camera() const {
+    return m_camera;
+}
+
+Camera& Scene::get_camera() {
+    return m_camera;
+}
+
+const Camera& Scene::get_occlusion_camera() const {
+    if (m_is_occlusion_camera_used) {
+        return m_occlusion_camera;
+    } else {
+        return m_camera;
+    }
+}
+
+Camera& Scene::get_occlusion_camera() {
+    if (m_is_occlusion_camera_used) {
+        return m_occlusion_camera;
+    } else {
+        return m_camera;
+    }
+}
+
+bool Scene::is_occlusion_camera_used() const {
+    return m_is_occlusion_camera_used;
+}
+
+void Scene::toggle_occlusion_camera_used(bool value) {
+    m_is_occlusion_camera_used = value;
 }
 
 } // namespace kw

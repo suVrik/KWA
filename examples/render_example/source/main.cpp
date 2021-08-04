@@ -4,7 +4,9 @@
 
 #undef ABSOLUTE
 #undef DELETE
+#undef far
 #undef IN
+#undef near
 #undef OUT
 #undef RELATIVE
 
@@ -255,6 +257,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     float mouse_sensitivity = 0.0025f;
     float camera_speed = 0.2f;
 
+    bool draw_occlusion_camera = false;
+
     Camera& camera = scene.get_camera();
     camera.set_fov(radians(60.f));
     camera.set_z_near(0.05f);
@@ -394,6 +398,79 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                 imgui.End();
             }
         }
+
+        if (imgui.Begin("Camera")) {
+            float2 rotation(camera_yaw, camera_pitch);
+            float fov = camera.get_fov();
+            float z_near = camera.get_z_near();
+            float z_far = camera.get_z_far();
+
+            imgui.DragFloat3("translation", &camera_position, 0.01f);
+            imgui.DragFloat2("rotation", &rotation, 0.01f);
+            imgui.DragFloat("fov", &fov, 0.01f);
+            imgui.DragFloat("z_near", &z_near, 0.01f);
+            imgui.DragFloat("z_far", &z_far, 0.01f);
+
+            camera_yaw = rotation.x;
+            camera_pitch = rotation.y;
+
+            camera_rotation = quaternion::rotation(float3(0.f, 1.f, 0.f), camera_yaw) * quaternion::rotation(float3(1.f, 0.f, 0.f), camera_pitch);
+
+            camera.set_rotation(camera_rotation);
+            camera.set_translation(camera_position);
+            camera.set_fov(fov);
+            camera.set_z_near(z_near);
+            camera.set_z_far(z_far);
+        }
+        imgui.End();
+
+        if (imgui.Begin("Occlusion Camera")) {
+            bool use_occlusion_camera = scene.is_occlusion_camera_used();
+
+            scene.toggle_occlusion_camera_used(true);
+            Camera& occlusion_camera = scene.get_occlusion_camera();
+            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+
+            transform transform = occlusion_camera.get_transform();
+            float fov = occlusion_camera.get_fov();
+            float aspect_ratio = occlusion_camera.get_aspect_ratio();
+            float z_near = occlusion_camera.get_z_near();
+            float z_far = occlusion_camera.get_z_far();
+            frustum frustum = occlusion_camera.get_frustum();
+
+            if (imgui.Button("Set from camera")) {
+                transform.translation = camera_position;
+                transform.rotation = camera_rotation;
+                fov = camera.get_fov();
+                aspect_ratio = camera.get_aspect_ratio();
+                z_near = camera.get_z_near();
+                z_far = camera.get_z_far();
+            }
+
+            imgui.DragFloat3("translation", &transform.translation, 0.01f);
+            imgui.DragFloat4("rotation", &transform.rotation, 0.01f);
+            imgui.DragFloat("fov", &fov, 0.01f);
+            imgui.DragFloat("aspect_ratio", &aspect_ratio, 0.01f);
+            imgui.DragFloat("z_near", &z_near, 0.01f);
+            imgui.DragFloat("z_far", &z_far, 0.01f);
+            imgui.Checkbox("Draw occlusion camera", &draw_occlusion_camera);
+            imgui.Checkbox("Use occlusion camera", &use_occlusion_camera);
+
+            transform.rotation = normalize(transform.rotation);
+
+            occlusion_camera.set_transform(transform);
+            occlusion_camera.set_fov(fov);
+            occlusion_camera.set_aspect_ratio(aspect_ratio);
+            occlusion_camera.set_z_near(z_near);
+            occlusion_camera.set_z_far(z_far);
+
+            if (draw_occlusion_camera) {
+                debug_draw_manager.frustum(occlusion_camera.get_inverse_view_projection_matrix(), float3(1.f));
+            }
+
+            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+        }
+        imgui.End();
 
         auto [texture_manager_begin, texture_manager_end] = texture_manager.create_tasks();
         auto [geometry_manager_begin, geometry_manager_end] = geometry_manager.create_tasks();

@@ -9,6 +9,7 @@
 #include <core/error.h>
 #include <core/io/binary_reader.h>
 #include <core/math/float4x4.h>
+#include <core/memory/malloc_memory_resource.h>
 
 namespace kw {
 
@@ -276,6 +277,17 @@ SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
 
         return it->second;
     }
+}
+
+const String& GeometryManager::get_relative_path(const SharedPtr<Geometry>& geometry) const {
+    for (auto& [relative_path, stored_geometry] : m_geometry) {
+        if (geometry == stored_geometry) {
+            return relative_path;
+        }
+    }
+
+    static String EMPTY_STRING(MallocMemoryResource::instance());
+    return EMPTY_STRING;
 }
 
 std::pair<Task*, Task*> GeometryManager::create_tasks() {

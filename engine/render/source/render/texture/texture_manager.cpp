@@ -4,6 +4,7 @@
 #include <core/concurrency/task.h>
 #include <core/concurrency/task_scheduler.h>
 #include <core/debug/assert.h>
+#include <core/memory/malloc_memory_resource.h>
 
 namespace kw {
 
@@ -218,6 +219,17 @@ SharedPtr<Texture*> TextureManager::load(const char* relative_path) {
 
         return it->second;
     }
+}
+
+const String& TextureManager::get_relative_path(const SharedPtr<Texture*>& texture) const {
+    for (auto& [relative_path, stored_texture] : m_textures) {
+        if (texture == stored_texture) {
+            return relative_path;
+        }
+    }
+
+    static String EMPTY_STRING(MallocMemoryResource::instance());
+    return EMPTY_STRING;
 }
 
 std::pair<Task*, Task*> TextureManager::create_tasks() {

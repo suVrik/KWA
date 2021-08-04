@@ -589,7 +589,7 @@ static bool load_primitive(const tinygltf::Primitive& primitive, const float4x4&
         result.vertices[vertex_offset + i].normal = normal;
         result.vertices[vertex_offset + i].tangent = float4(tangent, bitangent_factor);
 
-        if (i == 0) {
+        if (vertex_offset == 0 && i == 0) {
             result.bounds = aabbox(position, float3());
         } else {
             result.bounds += position;

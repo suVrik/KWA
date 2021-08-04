@@ -1,9 +1,7 @@
 #pragma once
 
+#include <core/math/frustum.h>
 #include <core/math/transform.h>
-
-// TODO:
-//#include <core/math/frustum.h>
 
 namespace kw {
 
@@ -77,18 +75,15 @@ public:
         return m_inverse_view_projection_matrix;
     }
 
-    // TODO:
-    //const frustum& get_frustum() const {
-    //    return m_frustum;
-    //}
+    const frustum& get_frustum() const {
+        return m_frustum;
+    }
 
 private:
     void update_view_matrix();
     void update_projection_matrix();
     void update_view_projection_matrix();
-
-    // TODO:
-    // void update_frustum();
+    void update_frustum();
 
     transform m_transform;
     float m_fov;
@@ -102,9 +97,7 @@ private:
     float4x4 m_inverse_view_matrix;
     float4x4 m_inverse_projection_matrix;
     float4x4 m_inverse_view_projection_matrix;
-
-    // TODO:
-    // frustum m_frustum;
+    frustum m_frustum;
 };
 
 } // namespace kw

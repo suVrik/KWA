@@ -31,17 +31,9 @@ public:
     Material();
     Material(SharedPtr<GraphicsPipeline*> graphics_pipeline, Vector<SharedPtr<Texture*>>&& textures, bool is_skinned);
 
-    const SharedPtr<GraphicsPipeline*>& get_graphics_pipeline() const {
-        return m_graphics_pipeline;
-    }
-
-    const Vector<SharedPtr<Texture*>>& get_textures() const {
-        return m_textures;
-    }
-    
-    bool is_skinned() const {
-        return m_is_skinned;
-    }
+    const SharedPtr<GraphicsPipeline*>& get_graphics_pipeline() const;
+    const Vector<SharedPtr<Texture*>>& get_textures() const;
+    bool is_skinned() const;
 
 private:
     SharedPtr<GraphicsPipeline*> m_graphics_pipeline;

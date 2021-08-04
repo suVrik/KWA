@@ -53,6 +53,21 @@ void DebugDrawManager::line(const float3& from, const float3& to, const float3& 
     while (!m_last_line.compare_exchange_weak(line->previous, line, std::memory_order_release, std::memory_order_relaxed));
 }
 
+void DebugDrawManager::abbox(const aabbox& bounds, const float3& color) {
+    line(bounds.center + float3(-bounds.extent.x, -bounds.extent.y,  bounds.extent.z), bounds.center + float3(-bounds.extent.x, -bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3(-bounds.extent.x,  bounds.extent.y, -bounds.extent.z), bounds.center + float3(-bounds.extent.x, -bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3(-bounds.extent.x,  bounds.extent.y,  bounds.extent.z), bounds.center + float3(-bounds.extent.x, -bounds.extent.y,  bounds.extent.z), color);
+    line(bounds.center + float3(-bounds.extent.x,  bounds.extent.y,  bounds.extent.z), bounds.center + float3(-bounds.extent.x,  bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x, -bounds.extent.y, -bounds.extent.z), bounds.center + float3(-bounds.extent.x, -bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x, -bounds.extent.y,  bounds.extent.z), bounds.center + float3(-bounds.extent.x, -bounds.extent.y,  bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x, -bounds.extent.y,  bounds.extent.z), bounds.center + float3( bounds.extent.x, -bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x,  bounds.extent.y, -bounds.extent.z), bounds.center + float3(-bounds.extent.x,  bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x,  bounds.extent.y, -bounds.extent.z), bounds.center + float3( bounds.extent.x, -bounds.extent.y, -bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x,  bounds.extent.y,  bounds.extent.z), bounds.center + float3(-bounds.extent.x,  bounds.extent.y,  bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x,  bounds.extent.y,  bounds.extent.z), bounds.center + float3( bounds.extent.x, -bounds.extent.y,  bounds.extent.z), color);
+    line(bounds.center + float3( bounds.extent.x,  bounds.extent.y,  bounds.extent.z), bounds.center + float3( bounds.extent.x,  bounds.extent.y, -bounds.extent.z), color);
+}
+
 void DebugDrawManager::icosahedron(const float3& center, float radius, const float3& color) {
     Line* lines = m_transient_memory_resource.allocate<Line>(std::size(ICOSAHEDRON_EDGES));
 

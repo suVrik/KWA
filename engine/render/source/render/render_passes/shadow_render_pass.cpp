@@ -54,11 +54,12 @@ public:
     }
 
     void run() override {
-        //
-        // TODO: Use light cubemap frustum bounds.
-        //
+        float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
+        float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
+        float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
+        float4x4 view_projection = view * projection;
 
-        Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(aabbox(float3(), float3(500.f)));
+        Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
 
         // Sort primitives by geometry for instancing.
         std::sort(primitives.begin(), primitives.end(), GeometrySort());
@@ -137,14 +138,8 @@ public:
                             uniform_buffer_count = 1;
                         }
 
-                        float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
-
-                        float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
-
-                        float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
-
                         ShadowPushConstants push_constants{};
-                        push_constants.view_projection = view * projection;
+                        push_constants.view_projection = view_projection;
 
                         if (material.is_skinned()) {
                             // `view_projection` is `model_view_projection` for skinned geometry.
@@ -208,10 +203,10 @@ public:
 
     void run() override {
         //
-        // TODO: Use camera bounds.
+        // Query all point lights in a frustum.
         //
 
-        Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(aabbox(float3(), float3(500.f)));
+        Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
 
         std::sort(primitives.begin(), primitives.end(), LightSort(m_render_pass.m_scene.get_camera()));
         

@@ -71,7 +71,7 @@ Vector<AccelerationStructurePrimitive*> LinearAccelerationStructure::query(Memor
 }
 
 size_t LinearAccelerationStructure::get_count() const {
-    std::shared_lock<std::shared_mutex> shared_lock(m_shared_mutex);
+    std::shared_lock shared_lock(m_shared_mutex);
 
     return m_primitives.size();
 }

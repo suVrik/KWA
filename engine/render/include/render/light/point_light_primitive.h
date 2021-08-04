@@ -26,9 +26,6 @@ public:
     const ShadowParams& get_shadow_params() const;
     void set_shadow_params(const ShadowParams& value);
 
-protected:
-    // TODO: Update bounds in `global_transform_updated`.
-
 private:
     float m_radius;
     bool m_is_shadow_enabled;

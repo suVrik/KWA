@@ -95,9 +95,8 @@ public:
 };
 
 constexpr bool intersect(const float3& point, const frustum& frustum) {
-    for (size_t i = 0; i < 6; i++) {
-        float distance = dot(point, frustum.data[i].normal) + frustum.data[i].distance;
-        if (distance < 0.f) {
+    for (const plane& plane : frustum.data) {
+        if (dot(point, plane.normal) + plane.distance < 0.f) {
             return false;
         }
     }
@@ -106,7 +105,7 @@ constexpr bool intersect(const float3& point, const frustum& frustum) {
 
 constexpr bool intersect(const aabbox& box, const frustum& frustum) {
     for (const plane& plane : frustum.data) {
-        if (dot(box.center, plane.normal) + dot(box.extent, abs(plane.normal)) < -plane.distance) {
+        if (dot(box.center, plane.normal) + plane.distance < -dot(box.extent, abs(plane.normal))) {
             return false;
         }
     }

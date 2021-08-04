@@ -2,10 +2,9 @@
 
 #include "render/scene/primitive.h"
 
-#include <core/math/aabbox.h>
-
 namespace kw {
 
+class aabbox;
 class AccelerationStructure;
 
 class AccelerationStructurePrimitive : public Primitive {
@@ -18,15 +17,13 @@ public:
         return m_acceleration_structure;
     }
 
-    const aabbox& get_bounds() const {
-        return m_bounds;
-    }
+    virtual const aabbox& get_bounds() const = 0;
 
 protected:
     // TODO: Call acceleration structure's `update` from `global_transform_updated`.
 
+private:
     AccelerationStructure* m_acceleration_structure;
-    aabbox m_bounds;
     void* m_node;
 
     friend class LinearAccelerationStructure;

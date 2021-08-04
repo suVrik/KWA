@@ -5,6 +5,7 @@ namespace kw {
 
 LightPrimitive::LightPrimitive(float3 color, float power, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
+    , m_bounds(float3(local_transform.translation), float3(std::sqrt(power * 10.f)))
     , m_color(color)
     , m_power(power)
 {
@@ -17,6 +18,10 @@ LightPrimitive::~LightPrimitive() {
     if (m_parent != nullptr) {
         m_parent->remove_child(*this);
     }
+}
+
+const aabbox& LightPrimitive::get_bounds() const {
+    return m_bounds;
 }
 
 const float3& LightPrimitive::get_color() const {
@@ -32,7 +37,15 @@ float LightPrimitive::get_power() const {
 }
 
 void LightPrimitive::set_power(float value) {
+    m_bounds = aabbox(float3(m_global_transform.translation), float3(std::sqrt(value * 10.f)));
+
     m_power = value;
+}
+
+void LightPrimitive::global_transform_updated() {
+    AccelerationStructurePrimitive::global_transform_updated();
+
+    m_bounds = aabbox(float3(m_global_transform.translation), float3(std::sqrt(m_power * 10.f)));
 }
 
 } // namespace kw

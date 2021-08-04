@@ -20,4 +20,16 @@ Material::Material(SharedPtr<GraphicsPipeline*> graphics_pipeline, Vector<Shared
 {
 }
 
+const SharedPtr<GraphicsPipeline*>& Material::get_graphics_pipeline() const {
+    return m_graphics_pipeline;
+}
+
+const Vector<SharedPtr<Texture*>>& Material::get_textures() const {
+    return m_textures;
+}
+
+bool Material::is_skinned() const {
+    return m_is_skinned;
+}
+
 } // namespace kw

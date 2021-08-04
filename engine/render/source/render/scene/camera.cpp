@@ -66,6 +66,12 @@ void Camera::update_view_projection_matrix() {
     m_view_projection_matrix = m_view_matrix * m_projection_matrix;
 
     m_inverse_view_projection_matrix = inverse(m_view_projection_matrix);
+
+    update_frustum();
+}
+
+void Camera::update_frustum() {
+    m_frustum = frustum(m_view_projection_matrix);
 }
 
 } // namespace kw

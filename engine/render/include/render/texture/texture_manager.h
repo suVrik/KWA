@@ -36,6 +36,9 @@ public:
     // Enqueue texture loading if it's not yet loaded. Concurrent loads are allowed.
     SharedPtr<Texture*> load(const char* relative_path);
 
+    // O(n) where n is the total number of loaded textures. Designed for tools.
+    const String& get_relative_path(const SharedPtr<Texture*>& texture) const;
+
     // The first task creates worker tasks that load all enqueued textures at the moment. Those tasks will be finished
     // before the second task starts. If you are planning to load textures on this frame, you need to place your task
     // before the first task. If you are planning to use texture loaded on this frame, you need to place your task

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
 
 #include <atomic>
@@ -17,6 +18,7 @@ public:
 
     // All these are lock-free.
     void line(const float3& from, const float3& to, const float3& color);
+    void abbox(const aabbox& bounds, const float3& color);
     void icosahedron(const float3& center, float radius, const float3& color);
     void frustum(const float4x4& inverse_transform, const float3& color);
 
