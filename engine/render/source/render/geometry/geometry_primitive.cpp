@@ -1,4 +1,6 @@
 #include "render/geometry/geometry_primitive.h"
+#include "render/geometry/geometry.h"
+#include "render/geometry/skeleton.h"
 
 namespace kw {
 
@@ -25,6 +27,30 @@ const SharedPtr<Material>& GeometryPrimitive::get_material() const {
 
 void GeometryPrimitive::set_material(SharedPtr<Material> material) {
     m_material = std::move(material);
+}
+
+Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResource& memory_resource) {
+    const Skeleton* skeleton = m_geometry->get_skeleton();
+    if (skeleton != nullptr) {
+        Vector<float4x4> result(skeleton->get_joint_count(), memory_resource);
+
+        for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
+            uint32_t parent_joint_index = skeleton->get_parent_joint(i);
+            if (parent_joint_index != UINT32_MAX) {
+                result[i] = skeleton->get_bind_matrix(i) * result[parent_joint_index];
+            } else {
+                result[i] = skeleton->get_bind_matrix(i);
+            }
+        }
+
+        for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
+            result[i] = skeleton->get_inverse_bind_matrix(i) * result[i];
+        }
+
+        return result;
+    }
+
+    return Vector<float4x4>(memory_resource);
 }
 
 } // namespace kw

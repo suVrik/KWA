@@ -49,10 +49,10 @@ public:
         AttributeDescriptor joint_attribute_descriptors[2]{};
         joint_attribute_descriptors[0].semantic = Semantic::JOINTS;
         joint_attribute_descriptors[0].format = TextureFormat::RGBA8_UINT;
-        joint_attribute_descriptors[0].offset = offsetof(Geometry::Joint, joints);
+        joint_attribute_descriptors[0].offset = offsetof(Geometry::SkinnedVertex, joints);
         joint_attribute_descriptors[1].semantic = Semantic::WEIGHTS;
         joint_attribute_descriptors[1].format = TextureFormat::RGBA8_UNORM;
-        joint_attribute_descriptors[1].offset = offsetof(Geometry::Joint, weights);
+        joint_attribute_descriptors[1].offset = offsetof(Geometry::SkinnedVertex, weights);
 
         // Only the first binding will be used for solid geometry.
         BindingDescriptor binding_descriptors[2]{};
@@ -61,7 +61,7 @@ public:
         binding_descriptors[0].stride = sizeof(Geometry::Vertex);
         binding_descriptors[1].attribute_descriptors = joint_attribute_descriptors;
         binding_descriptors[1].attribute_descriptor_count = std::size(joint_attribute_descriptors);
-        binding_descriptors[1].stride = sizeof(Geometry::Joint);
+        binding_descriptors[1].stride = sizeof(Geometry::SkinnedVertex);
 
         AttributeDescriptor instance_attribute_descriptors[8]{};
         instance_attribute_descriptors[0].semantic = Semantic::POSITION;

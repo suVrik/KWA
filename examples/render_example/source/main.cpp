@@ -8,12 +8,15 @@
 #undef OUT
 #undef RELATIVE
 
+#include <render/animation/animated_geometry_primitive.h>
 #include <render/container/container_primitive.h>
 #include <render/debug/debug_draw_manager.h>
 #include <render/debug/imgui_manager.h>
 #include <render/frame_graph.h>
+#include <render/geometry/geometry.h>
 #include <render/geometry/geometry_manager.h>
 #include <render/geometry/geometry_primitive.h>
+#include <render/geometry/skeleton.h>
 #include <render/light/point_light_primitive.h>
 #include <render/material/material_manager.h>
 #include <render/render.h>
@@ -227,6 +230,14 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     KW_ERROR(level_stream, "Failed to read level.");
 
+    AnimatedGeometryPrimitive robot_primitive(
+        persistent_memory_resource,
+        geometry_manager.load("resource/geometry/robot_blue.kwg"),
+        material_manager.load("resource/materials/robot_blue.kwm")
+    );
+    robot_primitive.set_local_translation(float3(5.f, 0.f, 0.f));
+    scene.add_child(robot_primitive);
+
     PointLightPrimitive point_light_primitives[3]{
         PointLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 4.f, 0.f))),
         PointLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, 20.f))),
@@ -342,6 +353,47 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             }
         }
         imgui.End();
+
+        if (robot_primitive.get_geometry()) {
+            const Skeleton* skeleton = robot_primitive.get_geometry()->get_skeleton();
+            if (skeleton != nullptr) {
+                SkeletonPose& skeleton_pose = robot_primitive.get_skeleton_pose();
+                const Vector<float4x4>& joint_space_matrices = skeleton_pose.get_joint_space_matrices();
+                size_t joint_count = skeleton->get_joint_count();
+
+                if (joint_space_matrices.size() != joint_count) {
+                    for (uint32_t i = 0; i < joint_count; i++) {
+                        skeleton_pose.set_joint_space_matrix(i, skeleton->get_bind_matrix(i));
+                    }
+                    skeleton_pose.build_model_space_matrices(*skeleton);
+                }
+
+                if (imgui.Begin("Skinning")) {
+                    for (size_t i = 0; i < joint_count; i++) {
+                        const String& name = skeleton->get_joint_name(i);
+
+                        imgui.PushID(name.c_str());
+
+                        if (imgui.CollapsingHeader(name.c_str())) {
+                            transform transform(joint_space_matrices[i]);
+
+                            bool changed_translation = imgui.DragFloat3("translation", &transform.translation, 0.01f);
+                            bool changed_rotation = imgui.DragFloat4("rotation", &transform.rotation, 0.01f);
+                            bool changed_scale = imgui.DragFloat3("scale", &transform.scale, 0.01f);
+
+                            if (changed_translation || changed_rotation || changed_scale) {
+                                transform.rotation = normalize(transform.rotation);
+                                skeleton_pose.set_joint_space_matrix(i, float4x4(transform));
+                                skeleton_pose.build_model_space_matrices(*skeleton);
+                            }
+                        }
+
+                        imgui.PopID();
+                    }
+                }
+                imgui.End();
+            }
+        }
 
         auto [texture_manager_begin, texture_manager_end] = texture_manager.create_tasks();
         auto [geometry_manager_begin, geometry_manager_end] = geometry_manager.create_tasks();

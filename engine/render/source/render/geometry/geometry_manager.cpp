@@ -1,5 +1,6 @@
 #include "render/geometry/geometry_manager.h"
 #include "render/geometry/geometry.h"
+#include "render/geometry/skeleton.h"
 #include "render/render.h"
 
 #include <core/concurrency/task.h>
@@ -7,7 +8,7 @@
 #include <core/debug/assert.h>
 #include <core/error.h>
 #include <core/io/binary_reader.h>
-#include <core/math/float4.h>
+#include <core/math/float4x4.h>
 
 namespace kw {
 
@@ -31,6 +32,14 @@ float4 swap_le(float4 vector) {
     vector.y = swap_le(vector.y);
     vector.z = swap_le(vector.z);
     vector.w = swap_le(vector.w);
+    return vector;
+}
+
+float4x4 swap_le(float4x4 vector) {
+    vector._r0 = swap_le(vector._r0);
+    vector._r1 = swap_le(vector._r1);
+    vector._r2 = swap_le(vector._r2);
+    vector._r3 = swap_le(vector._r3);
     return vector;
 }
 
@@ -61,7 +70,9 @@ public:
         KW_ERROR(read_next(reader) == KWG_SIGNATURE, "Invalid geometry \"%s\" signature.", m_relative_path);
 
         uint32_t vertex_count = read_next(reader);
+        uint32_t skinned_vertex_count = read_next(reader);
         uint32_t index_count = read_next(reader);
+        uint32_t joint_count = read_next(reader);
 
         aabbox bounds;
         KW_ERROR(reader.read_le<float>(bounds.data, std::size(bounds.data)), "Failed to read geometry header.");
@@ -73,6 +84,20 @@ public:
         KW_ASSERT(vertex_buffer != nullptr);
 
         m_manager.m_render.upload_vertex_buffer(vertex_buffer, vertices.data(), sizeof(Geometry::Vertex) * vertices.size());
+
+        VertexBuffer* skinned_vertex_buffer = nullptr;
+
+        if (skinned_vertex_count > 0) {
+            KW_ERROR(vertex_count == skinned_vertex_count, "Mismatching geometry vertex count.");
+
+            Vector<Geometry::SkinnedVertex> skinned_vertices(skinned_vertex_count, m_manager.m_transient_memory_resource);
+            KW_ERROR(reader.read(skinned_vertices.data(), skinned_vertices.size() * sizeof(Geometry::SkinnedVertex)), "Failed to read geometry skinned vertices.");
+
+            skinned_vertex_buffer = m_manager.m_render.create_vertex_buffer(m_relative_path, sizeof(Geometry::SkinnedVertex) * skinned_vertices.size());
+            KW_ASSERT(skinned_vertex_buffer != nullptr);
+
+            m_manager.m_render.upload_vertex_buffer(skinned_vertex_buffer, skinned_vertices.data(), sizeof(Geometry::SkinnedVertex) * skinned_vertices.size());
+        }
 
         IndexBuffer* index_buffer;
 
@@ -94,7 +119,38 @@ public:
             m_manager.m_render.upload_index_buffer(index_buffer, indices.data(), sizeof(uint32_t) * indices.size());
         }
 
-        m_geometry = Geometry(vertex_buffer, index_buffer, index_count, bounds);
+        UniquePtr<Skeleton> skeleton;
+
+        if (joint_count > 0) {
+            Vector<uint32_t> parent_joints(joint_count, m_manager.m_persistent_memory_resource);
+            KW_ERROR(reader.read_le<uint32_t>(parent_joints.data(), parent_joints.size()), "Failed to read parent joint indices.");
+
+            Vector<float4x4> inverse_bind_matrices(joint_count, m_manager.m_persistent_memory_resource);
+            KW_ERROR(reader.read_le<float4x4>(inverse_bind_matrices.data(), inverse_bind_matrices.size()), "Failed to read inverse bind matrices.");
+
+            Vector<float4x4> bind_matrices(joint_count, m_manager.m_persistent_memory_resource);
+            KW_ERROR(reader.read_le<float4x4>(bind_matrices.data(), bind_matrices.size()), "Failed to read bind matrices.");
+
+            UnorderedMap<String, uint32_t> joint_mapping(m_manager.m_persistent_memory_resource);
+            joint_mapping.reserve(joint_count);
+
+            for (uint32_t i = 0; i < joint_count; i++) {
+                std::optional<uint32_t> name_length = reader.read_le<uint32_t>();
+                KW_ERROR(name_length, "Failed to read joint name length.");
+
+                String name(*name_length, '\0', m_manager.m_persistent_memory_resource);
+                KW_ERROR(reader.read(name.data(), name.size()), "Failed to read joint name.");
+
+                joint_mapping.emplace(std::move(name), i);
+            }
+
+            skeleton = allocate_unique<Skeleton>(
+                m_manager.m_persistent_memory_resource,
+                std::move(parent_joints), std::move(inverse_bind_matrices), std::move(bind_matrices), std::move(joint_mapping)
+            );
+        }
+
+        m_geometry = Geometry(vertex_buffer, skinned_vertex_buffer, index_buffer, index_count, bounds, std::move(skeleton));
     }
 
     const char* get_name() const override {

@@ -40,13 +40,21 @@ public:
                 if (to_it == primitives.end() ||
                     (*to_it)->get_geometry() != (*from_it)->get_geometry() ||
                     (*to_it)->get_material() != (*from_it)->get_material() ||
-                    (*from_it)->get_material()->is_skinned())
+                    ((*from_it)->get_material() && (*from_it)->get_material()->is_skinned()))
                 {
-                    if ((*from_it)->get_geometry() && (*from_it)->get_material()) {
+                    if ((*from_it)->get_geometry() &&
+                        (*from_it)->get_material() &&
+                        (!(*from_it)->get_material()->is_skinned() || (*from_it)->get_geometry()->get_skinned_vertex_buffer() != nullptr))
+                    {
                         Geometry& geometry = *(*from_it)->get_geometry();
                         Material& material = *(*from_it)->get_material();
 
-                        VertexBuffer* vertex_buffer = geometry.get_vertex_buffer();
+                        VertexBuffer* vertex_buffers[2] = {
+                            geometry.get_vertex_buffer(),
+                            geometry.get_skinned_vertex_buffer(),
+                        };
+                        size_t vertex_buffer_count = material.is_skinned() ? 2 : 1;
+
                         IndexBuffer* index_buffer = geometry.get_index_buffer();
                         uint32_t index_count = geometry.get_index_count();
 
@@ -82,17 +90,14 @@ public:
                         size_t uniform_buffer_count = 0;
 
                         if (material.is_skinned()) {
+                            Vector<float4x4> model_space_joint_matrices = (*from_it)->get_model_space_joint_matrices(m_render_pass.m_transient_memory_resource);
+
                             Material::UniformData uniform_data{};
+                            uniform_data.model = float4x4((*from_it)->get_global_transform());
+                            uniform_data.inverse_model = inverse(uniform_data.model);
+                            std::copy(model_space_joint_matrices.begin(), model_space_joint_matrices.begin() + std::min(model_space_joint_matrices.size(), std::size(uniform_data.joint_data)), std::begin(uniform_data.joint_data));
 
-                            // TODO: Skinning.
-                            //if ((*from_it)->get_skeleton()) {
-                            //    Skeleton& skeleton = *(*from_it)->get_skeleton();
-                            //    // TODO: Fill `uniform_data` from `skeleton`.
-                            //} else {
-                            //    // TODO: Use some default values for `uniform_data`.
-                            //}
-
-                            uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&uniform_data, sizeof(uniform_data));
+                            uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&uniform_data, sizeof(Material::UniformData));
                             KW_ASSERT(uniform_buffer != nullptr);
 
                             uniform_buffer_count = 1;
@@ -103,8 +108,8 @@ public:
 
                         DrawCallDescriptor draw_call_descriptor{};
                         draw_call_descriptor.graphics_pipeline = *material.get_graphics_pipeline();
-                        draw_call_descriptor.vertex_buffers = &vertex_buffer;
-                        draw_call_descriptor.vertex_buffer_count = 1;
+                        draw_call_descriptor.vertex_buffers = vertex_buffers;
+                        draw_call_descriptor.vertex_buffer_count = vertex_buffer_count;
                         draw_call_descriptor.instance_buffers = &instance_buffer;
                         draw_call_descriptor.instance_buffer_count = instance_buffer_count;
                         draw_call_descriptor.index_buffer = index_buffer;

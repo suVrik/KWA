@@ -16,13 +16,18 @@ cbuffer ShadowUniformBuffer {
 };
 
 struct ShadowPushConstants {
-    float4x4 view_projection;
+    float4x4 model_view_projection;
 };
 
 [[vk::push_constant]] ShadowPushConstants shadow_push_constants;
 
 VS_OUTPUT main(VS_INPUT input) {
+    float4x4 skinning = input.weights.x * joint_data[input.joints.x] +
+                        input.weights.y * joint_data[input.joints.y] +
+                        input.weights.z * joint_data[input.joints.z] +
+                        input.weights.w * joint_data[input.joints.w];
+
     VS_OUTPUT output;
-    output.position = mul(shadow_push_constants.view_projection, float4(input.position, 1.0));
+    output.position = mul(shadow_push_constants.model_view_projection, mul(skinning, float4(input.position, 1.0)));
     return output;
 }

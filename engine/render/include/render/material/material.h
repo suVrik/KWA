@@ -11,13 +11,17 @@ class Texture;
 
 class Material {
 public:
+    static constexpr size_t MAX_JOINT_COUNT = 32;
+
     struct InstanceData {
         float4x4 model;
         float4x4 inverse_model;
     };
 
     struct UniformData {
-        float4x4 joint_data[32];
+        float4x4 model;
+        float4x4 inverse_model;
+        float4x4 joint_data[MAX_JOINT_COUNT];
     };
 
     struct PushConstants {
