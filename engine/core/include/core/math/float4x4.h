@@ -30,10 +30,10 @@ public:
     {
     }
 
-    explicit constexpr float4x4(float _11, float _12, float _13, float _14,
-                                float _21, float _22, float _23, float _24,
-                                float _31, float _32, float _33, float _34,
-                                float _41, float _42, float _43, float _44)
+    constexpr float4x4(float _11, float _12, float _13, float _14,
+                       float _21, float _22, float _23, float _24,
+                       float _31, float _32, float _33, float _34,
+                       float _41, float _42, float _43, float _44)
         : _11(_11), _12(_12), _13(_13), _14(_14)
         , _21(_21), _22(_22), _23(_23), _24(_24)
         , _31(_31), _32(_32), _33(_33), _34(_34)
@@ -58,7 +58,10 @@ public:
     }
 
     constexpr float4x4(const float4& _r0, const float4& _r1, const float4& _r2, const float4& _r3)
-        : _r0(_r0), _r1(_r1), _r2(_r2), _r3(_r3)
+        : _r0(_r0)
+        , _r1(_r1)
+        , _r2(_r2)
+        , _r3(_r3)
     {
     }
 

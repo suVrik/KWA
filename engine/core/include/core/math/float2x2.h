@@ -12,15 +12,16 @@ public:
     {
     }
 
-    explicit constexpr float2x2(float _11, float _12,
-                                float _21, float _22)
+    constexpr float2x2(float _11, float _12,
+                       float _21, float _22)
         : _11(_11), _12(_12)
         , _21(_21), _22(_22)
     {
     }
 
     constexpr float2x2(const float2& _r0, const float2& _r1) 
-        : _r0(_r0), _r1(_r1)
+        : _r0(_r0)
+        , _r1(_r1)
     {
     }
 

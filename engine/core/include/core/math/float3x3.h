@@ -16,9 +16,9 @@ public:
     {
     }
 
-    explicit constexpr float3x3(float _11, float _12, float _13,
-                                float _21, float _22, float _23,
-                                float _31, float _32, float _33)
+    constexpr float3x3(float _11, float _12, float _13,
+                       float _21, float _22, float _23,
+                       float _31, float _32, float _33)
         : _11(_11), _12(_12), _13(_13)
         , _21(_21), _22(_22), _23(_23)
         , _31(_31), _32(_32), _33(_33)
@@ -33,7 +33,9 @@ public:
     }
 
     constexpr float3x3(const float3& _r0, const float3& _r1, const float3& _r2)
-        : _r0(_r0), _r1(_r1), _r2(_r2)
+        : _r0(_r0)
+        , _r1(_r1)
+        , _r2(_r2)
     {
     }
 

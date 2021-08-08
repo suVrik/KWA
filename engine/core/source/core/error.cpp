@@ -75,7 +75,7 @@ static void error_handler_impl(const char* expression, const char* message) {
     }
 #else
     DialogBoxParam(nullptr, MAKEINTRESOURCE(IDD_ERROR), nullptr, dialog_callback, reinterpret_cast<LPARAM>(message));
-#endif
+#endif // KW_DEBUG
 }
 
 void error_handler(const char* expression) {

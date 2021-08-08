@@ -9,75 +9,34 @@ class Camera {
 public:
     Camera();
 
-    const transform& get_transform() const {
-        return m_transform;
-    }
-
+    const transform& get_transform() const;
     void set_transform(const transform& value);
-    
-    const float3& get_translation() const {
-        return m_transform.translation;
-    }
 
+    const float3& get_translation() const;
     void set_translation(const float3& value);
 
-    const quaternion& get_rotation() const {
-        return m_transform.rotation;
-    }
-
+    const quaternion& get_rotation() const;
     void set_rotation(const quaternion& value);
 
-    float get_fov() const {
-        return m_fov;
-    }
-
+    float get_fov() const;
     void set_fov(float value);
 
-    float get_aspect_ratio() const {
-        return m_aspect_ratio;
-    }
-
+    float get_aspect_ratio() const;
     void set_aspect_ratio(float value);
 
-    float get_z_near() const {
-        return m_z_near;
-    }
-
+    float get_z_near() const;
     void set_z_near(float value);
 
-    float get_z_far() const {
-        return m_z_far;
-    }
-
+    float get_z_far() const;
     void set_z_far(float value);
 
-    const float4x4& get_view_matrix() const {
-        return m_view_matrix;
-    }
-
-    const float4x4& get_projection_matrix() const {
-        return m_projection_matrix;
-    }
-
-    const float4x4& get_view_projection_matrix() const {
-        return m_view_projection_matrix;
-    }
-
-    const float4x4& get_inverse_view_matrix() const {
-        return m_inverse_view_matrix;
-    }
-
-    const float4x4& get_inverse_projection_matrix() const {
-        return m_inverse_projection_matrix;
-    }
-
-    const float4x4& get_inverse_view_projection_matrix() const {
-        return m_inverse_view_projection_matrix;
-    }
-
-    const frustum& get_frustum() const {
-        return m_frustum;
-    }
+    const float4x4& get_view_matrix() const;
+    const float4x4& get_projection_matrix() const;
+    const float4x4& get_view_projection_matrix() const;
+    const float4x4& get_inverse_view_matrix() const;
+    const float4x4& get_inverse_projection_matrix() const;
+    const float4x4& get_inverse_view_projection_matrix() const;
+    const frustum& get_frustum() const;
 
 private:
     void update_view_matrix();

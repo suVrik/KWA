@@ -11,8 +11,6 @@ Input::Input(Window& window)
     , m_next_text("")
 {
 }
- 
-Input::~Input() = default;
 
 void Input::push_event(const Event& event) {
     switch (event.type) {

@@ -181,6 +181,6 @@ double swap_be(double value) {
     return swap_bytes(value);
 }
 
-#endif
+#endif // KW_BIG_ENDIAN
 
 } // namespace kw::EndianUtils

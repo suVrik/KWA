@@ -9,7 +9,7 @@ namespace kw {
 template <typename T, typename Allocator>
 class UniquePtrDeleter {
 public:
-    static_assert(!std::is_array_v<T>, "UniquePtr must not be an array.");
+    static_assert(!std::is_array_v<T>);
 
     UniquePtrDeleter(const Allocator& allocator_)
         : allocator(allocator_)
@@ -28,7 +28,7 @@ public:
 template <typename T>
 class UniquePtrDeleter<T, MemoryResourceAllocator<T>> {
 public:
-    static_assert(!std::is_array_v<T>, "UniquePtr must not be an array.");
+    static_assert(!std::is_array_v<T>);
 
     UniquePtrDeleter()
         : allocator(NoopMemoryResource::instance())

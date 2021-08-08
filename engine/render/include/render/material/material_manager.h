@@ -81,10 +81,8 @@ private:
     std::shared_mutex m_graphics_pipelines_mutex;
 
     UnorderedMap<String, SharedPtr<Material>> m_materials;
-    std::shared_mutex m_materials_mutex;
-
-    // Materials that are not even opened yet.
     Vector<std::pair<const String&, SharedPtr<Material>>> m_pending_materials;
+    std::shared_mutex m_materials_mutex;
 };
 
 } // namespace kw

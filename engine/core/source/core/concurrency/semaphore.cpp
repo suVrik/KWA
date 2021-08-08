@@ -3,7 +3,8 @@
 namespace kw {
 
 Semaphore::Semaphore(size_t initial)
-    : m_counter(initial) {
+    : m_counter(initial)
+{
 }
 
 void Semaphore::lock(size_t count) {

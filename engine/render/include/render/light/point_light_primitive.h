@@ -13,8 +13,10 @@ public:
         float pcss_filter_factor;
     };
 
-    explicit PointLightPrimitive(float radius = 1.f, bool is_shadow_enabled = false,
-                                 float3 color = float3(1.f, 1.f, 1.f), float power = 1.f,
+    explicit PointLightPrimitive(float radius = 1.f,
+                                 bool is_shadow_enabled = false,
+                                 float3 color = float3(1.f, 1.f, 1.f),
+                                 float power = 1.f,
                                  const transform& local_transform = transform());
 
     float get_radius() const;

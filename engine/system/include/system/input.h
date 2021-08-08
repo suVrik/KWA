@@ -8,8 +8,7 @@ namespace kw {
 
 class Input {
 public:
-    Input(Window& window);
-    ~Input();
+    explicit Input(Window& window);
 
     void push_event(const Event& event);
 

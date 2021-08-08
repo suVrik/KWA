@@ -14,9 +14,16 @@ public:
     {
     }
 
-    constexpr transform(const float3& translation)
+    explicit constexpr transform(const float3& translation)
         : translation(translation)
         , rotation()
+        , scale(1.f, 1.f, 1.f)
+    {
+    }
+
+    constexpr transform(const float3& translation, const quaternion& rotation)
+        : translation(translation)
+        , rotation(rotation)
         , scale(1.f, 1.f, 1.f)
     {
     }

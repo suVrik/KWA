@@ -17,12 +17,12 @@ public:
     }
 
 
-    explicit constexpr float3(float x, float y, float z)
+    constexpr float3(float x, float y, float z)
         : x(x), y(y), z(z)
     {
     }
 
-    explicit constexpr float3(const float2& value, float z)
+    constexpr float3(const float2& value, float z)
         : x(value.x), y(value.y), z(z)
     {
     }

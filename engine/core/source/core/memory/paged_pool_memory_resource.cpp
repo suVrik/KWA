@@ -51,7 +51,7 @@ void* PagedPoolMemoryResource::reallocate(void* memory, size_t size, size_t alig
 
 void PagedPoolMemoryResource::deallocate(void* memory) {
     if (memory != nullptr) {
-#ifndef NDEBUG
+#ifdef KW_DEBUG
         KW_ASSERT(reinterpret_cast<size_t>(memory) % m_allocation_size == 0, "Invalid alignment.");
 
         bool valid_range = false;
@@ -69,7 +69,7 @@ void PagedPoolMemoryResource::deallocate(void* memory) {
         } while (current_page != nullptr);
 
         KW_ASSERT(valid_range, "Memory out of range.");
-#endif
+#endif // KW_DEBUG
 
         // Add this storage to the linked list.
         std::memcpy(memory, &m_data_head, sizeof(void*));

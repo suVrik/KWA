@@ -24,6 +24,7 @@ TaskScheduler::TaskScheduler(MemoryResource& persistent_memory_resource, size_t 
 
 TaskScheduler::~TaskScheduler() {
     // Gracefully terminate all worker threads.
+
     {
         std::lock_guard lock(m_mutex);
         m_is_running = false;

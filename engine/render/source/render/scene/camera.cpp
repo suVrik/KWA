@@ -11,9 +11,17 @@ Camera::Camera()
     update_projection_matrix();
 }
 
+const transform& Camera::get_transform() const {
+    return m_transform;
+}
+
 void Camera::set_transform(const transform& value) {
     m_transform = value;
     update_view_matrix();
+}
+
+const float3& Camera::get_translation() const {
+    return m_transform.translation;
 }
 
 void Camera::set_translation(const float3& value) {
@@ -21,9 +29,17 @@ void Camera::set_translation(const float3& value) {
     update_view_matrix();
 }
 
+const quaternion& Camera::get_rotation() const {
+    return m_transform.rotation;
+}
+
 void Camera::set_rotation(const quaternion& value) {
     m_transform.rotation = value;
     update_view_matrix();
+}
+
+float Camera::get_fov() const {
+    return m_fov;
 }
 
 void Camera::set_fov(float value) {
@@ -31,9 +47,17 @@ void Camera::set_fov(float value) {
     update_projection_matrix();
 }
 
+float Camera::get_aspect_ratio() const {
+    return m_aspect_ratio;
+}
+
 void Camera::set_aspect_ratio(float value) {
     m_aspect_ratio = value;
     update_projection_matrix();
+}
+
+float Camera::get_z_near() const {
+    return m_z_near;
 }
 
 void Camera::set_z_near(float value) {
@@ -41,9 +65,41 @@ void Camera::set_z_near(float value) {
     update_projection_matrix();
 }
 
+float Camera::get_z_far() const {
+    return m_z_far;
+}
+
 void Camera::set_z_far(float value) {
     m_z_far = value;
     update_projection_matrix();
+}
+
+const float4x4& Camera::get_view_matrix() const {
+    return m_view_matrix;
+}
+
+const float4x4& Camera::get_projection_matrix() const {
+    return m_projection_matrix;
+}
+
+const float4x4& Camera::get_view_projection_matrix() const {
+    return m_view_projection_matrix;
+}
+
+const float4x4& Camera::get_inverse_view_matrix() const {
+    return m_inverse_view_matrix;
+}
+
+const float4x4& Camera::get_inverse_projection_matrix() const {
+    return m_inverse_projection_matrix;
+}
+
+const float4x4& Camera::get_inverse_view_projection_matrix() const {
+    return m_inverse_view_projection_matrix;
+}
+
+const frustum& Camera::get_frustum() const {
+    return m_frustum;
 }
 
 void Camera::update_view_matrix() {

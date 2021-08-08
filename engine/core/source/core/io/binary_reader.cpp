@@ -13,4 +13,8 @@ bool BinaryReader::read(void* output, size_t size) {
     return static_cast<bool>(m_stream.read(static_cast<char*>(output), size));
 }
 
+BinaryReader::operator bool() const {
+    return static_cast<bool>(m_stream);
+}
+
 } // namespace kw

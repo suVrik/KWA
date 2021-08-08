@@ -16,11 +16,10 @@ namespace kw::DebugUtils {
 constexpr size_t STACKTRACE_LENGTH = 4096;
 constexpr size_t MAX_NAME_LENGTH   = 255;
 
-// `SymInitialize` crashes when called from multiple threads.
-static std::mutex stacktrace_mutex;
-
 char* get_stacktrace(uint32_t hide_calls) {
-    std::lock_guard<std::mutex> lock(stacktrace_mutex);
+    // `SymInitialize` crashes when called from multiple threads.
+    static std::mutex stacktrace_mutex;
+    std::lock_guard lock(stacktrace_mutex);
 
     HANDLE process = GetCurrentProcess();
     HANDLE thread  = GetCurrentThread();
@@ -97,6 +96,7 @@ char* get_stacktrace(uint32_t hide_calls) {
 
     SymCleanup(process);
 
+    // `stacktrace_begin` will be freed outside.
     return stacktrace_begin;
 }
 
@@ -212,6 +212,6 @@ bool show_assert_window(const char* message, bool* skip, uint32_t hide_calls) {
 void subscribe_to_segfault() {
 }
 
-#endif
+#endif // KW_DEBUG
 
 } // namespace kw::DebugUtils

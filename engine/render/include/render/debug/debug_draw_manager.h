@@ -13,7 +13,7 @@ class DebugDrawManager {
 public:
     explicit DebugDrawManager(MemoryResource& transient_memory_resource);
 
-    // Must be called every frame before any primitive call.
+    // Must be called every frame before any debug draw primitive call.
     void update();
 
     // All these are lock-free.

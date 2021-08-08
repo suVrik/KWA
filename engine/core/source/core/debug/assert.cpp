@@ -67,6 +67,6 @@ bool assert_handler(const char* expression, bool& skip, const char* format, ...)
     return false;
 }
 
-#endif
+#endif // KW_DEBUG
 
 } // namespace kw::assert_details
