@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/geometry/geometry_notifier.h"
+
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unordered_map.h>
@@ -50,10 +52,10 @@ private:
     MemoryResource& m_transient_memory_resource;
 
     UnorderedMap<String, SharedPtr<Geometry>> m_geometry;
+    Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
     std::shared_mutex m_geometry_mutex;
 
-    // Geometries that are not even opened yet.
-    Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
+    GeometryNotifier m_geometry_notifier;
 };
 
 } // namespace kw

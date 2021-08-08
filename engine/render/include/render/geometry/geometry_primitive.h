@@ -1,29 +1,32 @@
 #pragma once
 
 #include "render/acceleration_structure/acceleration_structure_primitive.h"
+#include "render/geometry/geometry_listener.h"
 
 #include <core/containers/shared_ptr.h>
 #include <core/containers/vector.h>
-#include <core/math/aabbox.h>
 
 namespace kw {
 
 class Geometry;
 class Material;
 
-class GeometryPrimitive : public AccelerationStructurePrimitive {
+class GeometryPrimitive : public AccelerationStructurePrimitive, public GeometryListener {
 public:
-    explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr, SharedPtr<Material> material = nullptr,
+    explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr,
+                               SharedPtr<Material> material = nullptr,
                                const transform& local_transform = transform());
+    GeometryPrimitive(const GeometryPrimitive& other);
+    GeometryPrimitive(GeometryPrimitive&& other);
     ~GeometryPrimitive() override;
-
-    const aabbox& get_bounds() const override;
+    GeometryPrimitive& operator=(const GeometryPrimitive& other);
+    GeometryPrimitive& operator=(GeometryPrimitive&& other);
 
     const SharedPtr<Geometry>& get_geometry() const;
-    virtual void set_geometry(SharedPtr<Geometry> geometry);
+    void set_geometry(SharedPtr<Geometry> geometry);
 
     const SharedPtr<Material>& get_material() const;
-    virtual void set_material(SharedPtr<Material> geometry);
+    void set_material(SharedPtr<Material> geometry);
 
     // Returns joint transformation matrcies in model space. Returns an empty array if this geometry is not skinned.
     // Returns default bind pose if this geometry doesn't have a custom pose (i.e. not an `AnimatedGeometryPrimitive`).
@@ -31,11 +34,9 @@ public:
 
 protected:
     void global_transform_updated() override;
+    void geometry_loaded() override;
 
 private:
-    mutable aabbox m_bounds;
-    mutable bool m_bounds_set;
-
     SharedPtr<Geometry> m_geometry;
     SharedPtr<Material> m_material;
 };

@@ -23,8 +23,6 @@ public:
 private:
     Vector<float4x4> m_joint_space_matrices;
     Vector<float4x4> m_model_space_matrices;
-
-    friend class AnimatedGeometryPrimitive;
 };
 
 } // namespace kw

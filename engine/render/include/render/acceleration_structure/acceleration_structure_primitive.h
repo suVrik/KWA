@@ -2,6 +2,8 @@
 
 #include "render/scene/primitive.h"
 
+#include <core/math/aabbox.h>
+
 namespace kw {
 
 class aabbox;
@@ -18,11 +20,13 @@ public:
     AccelerationStructure* get_acceleration_structure() const;
     
     // Bounds are defined by global transform, geometry, light radius, etc.
-
-    virtual const aabbox& get_bounds() const = 0;
+    const aabbox& get_bounds() const;
 
 protected:
-    // TODO: Call acceleration structure's `update` from `global_transform_updated`.
+    void global_transform_updated() override;
+
+    // Children are responsible for setting bounds.
+    aabbox m_bounds;
 
 private:
     AccelerationStructure* m_acceleration_structure;

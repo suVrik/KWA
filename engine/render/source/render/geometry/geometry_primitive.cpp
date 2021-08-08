@@ -1,35 +1,87 @@
 #include "render/geometry/geometry_primitive.h"
-#include "render/container/container_primitive.h"
 #include "render/geometry/geometry.h"
 #include "render/geometry/skeleton.h"
+
+#include <core/debug/assert.h>
 
 namespace kw {
 
 GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
-    , m_bounds(float3(-FLT_MAX), float3())
-    , m_bounds_set(false)
     , m_geometry(std::move(geometry))
     , m_material(std::move(material))
 {
+    // If geometry is not loaded yet, it will end up in center acceleration structure's node.
+
+    if (m_geometry) {
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
+    }
+}
+
+GeometryPrimitive::GeometryPrimitive(const GeometryPrimitive& other)
+    : AccelerationStructurePrimitive(other)
+    , m_geometry(other.m_geometry)
+    , m_material(other.m_material)
+{
+    if (m_geometry) {
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
+    }
+}
+
+GeometryPrimitive::GeometryPrimitive(GeometryPrimitive&& other)
+    : AccelerationStructurePrimitive(std::move(other))
+    , m_material(std::move(other.m_material))
+{
+    if (other.m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        other.m_geometry->unsubscribe(other);
+
+        m_geometry = std::move(other.m_geometry);
+
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
+    }
 }
 
 GeometryPrimitive::~GeometryPrimitive() {
-    // Scene must know whether the removed object is geometry, light or container to properly clean up acceleration
-    // structures. If `remove_child` is called from `Primitive`, there's no way to know whether this was geometry,
-    // light or container anymore.
-    if (m_parent != nullptr) {
-        m_parent->remove_child(*this);
+    if (m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        m_geometry->unsubscribe(*this);
     }
 }
 
-const aabbox& GeometryPrimitive::get_bounds() const {
-    if (!m_bounds_set && m_geometry && m_geometry->get_vertex_buffer() != nullptr) {
-        m_bounds = m_geometry->get_bounds() * m_global_transform;
-        m_bounds_set = true;
+GeometryPrimitive& GeometryPrimitive::operator=(const GeometryPrimitive& other) {
+    AccelerationStructurePrimitive::operator=(other);
+
+    m_geometry = other.m_geometry;
+    m_material = other.m_material;
+
+    if (m_geometry) {
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
     }
 
-    return m_bounds;
+    return *this;
+}
+
+GeometryPrimitive& GeometryPrimitive::operator=(GeometryPrimitive&& other) {
+    AccelerationStructurePrimitive::operator=(std::move(other));
+
+    m_material = std::move(other.m_material);
+
+    if (other.m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        other.m_geometry->unsubscribe(other);
+
+        m_geometry = std::move(other.m_geometry);
+
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
+    }
+
+    return *this;
 }
 
 const SharedPtr<Geometry>& GeometryPrimitive::get_geometry() const {
@@ -37,10 +89,17 @@ const SharedPtr<Geometry>& GeometryPrimitive::get_geometry() const {
 }
 
 void GeometryPrimitive::set_geometry(SharedPtr<Geometry> geometry) {
-    m_bounds = aabbox(float3(-FLT_MAX), float3());
-    m_bounds_set = false;
+    if (m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        m_geometry->unsubscribe(*this);
+    }
 
     m_geometry = std::move(geometry);
+
+    if (m_geometry) {
+        // If geometry is already loaded, `geometry_loaded` will be called immediately.
+        m_geometry->subscribe(*this);
+    }
 }
 
 const SharedPtr<Material>& GeometryPrimitive::get_material() const {
@@ -52,31 +111,47 @@ void GeometryPrimitive::set_material(SharedPtr<Material> material) {
 }
 
 Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResource& memory_resource) {
-    const Skeleton* skeleton = m_geometry->get_skeleton();
-    if (skeleton != nullptr) {
-        Vector<float4x4> result(skeleton->get_joint_count(), memory_resource);
+    if (m_geometry && m_geometry->is_loaded()) {
+        const Skeleton* skeleton = m_geometry->get_skeleton();
+        if (skeleton != nullptr) {
+            Vector<float4x4> result(skeleton->get_joint_count(), memory_resource);
 
-        for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
-            uint32_t parent_joint_index = skeleton->get_parent_joint(i);
-            if (parent_joint_index != UINT32_MAX) {
-                result[i] = skeleton->get_bind_matrix(i) * result[parent_joint_index];
-            } else {
-                result[i] = skeleton->get_bind_matrix(i);
+            for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
+                uint32_t parent_joint_index = skeleton->get_parent_joint(i);
+                if (parent_joint_index != UINT32_MAX) {
+                    result[i] = skeleton->get_bind_matrix(i) * result[parent_joint_index];
+                } else {
+                    result[i] = skeleton->get_bind_matrix(i);
+                }
             }
-        }
 
-        for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
-            result[i] = skeleton->get_inverse_bind_matrix(i) * result[i];
-        }
+            for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
+                result[i] = skeleton->get_inverse_bind_matrix(i) * result[i];
+            }
 
-        return result;
+            return result;
+        }
     }
 
     return Vector<float4x4>(memory_resource);
 }
 
 void GeometryPrimitive::global_transform_updated() {
-    m_bounds_set = false;
+    if (m_geometry && m_geometry->is_loaded()) {
+        m_bounds = m_geometry->get_bounds() * get_global_transform();
+    }
+
+    AccelerationStructurePrimitive::global_transform_updated();
+}
+
+void GeometryPrimitive::geometry_loaded() {
+    // This method must be called from geometry manager, which knows for sure that geometry is loaded.
+    KW_ASSERT(m_geometry && m_geometry->is_loaded(), "Geometry must be loaded.");
+
+    m_bounds = m_geometry->get_bounds() * get_global_transform();
+
+    // Update acceleration structure's node.
+    AccelerationStructurePrimitive::global_transform_updated();
 }
 
 } // namespace kw

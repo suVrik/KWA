@@ -151,7 +151,9 @@ public:
             );
         }
 
-        m_geometry = Geometry(vertex_buffer, skinned_vertex_buffer, index_buffer, index_count, bounds, std::move(skeleton));
+        m_geometry = Geometry(m_manager.m_geometry_notifier, vertex_buffer, skinned_vertex_buffer, index_buffer, index_count, bounds, std::move(skeleton));
+
+        m_manager.m_geometry_notifier.notify(m_geometry);
     }
 
     const char* get_name() const override {
@@ -230,6 +232,7 @@ GeometryManager::GeometryManager(const GeometryManagerDescriptor& descriptor)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_geometry(*descriptor.persistent_memory_resource)
     , m_pending_geometry(*descriptor.persistent_memory_resource)
+    , m_geometry_notifier(*descriptor.persistent_memory_resource)
 {
     KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.task_scheduler != nullptr);
@@ -271,7 +274,7 @@ SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
             return it->second;
         }
 
-        it->second = allocate_shared<Geometry>(m_persistent_memory_resource);
+        it->second = allocate_shared<Geometry>(m_persistent_memory_resource, m_geometry_notifier);
 
         m_pending_geometry.emplace_back(it->first, it->second);
 

@@ -6,6 +6,8 @@
 
 namespace kw {
 
+class GeometryListener;
+class GeometryNotifier;
 class IndexBuffer;
 class Skeleton;
 class VertexBuffer;
@@ -24,12 +26,17 @@ public:
         uint8_t weights[4];
     };
 
-    Geometry();
-    Geometry(VertexBuffer* vertex_buffer, VertexBuffer* skinned_vertex_buffer, IndexBuffer* index_buffer,
-             uint32_t index_count, const aabbox& bounds, UniquePtr<Skeleton>&& skeleton);
+    explicit Geometry(GeometryNotifier& geometry_notifier);
+    Geometry(GeometryNotifier& geometry_notifier, VertexBuffer* vertex_buffer, VertexBuffer* skinned_vertex_buffer,
+             IndexBuffer* index_buffer, uint32_t index_count, const aabbox& bounds, UniquePtr<Skeleton>&& skeleton);
     Geometry(Geometry&& other);
     ~Geometry();
     Geometry& operator=(Geometry&& other);
+
+    // This geometry listener will be notified when this geometry is loaded.
+    // If this geometry is already loaded, the listener will be notified immediately.
+    void subscribe(GeometryListener& geometry_listener);
+    void unsubscribe(GeometryListener& geometry_listener);
 
     VertexBuffer* get_vertex_buffer() const;
     VertexBuffer* get_skinned_vertex_buffer() const;
@@ -38,13 +45,19 @@ public:
     const aabbox& get_bounds() const;
     const Skeleton* get_skeleton() const;
 
+    bool is_loaded() const;
+
 private:
-    VertexBuffer* m_vertex_buffer;
-    VertexBuffer* m_skinned_vertex_buffer;
-    IndexBuffer* m_index_buffer;
-    uint32_t m_index_count;
-    aabbox m_bounds;
+    GeometryNotifier& m_geometry_notifier;
+
+    // Geometry data is initialized in reverse order with thread fences.
+    // When `m_vertex_buffer` is set, other fields are guaranteed to be set too.
     UniquePtr<Skeleton> m_skeleton;
+    aabbox m_bounds;
+    uint32_t m_index_count;
+    IndexBuffer* m_index_buffer;
+    VertexBuffer* m_skinned_vertex_buffer;
+    VertexBuffer* m_vertex_buffer;
 };
 
 } // namespace kw

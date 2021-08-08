@@ -5,14 +5,10 @@ namespace kw {
 
 LightPrimitive::LightPrimitive(float3 color, float power, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
-    , m_bounds(float3(local_transform.translation), float3(std::sqrt(power * 10.f)))
     , m_color(color)
     , m_power(power)
 {
-}
-
-const aabbox& LightPrimitive::get_bounds() const {
-    return m_bounds;
+    m_bounds = aabbox(local_transform.translation, float3(std::sqrt(power * 10.f)));
 }
 
 const float3& LightPrimitive::get_color() const {

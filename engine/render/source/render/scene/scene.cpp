@@ -1,5 +1,6 @@
 #include "render/scene/scene.h"
 #include "render/acceleration_structure/linear_acceleration_structure.h"
+#include "render/acceleration_structure/octree_acceleration_structure.h"
 #include "render/geometry/geometry_primitive.h"
 #include "render/light/light_primitive.h"
 
@@ -11,7 +12,7 @@ Scene::Scene(MemoryResource& persistent_memory_resource, MemoryResource& transie
     : ContainerPrimitive(persistent_memory_resource)
     , m_persistent_memory_resource(persistent_memory_resource)
     , m_transient_memory_resource(transient_memory_resource)
-    , m_geometry_acceleration_structure(static_pointer_cast<AccelerationStructure>(allocate_unique<LinearAccelerationStructure>(persistent_memory_resource, persistent_memory_resource)))
+    , m_geometry_acceleration_structure(static_pointer_cast<AccelerationStructure>(allocate_unique<OctreeAccelerationStructure>(persistent_memory_resource, persistent_memory_resource)))
     , m_light_acceleration_structure(static_pointer_cast<AccelerationStructure>(allocate_unique<LinearAccelerationStructure>(persistent_memory_resource, persistent_memory_resource)))
     , m_is_occlusion_camera_used(false)
 {
@@ -62,20 +63,12 @@ void Scene::child_added(Primitive& primitive) {
         m_light_acceleration_structure->add(*light_primitive);
     } else if (ContainerPrimitive* container_primitive = dynamic_cast<ContainerPrimitive*>(&primitive)) {
         add_container_primitive(*container_primitive);
-    } else {
-        KW_ASSERT(false, "Invalid primitive type.");
     }
 }
 
 void Scene::child_removed(Primitive& primitive) {
-    if (GeometryPrimitive* geometry_primitive = dynamic_cast<GeometryPrimitive*>(&primitive)) {
-        m_geometry_acceleration_structure->remove(*geometry_primitive);
-    } else if (LightPrimitive* light_primitive = dynamic_cast<LightPrimitive*>(&primitive)) {
-        m_light_acceleration_structure->remove(*light_primitive);
-    } else if (ContainerPrimitive* container_primitive = dynamic_cast<ContainerPrimitive*>(&primitive)) {
+    if (ContainerPrimitive* container_primitive = dynamic_cast<ContainerPrimitive*>(&primitive)) {
         remove_container_primitive(*container_primitive);
-    } else {
-        KW_ASSERT(false, "Invalid primitive type.");
     }
 }
 

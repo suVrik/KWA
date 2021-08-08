@@ -365,13 +365,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                 const Vector<float4x4>& joint_space_matrices = skeleton_pose.get_joint_space_matrices();
                 size_t joint_count = skeleton->get_joint_count();
 
-                if (joint_space_matrices.size() != joint_count) {
-                    for (uint32_t i = 0; i < joint_count; i++) {
-                        skeleton_pose.set_joint_space_matrix(i, skeleton->get_bind_matrix(i));
-                    }
-                    skeleton_pose.build_model_space_matrices(*skeleton);
-                }
-
                 if (imgui.Begin("Skinning")) {
                     for (size_t i = 0; i < joint_count; i++) {
                         const String& name = skeleton->get_joint_name(i);

@@ -54,19 +54,6 @@ public:
     }
 
     void run() override {
-        float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
-        float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
-        float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
-        float4x4 view_projection = view * projection;
-
-        Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
-
-        // Sort primitives by geometry for instancing.
-        std::sort(primitives.begin(), primitives.end(), GeometrySort());
-
-        // MSVC is freaking out because of iterating past the end iterator.
-        if (primitives.empty()) return;
-
         //
         // TODO: Check whether this side was updated since the last frame.
         //  If any of the primitives or the light itself was updated.
@@ -74,98 +61,111 @@ public:
 
         RenderPassContext* context = m_render_pass.begin(m_shadow_map_index * 6 + m_face_index);
         if (context != nullptr) {
-            auto from_it = primitives.begin();
-            for (auto to_it = ++primitives.begin(); to_it <= primitives.end(); ++to_it) {
-                if (to_it == primitives.end() ||
-                    (*to_it)->get_geometry() != (*from_it)->get_geometry() ||
-                    ((*from_it)->get_material() && (*from_it)->get_material()->is_skinned()))
-                {
-                    if ((*from_it)->get_geometry() &&
-                        (*from_it)->get_material() &&
-                        (!(*from_it)->get_material()->is_skinned() || (*from_it)->get_geometry()->get_skinned_vertex_buffer() != nullptr))
+            float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
+            float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
+            float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
+            float4x4 view_projection = view * projection;
+
+            Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
+
+            // Sort primitives by geometry for instancing.
+            std::sort(primitives.begin(), primitives.end(), GeometrySort());
+
+            // MSVC is freaking out because of iterating past the end iterator.
+            if (!primitives.empty()) {
+                auto from_it = primitives.begin();
+                for (auto to_it = ++primitives.begin(); to_it <= primitives.end(); ++to_it) {
+                    if (to_it == primitives.end() ||
+                        (*to_it)->get_geometry() != (*from_it)->get_geometry() ||
+                        ((*from_it)->get_material() && (*from_it)->get_material()->is_skinned()))
                     {
-                        Geometry& geometry = *(*from_it)->get_geometry();
-                        Material& material = *(*from_it)->get_material();
+                        if ((*from_it)->get_geometry() &&
+                            (*from_it)->get_material() &&
+                            (!(*from_it)->get_material()->is_skinned() || (*from_it)->get_geometry()->get_skinned_vertex_buffer() != nullptr))
+                        {
+                            Geometry& geometry = *(*from_it)->get_geometry();
+                            Material& material = *(*from_it)->get_material();
 
-                        VertexBuffer* vertex_buffers[2] = {
-                            geometry.get_vertex_buffer(),
-                            geometry.get_skinned_vertex_buffer(),
-                        };
-                        size_t vertex_buffer_count = material.is_skinned() ? 2 : 1;
+                            VertexBuffer* vertex_buffers[2] = {
+                                geometry.get_vertex_buffer(),
+                                geometry.get_skinned_vertex_buffer(),
+                            };
+                            size_t vertex_buffer_count = material.is_skinned() ? 2 : 1;
 
-                        IndexBuffer* index_buffer = geometry.get_index_buffer();
-                        uint32_t index_count = geometry.get_index_count();
+                            IndexBuffer* index_buffer = geometry.get_index_buffer();
+                            uint32_t index_count = geometry.get_index_count();
 
-                        GraphicsPipeline* graphics_pipeline;
+                            GraphicsPipeline* graphics_pipeline;
 
-                        if (material.is_skinned()) {
-                            graphics_pipeline = m_render_pass.m_skinned_graphics_pipeline;
-                        } else {
-                            graphics_pipeline = m_render_pass.m_solid_graphics_pipeline;
-                        }
-
-                        VertexBuffer* instance_buffer = nullptr;
-                        size_t instance_buffer_count = 0;
-
-                        if (!material.is_skinned()) {
-                            Vector<ShadowInstanceData> instances_data(m_render_pass.m_transient_memory_resource);
-                            instances_data.reserve(to_it - from_it);
-
-                            for (auto it = from_it; it != to_it; ++it) {
-                                ShadowInstanceData instance_data;
-                                instance_data.model = float4x4((*it)->get_global_transform());
-                                instances_data.push_back(instance_data);
+                            if (material.is_skinned()) {
+                                graphics_pipeline = m_render_pass.m_skinned_graphics_pipeline;
+                            } else {
+                                graphics_pipeline = m_render_pass.m_solid_graphics_pipeline;
                             }
 
-                            instance_buffer = context->get_render().acquire_transient_vertex_buffer(instances_data.data(), instances_data.size() * sizeof(ShadowInstanceData));
-                            KW_ASSERT(instance_buffer != nullptr);
+                            VertexBuffer* instance_buffer = nullptr;
+                            size_t instance_buffer_count = 0;
 
-                            instance_buffer_count = 1;
+                            if (!material.is_skinned()) {
+                                Vector<ShadowInstanceData> instances_data(m_render_pass.m_transient_memory_resource);
+                                instances_data.reserve(to_it - from_it);
+
+                                for (auto it = from_it; it != to_it; ++it) {
+                                    ShadowInstanceData instance_data;
+                                    instance_data.model = float4x4((*it)->get_global_transform());
+                                    instances_data.push_back(instance_data);
+                                }
+
+                                instance_buffer = context->get_render().acquire_transient_vertex_buffer(instances_data.data(), instances_data.size() * sizeof(ShadowInstanceData));
+                                KW_ASSERT(instance_buffer != nullptr);
+
+                                instance_buffer_count = 1;
+                            }
+
+                            UniformBuffer* uniform_buffer = nullptr;
+                            size_t uniform_buffer_count = 0;
+
+                            if (material.is_skinned()) {
+                                Vector<float4x4> model_space_joint_matrices = (*from_it)->get_model_space_joint_matrices(m_render_pass.m_transient_memory_resource);
+
+                                ShadowUniformBuffer uniform_data{};
+                                std::copy(model_space_joint_matrices.begin(), model_space_joint_matrices.begin() + std::min(model_space_joint_matrices.size(), std::size(uniform_data.joint_data)), std::begin(uniform_data.joint_data));
+
+                                uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&uniform_data, sizeof(ShadowUniformBuffer));
+                                KW_ASSERT(uniform_buffer != nullptr);
+
+                                uniform_buffer_count = 1;
+                            }
+
+                            ShadowPushConstants push_constants{};
+                            push_constants.view_projection = view_projection;
+
+                            if (material.is_skinned()) {
+                                // `view_projection` is `model_view_projection` for skinned geometry.
+                                push_constants.view_projection = float4x4((*from_it)->get_global_transform()) * push_constants.view_projection;
+                            }
+
+                            DrawCallDescriptor draw_call_descriptor{};
+                            draw_call_descriptor.graphics_pipeline = graphics_pipeline;
+                            draw_call_descriptor.vertex_buffers = vertex_buffers;
+                            draw_call_descriptor.vertex_buffer_count = vertex_buffer_count;
+                            draw_call_descriptor.instance_buffers = &instance_buffer;
+                            draw_call_descriptor.instance_buffer_count = instance_buffer_count;
+                            draw_call_descriptor.index_buffer = index_buffer;
+                            draw_call_descriptor.index_count = index_count;
+                            draw_call_descriptor.instance_count = to_it - from_it;
+                            draw_call_descriptor.uniform_buffers = &uniform_buffer;
+                            draw_call_descriptor.uniform_buffer_count = uniform_buffer_count;
+                            draw_call_descriptor.push_constants = &push_constants;
+                            draw_call_descriptor.push_constants_size = sizeof(push_constants);
+
+                            context->draw(draw_call_descriptor);
                         }
 
-                        UniformBuffer* uniform_buffer = nullptr;
-                        size_t uniform_buffer_count = 0;
-
-                        if (material.is_skinned()) {
-                            Vector<float4x4> model_space_joint_matrices = (*from_it)->get_model_space_joint_matrices(m_render_pass.m_transient_memory_resource);
-
-                            ShadowUniformBuffer uniform_data{};
-                            std::copy(model_space_joint_matrices.begin(), model_space_joint_matrices.begin() + std::min(model_space_joint_matrices.size(), std::size(uniform_data.joint_data)), std::begin(uniform_data.joint_data));
-
-                            uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&uniform_data, sizeof(ShadowUniformBuffer));
-                            KW_ASSERT(uniform_buffer != nullptr);
-
-                            uniform_buffer_count = 1;
-                        }
-
-                        ShadowPushConstants push_constants{};
-                        push_constants.view_projection = view_projection;
-
-                        if (material.is_skinned()) {
-                            // `view_projection` is `model_view_projection` for skinned geometry.
-                            push_constants.view_projection = float4x4((*from_it)->get_global_transform()) * push_constants.view_projection;
-                        }
-
-                        DrawCallDescriptor draw_call_descriptor{};
-                        draw_call_descriptor.graphics_pipeline = graphics_pipeline;
-                        draw_call_descriptor.vertex_buffers = vertex_buffers;
-                        draw_call_descriptor.vertex_buffer_count = vertex_buffer_count;
-                        draw_call_descriptor.instance_buffers = &instance_buffer;
-                        draw_call_descriptor.instance_buffer_count = instance_buffer_count;
-                        draw_call_descriptor.index_buffer = index_buffer;
-                        draw_call_descriptor.index_count = index_count;
-                        draw_call_descriptor.instance_count = to_it - from_it;
-                        draw_call_descriptor.uniform_buffers = &uniform_buffer;
-                        draw_call_descriptor.uniform_buffer_count = uniform_buffer_count;
-                        draw_call_descriptor.push_constants = &push_constants;
-                        draw_call_descriptor.push_constants_size = sizeof(push_constants);
-
-                        context->draw(draw_call_descriptor);
+                        // MSVC is freaking out because of iterating past the end iterator.
+                        if (to_it == primitives.end()) break;
+                        else from_it = to_it;
                     }
-
-                    // MSVC is freaking out because of iterating past the end iterator.
-                    if (to_it == primitives.end()) break;
-                    else from_it = to_it;
                 }
             }
 

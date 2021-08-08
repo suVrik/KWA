@@ -57,4 +57,10 @@ const aabbox& AccelerationStructurePrimitive::get_bounds() const {
     return m_bounds;
 }
 
+void AccelerationStructurePrimitive::global_transform_updated() {
+    if (m_acceleration_structure != nullptr) {
+        m_acceleration_structure->update(*this);
+    }
+}
+
 } // namespace kw
