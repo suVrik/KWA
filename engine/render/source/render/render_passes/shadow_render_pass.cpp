@@ -54,23 +54,31 @@ public:
     }
 
     void run() override {
-        //
-        // TODO: Check whether this side was updated since the last frame.
-        //  If any of the primitives or the light itself was updated.
-        //
+        float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
+        float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
+        float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
+        float4x4 view_projection = view * projection;
+
+        Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
+
+        // Sort primitives by geometry for instancing.
+        std::sort(primitives.begin(), primitives.end(), GeometrySort());
+
+        // Find the most recent updated primitive.
+        uint64_t max_counter = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_counter();
+        for (GeometryPrimitive* geometry_primitive : primitives) {
+            max_counter = std::max(max_counter, geometry_primitive->get_counter());
+        }
+
+        if (m_render_pass.m_shadow_maps[m_shadow_map_index].max_counter[m_face_index] == max_counter &&
+            m_render_pass.m_shadow_maps[m_shadow_map_index].primitive_count[m_face_index] == primitives.size())
+        {
+            // No primitives have been added or removed. No primitives have been updated. No need to re-render the side.
+            return;
+        }
 
         RenderPassContext* context = m_render_pass.begin(m_shadow_map_index * 6 + m_face_index);
         if (context != nullptr) {
-            float3 translation = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_global_translation();
-            float4x4 view = float4x4::look_at_lh(translation, translation + CUBEMAP_VECTORS[m_face_index].direction, CUBEMAP_VECTORS[m_face_index].up);
-            float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
-            float4x4 view_projection = view * projection;
-
-            Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
-
-            // Sort primitives by geometry for instancing.
-            std::sort(primitives.begin(), primitives.end(), GeometrySort());
-
             // MSVC is freaking out because of iterating past the end iterator.
             if (!primitives.empty()) {
                 auto from_it = primitives.begin();
@@ -170,6 +178,9 @@ public:
             }
 
             m_render_pass.blit("proxy_depth_attachment", m_render_pass.m_shadow_maps[m_shadow_map_index].texture, m_face_index, m_shadow_map_index * 6 + m_face_index);
+
+            m_render_pass.m_shadow_maps[m_shadow_map_index].max_counter[m_face_index] = max_counter;
+            m_render_pass.m_shadow_maps[m_shadow_map_index].primitive_count[m_face_index] = primitives.size();
         }
     }
 
@@ -249,11 +260,12 @@ public:
         for (SphereLightPrimitive* sphere_light : shadow_lights) {
             for (ShadowMap& shadow_map : m_render_pass.m_shadow_maps) {
                 if (shadow_map.light_primitive == nullptr) {
-                    //
-                    // TODO: Shadow map have been reassigned, update all sides.
-                    //
-
                     shadow_map.light_primitive = sphere_light;
+                    
+                    // Light primitive has been reassigned. All cubemap sides must be re-rendered.
+                    std::fill(std::begin(shadow_map.max_counter), std::end(shadow_map.max_counter), 0);
+                    std::fill(std::begin(shadow_map.primitive_count), std::end(shadow_map.primitive_count), SIZE_MAX);
+
                     break;
                 }
             }
@@ -314,7 +326,7 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
     , m_transient_memory_resource(transient_memory_resource)
     , m_shadow_maps(persistent_memory_resource)
 {
-    m_shadow_maps.resize(3);
+    m_shadow_maps.resize(3, ShadowMap{});
 
     for (ShadowMap& shadow_map : m_shadow_maps) {
         CreateTextureDescriptor create_texture_descriptor{};

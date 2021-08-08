@@ -55,16 +55,18 @@ const transform& Primitive::get_local_transform() const {
 }
 
 void Primitive::set_local_transform(const transform& transform) {
-    m_local_transform = transform;
+    if (m_local_transform != transform) {
+        m_local_transform = transform;
 
-    if (m_parent != nullptr) {
-        m_global_transform = m_local_transform * m_parent->get_global_transform();
-    } else {
-        m_global_transform = m_local_transform;
+        if (m_parent != nullptr) {
+            m_global_transform = m_local_transform * m_parent->get_global_transform();
+        } else {
+            m_global_transform = m_local_transform;
+        }
+
+        // Render primitives must update their bounds, container primitives must propagate global transform.
+        global_transform_updated();
     }
-
-    // Render primitives must update their bounds, container primitives must propagate global transform.
-    global_transform_updated();
 }
 
 const float3& Primitive::get_local_translation() const {
@@ -96,16 +98,18 @@ const transform& Primitive::get_global_transform() const {
 }
 
 void Primitive::set_global_transform(const transform& transform) {
-    m_global_transform = transform;
+    if (m_global_transform != transform) {
+        m_global_transform = transform;
 
-    if (m_parent != nullptr) {
-        m_local_transform = m_global_transform * inverse(m_parent->get_global_transform());
-    } else {
-        m_local_transform = m_global_transform;
+        if (m_parent != nullptr) {
+            m_local_transform = m_global_transform * inverse(m_parent->get_global_transform());
+        } else {
+            m_local_transform = m_global_transform;
+        }
+
+        // Render primitives must update their bounds, container primitives must propagate global transform.
+        global_transform_updated();
     }
-
-    // Render primitives must update their bounds, container primitives must propagate global transform.
-    global_transform_updated();
 }
 
 const float3& Primitive::get_global_translation() const {

@@ -4,7 +4,12 @@
 
 #include <core/debug/assert.h>
 
+#include <atomic>
+
 namespace kw {
+
+// Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
+extern std::atomic_uint64_t acceleration_structure_counter;
 
 GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
@@ -89,16 +94,20 @@ const SharedPtr<Geometry>& GeometryPrimitive::get_geometry() const {
 }
 
 void GeometryPrimitive::set_geometry(SharedPtr<Geometry> geometry) {
-    if (m_geometry) {
-        // No effect if `geometry_loaded` for this primitive & geometry was already called.
-        m_geometry->unsubscribe(*this);
-    }
+    if (m_geometry != geometry) {
+        m_counter = ++acceleration_structure_counter;
 
-    m_geometry = std::move(geometry);
+        if (m_geometry) {
+            // No effect if `geometry_loaded` for this primitive & geometry was already called.
+            m_geometry->unsubscribe(*this);
+        }
 
-    if (m_geometry) {
-        // If geometry is already loaded, `geometry_loaded` will be called immediately.
-        m_geometry->subscribe(*this);
+        m_geometry = std::move(geometry);
+
+        if (m_geometry) {
+            // If geometry is already loaded, `geometry_loaded` will be called immediately.
+            m_geometry->subscribe(*this);
+        }
     }
 }
 
@@ -107,7 +116,11 @@ const SharedPtr<Material>& GeometryPrimitive::get_material() const {
 }
 
 void GeometryPrimitive::set_material(SharedPtr<Material> material) {
-    m_material = std::move(material);
+    if (m_material != material) {
+        m_counter = ++acceleration_structure_counter;
+
+        m_material = std::move(material);
+    }
 }
 
 Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResource& memory_resource) {

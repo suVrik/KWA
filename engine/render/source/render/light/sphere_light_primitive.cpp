@@ -1,6 +1,11 @@
 #include "render/light/sphere_light_primitive.h"
 
+#include <atomic>
+
 namespace kw {
+
+// Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
+extern std::atomic_uint64_t acceleration_structure_counter;
 
 SphereLightPrimitive::SphereLightPrimitive(float radius, bool is_shadow_enabled, float3 color, float power, const transform& local_transform)
     : LightPrimitive(color, power, local_transform)
@@ -15,7 +20,11 @@ float SphereLightPrimitive::get_radius() const {
 }
 
 void SphereLightPrimitive::set_radius(float value) {
-    m_radius = value;
+    if (m_radius != value) {
+        m_counter = ++acceleration_structure_counter;
+
+        m_radius = value;
+    }
 }
 
 bool SphereLightPrimitive::is_shadow_enabled() const {
@@ -23,7 +32,11 @@ bool SphereLightPrimitive::is_shadow_enabled() const {
 }
 
 void SphereLightPrimitive::toggle_shadow_enabled(bool value) {
-    m_is_shadow_enabled = value;
+    if (m_is_shadow_enabled != value) {
+        m_counter = ++acceleration_structure_counter;
+
+        m_is_shadow_enabled = value;
+    }
 }
 
 const SphereLightPrimitive::ShadowParams& SphereLightPrimitive::get_shadow_params() const {
@@ -31,7 +44,15 @@ const SphereLightPrimitive::ShadowParams& SphereLightPrimitive::get_shadow_param
 }
 
 void SphereLightPrimitive::set_shadow_params(const ShadowParams& value) {
-    m_shadow_params = value;
+    if (m_shadow_params.normal_bias != value.normal_bias ||
+        m_shadow_params.perspective_bias != value.perspective_bias ||
+        m_shadow_params.pcss_radius_factor != value.pcss_radius_factor ||
+        m_shadow_params.pcss_filter_factor != value.pcss_filter_factor)
+    {
+        m_counter = ++acceleration_structure_counter;
+
+        m_shadow_params = value;
+    }
 }
 
 } // namespace kw

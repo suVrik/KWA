@@ -4,6 +4,7 @@
 
 namespace kw {
 
+class float4x4;
 class LightPrimitive;
 class Scene;
 class TaskScheduler;
@@ -13,6 +14,10 @@ public:
     struct ShadowMap {
         LightPrimitive* light_primitive;
         Texture* texture;
+
+        // For internal usage by `BeginTask` and `WorkerTask`.
+        uint64_t max_counter[6];
+        size_t primitive_count[6];
     };
 
     ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& task_scheduler, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource);

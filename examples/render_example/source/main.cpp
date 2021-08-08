@@ -351,6 +351,41 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                         debug_draw_manager.icosahedron(light_position, 0.01f, float3(1.f, 0.f, 0.f));
                         debug_draw_manager.icosahedron(light_position, light_radius, float3(1.f));
                     }
+
+                    static quaternion SIDE_ROTATIONS[] = {
+                        quaternion::rotation(float3(0.f, 1.f, 0.f), 0.f),
+                        quaternion::rotation(float3(0.f, 1.f, 0.f), PI / 2),
+                        quaternion::rotation(float3(0.f, 1.f, 0.f), PI),
+                        quaternion::rotation(float3(0.f, 1.f, 0.f), -PI / 2),
+                        quaternion::rotation(float3(1.f, 0.f, 0.f), PI / 2),
+                        quaternion::rotation(float3(1.f, 0.f, 0.f), -PI / 2),
+                    };
+
+                    for (size_t j = 0; j < 6; j++) {
+                        String button_label("Side 0: Set Occlusion Camera", transient_memory_resource);
+                        button_label[5] = '0' + j;
+                        if (imgui.Button(button_label.c_str())) {
+                            transform transform;
+                            transform.translation = light_position;
+                            transform.rotation = SIDE_ROTATIONS[j];
+                            float fov = PI / 2;
+                            float aspect_ratio = 1.f;
+                            float z_near = 0.1f;
+                            float z_far = 20.f;
+
+                            bool use_occlusion_camera = scene.is_occlusion_camera_used();
+
+                            scene.toggle_occlusion_camera_used(true);
+                            Camera& occlusion_camera = scene.get_occlusion_camera();
+                            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+
+                            occlusion_camera.set_transform(transform);
+                            occlusion_camera.set_fov(fov);
+                            occlusion_camera.set_aspect_ratio(aspect_ratio);
+                            occlusion_camera.set_z_near(z_near);
+                            occlusion_camera.set_z_far(z_far);
+                        }
+                    }
                 }
 
                 imgui.PopID();

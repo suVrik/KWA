@@ -3,10 +3,16 @@
 
 #include <core/debug/assert.h>
 
+#include <atomic>
+
 namespace kw {
+
+// Not static. Other source files can use it with `extern` specifier.
+std::atomic_uint64_t acceleration_structure_counter;
 
 AccelerationStructurePrimitive::AccelerationStructurePrimitive(const transform& local_transform)
     : Primitive(local_transform)
+    , m_counter(++acceleration_structure_counter)
     , m_acceleration_structure(nullptr)
     , m_node(nullptr)
 {
@@ -15,6 +21,7 @@ AccelerationStructurePrimitive::AccelerationStructurePrimitive(const transform& 
 AccelerationStructurePrimitive::AccelerationStructurePrimitive(const AccelerationStructurePrimitive& other)
     : Primitive(other)
     , m_bounds(other.m_bounds)
+    , m_counter(++acceleration_structure_counter)
     , m_acceleration_structure(nullptr)
     , m_node(nullptr)
 {
@@ -38,6 +45,7 @@ AccelerationStructurePrimitive& AccelerationStructurePrimitive::operator=(const 
     }
 
     m_bounds = other.m_bounds;
+    m_counter = ++acceleration_structure_counter;
     m_acceleration_structure = nullptr;
     m_node = nullptr;
 
@@ -57,7 +65,13 @@ const aabbox& AccelerationStructurePrimitive::get_bounds() const {
     return m_bounds;
 }
 
+uint64_t AccelerationStructurePrimitive::get_counter() const {
+    return m_counter;
+}
+
 void AccelerationStructurePrimitive::global_transform_updated() {
+    m_counter = ++acceleration_structure_counter;
+
     if (m_acceleration_structure != nullptr) {
         m_acceleration_structure->update(*this);
     }

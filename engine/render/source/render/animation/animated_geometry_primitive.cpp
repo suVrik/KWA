@@ -2,7 +2,12 @@
 #include "render/geometry/geometry.h"
 #include "render/geometry/skeleton.h"
 
+#include <atomic>
+
 namespace kw {
+
+// Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
+extern std::atomic_uint64_t acceleration_structure_counter;
 
 AnimatedGeometryPrimitive::AnimatedGeometryPrimitive(MemoryResource& memory_resource, SharedPtr<Geometry> geometry,
                                                      SharedPtr<Material> material, const transform& local_transform)
@@ -16,6 +21,9 @@ const SkeletonPose& AnimatedGeometryPrimitive::get_skeleton_pose() const {
 }
 
 SkeletonPose& AnimatedGeometryPrimitive::get_skeleton_pose() {
+    // TODO: Perhaps skeleton pose setters in `AnimatedGeometryPrimitive`?
+    m_counter = ++acceleration_structure_counter;
+
     return m_skeleton_pose;
 }
 
@@ -24,8 +32,6 @@ Vector<float4x4> AnimatedGeometryPrimitive::get_model_space_joint_matrices(Memor
 }
 
 void AnimatedGeometryPrimitive::geometry_loaded() {
-    GeometryPrimitive::geometry_loaded();
-
     const Skeleton* skeleton = get_geometry()->get_skeleton();
     if (skeleton != nullptr) {
         for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
@@ -33,6 +39,8 @@ void AnimatedGeometryPrimitive::geometry_loaded() {
         }
         m_skeleton_pose.build_model_space_matrices(*skeleton);
     }
+
+    GeometryPrimitive::geometry_loaded();
 }
 
 } // namespace kw
