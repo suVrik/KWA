@@ -1,8 +1,6 @@
 #include "render/geometry/skeleton_pose.h"
 #include "render/geometry/skeleton.h"
 
-#include <core/debug/assert.h>
-
 namespace kw {
 
 SkeletonPose::SkeletonPose(MemoryResource& memory_resource)
@@ -38,9 +36,6 @@ void SkeletonPose::build_model_space_matrices(const Skeleton& skeleton) {
     for (uint32_t i = 0; i < m_model_space_matrices.size(); i++) {
         m_model_space_matrices[i] = skeleton.get_inverse_bind_matrix(i) * m_model_space_matrices[i];
     }
-
-    int a = 5;
-    a = 6;
 }
 
 } // namespace kw

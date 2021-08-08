@@ -6,6 +6,7 @@
 
 namespace kw {
 
+// O(1) `add`, O(n) `remove`, no-op `update`, O(n) `query`.
 class LinearAccelerationStructure : public AccelerationStructure {
 public:
     LinearAccelerationStructure(MemoryResource& persistent_memory_resource);

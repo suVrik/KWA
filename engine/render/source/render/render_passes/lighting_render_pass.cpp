@@ -1,5 +1,5 @@
 #include "render/render_passes/lighting_render_pass.h"
-#include "render/light/point_light_primitive.h"
+#include "render/light/sphere_light_primitive.h"
 #include "render/render_passes/shadow_render_pass.h"
 #include "render/scene/scene.h"
 
@@ -50,8 +50,8 @@ public:
             Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
             
             for (LightPrimitive* light_primitive : primitives) {
-                if (PointLightPrimitive* point_light_primitive = dynamic_cast<PointLightPrimitive*>(light_primitive)) {
-                    draw_point_light(context, point_light_primitive);
+                if (SphereLightPrimitive* sphere_light_primitive = dynamic_cast<SphereLightPrimitive*>(light_primitive)) {
+                    draw_sphere_light(context, sphere_light_primitive);
                 } else {
                     KW_ASSERT(false, "Invalid light type.");
                 }
@@ -60,17 +60,17 @@ public:
     }
 
 private:
-    void draw_point_light(RenderPassContext* context, PointLightPrimitive* point_light_primitive) {
-        float3 color = point_light_primitive->get_color();
-        float power = point_light_primitive->get_power();
-        float radius = point_light_primitive->get_radius();
+    void draw_sphere_light(RenderPassContext* context, SphereLightPrimitive* sphere_light_primitive) {
+        float3 color = sphere_light_primitive->get_color();
+        float power = sphere_light_primitive->get_power();
+        float radius = sphere_light_primitive->get_radius();
         float3 luminance = color * power / (4.0 * radius * radius * PI * PI);
         float attenuation_radius = std::sqrt(power * 10.f);
 
-        const PointLightPrimitive::ShadowParams& shadow_params = point_light_primitive->get_shadow_params();
+        const SphereLightPrimitive::ShadowParams& shadow_params = sphere_light_primitive->get_shadow_params();
 
         PointLightPushConstants push_constants{};
-        push_constants.position = float4(point_light_primitive->get_global_transform().translation, 1.f);
+        push_constants.position = float4(sphere_light_primitive->get_global_transform().translation, 1.f);
         push_constants.luminance = float4(luminance, 0.f);
         push_constants.radius_frustum = float4(radius, attenuation_radius, 0.1f, 20.f);
         push_constants.shadow_params = float4(shadow_params.normal_bias, shadow_params.perspective_bias, shadow_params.pcss_radius_factor, shadow_params.pcss_filter_factor);
@@ -81,10 +81,10 @@ private:
         float z_near = camera.get_z_near() / std::cos(camera.get_fov() / 2.f);
 
         GraphicsPipeline* graphics_pipeline;
-        if (square_distance(point_light_primitive->get_global_transform().translation, camera.get_translation()) <= sqr(attenuation_radius * ico_sphere_radius + z_near)) {
-            graphics_pipeline = m_render_pass.m_point_light_graphics_pipelines[1];
+        if (square_distance(sphere_light_primitive->get_global_transform().translation, camera.get_translation()) <= sqr(attenuation_radius * ico_sphere_radius + z_near)) {
+            graphics_pipeline = m_render_pass.m_sphere_light_graphics_pipelines[1];
         } else {
-            graphics_pipeline = m_render_pass.m_point_light_graphics_pipelines[0];
+            graphics_pipeline = m_render_pass.m_sphere_light_graphics_pipelines[0];
         }
 
         Texture* uniform_textures[2] = {
@@ -93,7 +93,7 @@ private:
         };
 
         for (const ShadowRenderPass::ShadowMap& shadow_map : m_render_pass.m_shadow_render_pass.get_shadow_maps()) {
-            if (shadow_map.light_primitive == point_light_primitive) {
+            if (shadow_map.light_primitive == sphere_light_primitive) {
                 uniform_textures[0] = shadow_map.texture;
                 break;
             }
@@ -101,9 +101,9 @@ private:
 
         DrawCallDescriptor draw_call_descriptor{};
         draw_call_descriptor.graphics_pipeline = graphics_pipeline;
-        draw_call_descriptor.vertex_buffers = &m_render_pass.m_point_light_vertex_buffer;
+        draw_call_descriptor.vertex_buffers = &m_render_pass.m_sphere_light_vertex_buffer;
         draw_call_descriptor.vertex_buffer_count = 1;
-        draw_call_descriptor.index_buffer = m_render_pass.m_point_light_index_buffer;
+        draw_call_descriptor.index_buffer = m_render_pass.m_sphere_light_index_buffer;
         draw_call_descriptor.index_count = 240;
         draw_call_descriptor.stencil_reference = 0xFF;
         draw_call_descriptor.uniform_textures = uniform_textures;
@@ -125,9 +125,9 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
     , m_shadow_render_pass(shadow_render_pass)
     , m_transient_memory_resource(transient_memory_resource)
     , m_pcf_rotation_texture(nullptr)
-    , m_point_light_vertex_buffer(nullptr)
-    , m_point_light_index_buffer(nullptr)
-    , m_point_light_graphics_pipelines{ nullptr, nullptr }
+    , m_sphere_light_vertex_buffer(nullptr)
+    , m_sphere_light_index_buffer(nullptr)
+    , m_sphere_light_graphics_pipelines{ nullptr, nullptr }
 {
     CreateTextureDescriptor create_texture_descriptor{};
     create_texture_descriptor.name = "pcf_rotation_texture";
@@ -160,12 +160,12 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
 
     render.upload_texture(upload_texture_descriptor);
 
-    create_point_light_buffers();
+    create_sphere_light_buffers();
 }
 
 LightingRenderPass::~LightingRenderPass() {
-    m_render.destroy_index_buffer(m_point_light_index_buffer);
-    m_render.destroy_vertex_buffer(m_point_light_vertex_buffer);
+    m_render.destroy_index_buffer(m_sphere_light_index_buffer);
+    m_render.destroy_vertex_buffer(m_sphere_light_vertex_buffer);
     m_render.destroy_texture(m_pcf_rotation_texture);
 }
 
@@ -201,14 +201,19 @@ void LightingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor
 }
 
 void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
-    create_point_light_graphics_pipelines(frame_graph);
+    create_sphere_light_graphics_pipelines(frame_graph);
+}
+
+void LightingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+    frame_graph.destroy_graphics_pipeline(m_sphere_light_graphics_pipelines[1]);
+    frame_graph.destroy_graphics_pipeline(m_sphere_light_graphics_pipelines[0]);
 }
 
 Task* LightingRenderPass::create_task() {
     return new (m_transient_memory_resource.allocate<Task>()) Task(*this);
 }
 
-void LightingRenderPass::create_point_light_buffers() {
+void LightingRenderPass::create_sphere_light_buffers() {
     static const float3 VERTEX_DATA[] = {
         float3( 0.000000f, -1.080000f,  0.000000f), float3( 0.781496f, -0.482997f,  0.567783f),
         float3(-0.298499f, -0.482997f,  0.918701f), float3(-0.965980f, -0.482993f,  0.000000f),
@@ -233,8 +238,8 @@ void LightingRenderPass::create_point_light_buffers() {
         float3(-0.459348f,  0.918707f, -0.333732f), float3( 0.175452f,  0.918707f, -0.539995f),
     };
 
-    m_point_light_vertex_buffer = m_render.create_vertex_buffer("point_light", sizeof(VERTEX_DATA));
-    m_render.upload_vertex_buffer(m_point_light_vertex_buffer, VERTEX_DATA, sizeof(VERTEX_DATA));
+    m_sphere_light_vertex_buffer = m_render.create_vertex_buffer("sphere_light", sizeof(VERTEX_DATA));
+    m_render.upload_vertex_buffer(m_sphere_light_vertex_buffer, VERTEX_DATA, sizeof(VERTEX_DATA));
 
     static const uint16_t INDEX_DATA[] = {
         0,  13, 12, 1,  13, 15, 0,  12, 17, 0,  17, 19,
@@ -259,11 +264,11 @@ void LightingRenderPass::create_point_light_buffers() {
         13, 0,  16, 12, 14, 2,  12, 13, 14, 13, 1,  14,
     };
 
-    m_point_light_index_buffer = m_render.create_index_buffer("point_light", sizeof(INDEX_DATA), IndexSize::UINT16);
-    m_render.upload_index_buffer(m_point_light_index_buffer, INDEX_DATA, sizeof(INDEX_DATA));
+    m_sphere_light_index_buffer = m_render.create_index_buffer("sphere_light", sizeof(INDEX_DATA), IndexSize::UINT16);
+    m_render.upload_index_buffer(m_sphere_light_index_buffer, INDEX_DATA, sizeof(INDEX_DATA));
 }
 
-void LightingRenderPass::create_point_light_graphics_pipelines(FrameGraph& frame_graph) {
+void LightingRenderPass::create_sphere_light_graphics_pipelines(FrameGraph& frame_graph) {
     AttributeDescriptor vertex_attribute_descriptor{};
     vertex_attribute_descriptor.semantic = Semantic::POSITION;
     vertex_attribute_descriptor.format = TextureFormat::RGB32_FLOAT;
@@ -312,10 +317,10 @@ void LightingRenderPass::create_point_light_graphics_pipelines(FrameGraph& frame
     uniform_buffer_descriptor.size = sizeof(LightUniformBuffer);
 
     GraphicsPipelineDescriptor outside_graphics_pipeline_descriptor{};
-    outside_graphics_pipeline_descriptor.graphics_pipeline_name = "outside_point_light_graphics_pipeline";
+    outside_graphics_pipeline_descriptor.graphics_pipeline_name = "outside_sphere_light_graphics_pipeline";
     outside_graphics_pipeline_descriptor.render_pass_name = "lighting_render_pass";
-    outside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/point_light_vertex.hlsl";
-    outside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/point_light_fragment.hlsl";
+    outside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/sphere_light_vertex.hlsl";
+    outside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/sphere_light_fragment.hlsl";
     outside_graphics_pipeline_descriptor.vertex_binding_descriptors = &vertex_binding_descriptor;
     outside_graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     outside_graphics_pipeline_descriptor.cull_mode = CullMode::BACK;
@@ -334,16 +339,16 @@ void LightingRenderPass::create_point_light_graphics_pipelines(FrameGraph& frame
     outside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = std::size(uniform_sampler_descriptors);
     outside_graphics_pipeline_descriptor.uniform_buffer_descriptors = &uniform_buffer_descriptor;
     outside_graphics_pipeline_descriptor.uniform_buffer_descriptor_count = 1;
-    outside_graphics_pipeline_descriptor.push_constants_name = "point_light_push_constants";
+    outside_graphics_pipeline_descriptor.push_constants_name = "sphere_light_push_constants";
     outside_graphics_pipeline_descriptor.push_constants_size = sizeof(PointLightPushConstants);
 
-    m_point_light_graphics_pipelines[0] = frame_graph.create_graphics_pipeline(outside_graphics_pipeline_descriptor);
+    m_sphere_light_graphics_pipelines[0] = frame_graph.create_graphics_pipeline(outside_graphics_pipeline_descriptor);
 
     GraphicsPipelineDescriptor inside_graphics_pipeline_descriptor{};
-    inside_graphics_pipeline_descriptor.graphics_pipeline_name = "inside_point_light_graphics_pipeline";
+    inside_graphics_pipeline_descriptor.graphics_pipeline_name = "inside_sphere_light_graphics_pipeline";
     inside_graphics_pipeline_descriptor.render_pass_name = "lighting_render_pass";
-    inside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/point_light_vertex.hlsl";
-    inside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/point_light_fragment.hlsl";
+    inside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/sphere_light_vertex.hlsl";
+    inside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/sphere_light_fragment.hlsl";
     inside_graphics_pipeline_descriptor.vertex_binding_descriptors = &vertex_binding_descriptor;
     inside_graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     inside_graphics_pipeline_descriptor.cull_mode = CullMode::FRONT;
@@ -362,15 +367,10 @@ void LightingRenderPass::create_point_light_graphics_pipelines(FrameGraph& frame
     inside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = std::size(uniform_sampler_descriptors);
     inside_graphics_pipeline_descriptor.uniform_buffer_descriptors = &uniform_buffer_descriptor;
     inside_graphics_pipeline_descriptor.uniform_buffer_descriptor_count = 1;
-    inside_graphics_pipeline_descriptor.push_constants_name = "point_light_push_constants";
+    inside_graphics_pipeline_descriptor.push_constants_name = "sphere_light_push_constants";
     inside_graphics_pipeline_descriptor.push_constants_size = sizeof(PointLightPushConstants);
 
-    m_point_light_graphics_pipelines[1] = frame_graph.create_graphics_pipeline(inside_graphics_pipeline_descriptor);
-}
-
-void LightingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
-    frame_graph.destroy_graphics_pipeline(m_point_light_graphics_pipelines[1]);
-    frame_graph.destroy_graphics_pipeline(m_point_light_graphics_pipelines[0]);
+    m_sphere_light_graphics_pipelines[1] = frame_graph.create_graphics_pipeline(inside_graphics_pipeline_descriptor);
 }
 
 } // namespace kw

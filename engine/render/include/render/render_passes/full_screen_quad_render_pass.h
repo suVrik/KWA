@@ -1,12 +1,12 @@
 #pragma once
 
-#include "render/frame_graph.h"
+#include "render/render_passes/base_render_pass.h"
 
 #include <core/math/float2.h>
 
 namespace kw {
 
-class FullScreenQuadRenderPass : public RenderPass {
+class FullScreenQuadRenderPass : public BaseRenderPass {
 public:
     struct Vertex {
         float2 position;

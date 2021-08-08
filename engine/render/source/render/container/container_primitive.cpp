@@ -9,6 +9,16 @@ ContainerPrimitive::ContainerPrimitive(MemoryResource& persistent_memory_resourc
 {
 }
 
+ContainerPrimitive::ContainerPrimitive(const ContainerPrimitive& other)
+    : Primitive(other)
+    , m_children(*other.m_children.get_allocator().memory_resource)
+{
+    KW_ASSERT(
+        other.m_children.empty(),
+        "Copying non-empty containers is not allowed."
+    );
+}
+
 ContainerPrimitive::~ContainerPrimitive() {
     for (Primitive* child : m_children) {
         child->m_parent = nullptr;
@@ -26,6 +36,17 @@ ContainerPrimitive::~ContainerPrimitive() {
     if (m_parent != nullptr) {
         m_parent->remove_child(*this);
     }
+}
+
+ContainerPrimitive& ContainerPrimitive::operator=(const ContainerPrimitive& other) {
+    Primitive::operator=(other);
+
+    KW_ASSERT(
+        other.m_children.empty(),
+        "Copying non-empty containers is not allowed."
+    );
+
+    return *this;
 }
 
 void ContainerPrimitive::add_child(Primitive& primitive) {
@@ -74,6 +95,10 @@ void ContainerPrimitive::remove_child(Primitive& primitive) {
 
     // Update primitive's global transform and bounds recursively.
     primitive.global_transform_updated();
+}
+
+const Vector<Primitive*>& ContainerPrimitive::get_children() const {
+    return m_children;
 }
 
 void ContainerPrimitive::global_transform_updated() {

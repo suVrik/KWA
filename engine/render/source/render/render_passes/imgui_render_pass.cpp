@@ -1,14 +1,9 @@
 #include "render/render_passes/imgui_render_pass.h"
 #include "render/debug/imgui_manager.h"
 
-#include <system/clipboard_utils.h>
-#include <system/input.h>
-#include <system/window.h>
-
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
 #include <core/math/float2.h>
-#include <core/memory/memory_resource.h>
 
 namespace kw {
 

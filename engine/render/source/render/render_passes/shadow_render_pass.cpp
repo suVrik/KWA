@@ -1,7 +1,7 @@
 #include "render/render_passes/shadow_render_pass.h"
 #include "render/geometry/geometry.h"
 #include "render/geometry/geometry_primitive.h"
-#include "render/light/point_light_primitive.h"
+#include "render/light/sphere_light_primitive.h"
 #include "render/material/material.h"
 #include "render/scene/scene.h"
 
@@ -210,13 +210,13 @@ public:
 
         std::sort(primitives.begin(), primitives.end(), LightSort(m_render_pass.m_scene.get_camera()));
         
-        Vector<PointLightPrimitive*> shadow_lights(m_render_pass.m_transient_memory_resource);
+        Vector<SphereLightPrimitive*> shadow_lights(m_render_pass.m_transient_memory_resource);
         shadow_lights.reserve(m_render_pass.m_shadow_maps.size());
 
         for (uint32_t i = 0; i < primitives.size() && shadow_lights.size() < m_render_pass.m_shadow_maps.size(); i++) {
-            if (PointLightPrimitive* point_light_primitive = dynamic_cast<PointLightPrimitive*>(primitives[i])) {
-                if (point_light_primitive->is_shadow_enabled()) {
-                    shadow_lights.push_back(point_light_primitive);
+            if (SphereLightPrimitive* sphere_light_primitive = dynamic_cast<SphereLightPrimitive*>(primitives[i])) {
+                if (sphere_light_primitive->is_shadow_enabled()) {
+                    shadow_lights.push_back(sphere_light_primitive);
                 }
             } else {
                 KW_ASSERT(false, "Invalid light type.");
@@ -229,9 +229,9 @@ public:
 
         for (ShadowMap& shadow_map : m_render_pass.m_shadow_maps) {
             bool ok = false;
-            for (PointLightPrimitive*& point_light : shadow_lights) {
-                if (shadow_map.light_primitive == point_light) {
-                    std::swap(point_light, shadow_lights.back());
+            for (SphereLightPrimitive*& sphere_light : shadow_lights) {
+                if (shadow_map.light_primitive == sphere_light) {
+                    std::swap(sphere_light, shadow_lights.back());
                     shadow_lights.pop_back();
                     ok = true;
                     break;
@@ -246,14 +246,14 @@ public:
         // Link new light primitives that cast shadows this frame.
         //
 
-        for (PointLightPrimitive* point_light : shadow_lights) {
+        for (SphereLightPrimitive* sphere_light : shadow_lights) {
             for (ShadowMap& shadow_map : m_render_pass.m_shadow_maps) {
                 if (shadow_map.light_primitive == nullptr) {
                     //
                     // TODO: Shadow map have been reassigned, update all sides.
                     //
 
-                    shadow_map.light_primitive = point_light;
+                    shadow_map.light_primitive = sphere_light;
                     break;
                 }
             }

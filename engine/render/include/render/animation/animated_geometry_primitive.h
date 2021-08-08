@@ -7,8 +7,10 @@ namespace kw {
 
 class AnimatedGeometryPrimitive : public GeometryPrimitive {
 public:
-    AnimatedGeometryPrimitive(MemoryResource& memory_resource, SharedPtr<Geometry> geometry = nullptr,
-                              SharedPtr<Material> material = nullptr, const transform& local_transform = transform());
+    AnimatedGeometryPrimitive(MemoryResource& memory_resource,
+                              SharedPtr<Geometry> geometry = nullptr,
+                              SharedPtr<Material> material = nullptr,
+                              const transform& local_transform = transform());
 
     // If geometry has been changed we need to reset skeleton pose joints
     // because skeleton might have changed too.

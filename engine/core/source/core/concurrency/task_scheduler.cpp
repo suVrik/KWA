@@ -81,6 +81,10 @@ void TaskScheduler::join() {
     }
 }
 
+size_t TaskScheduler::get_thread_count() const {
+    return m_threads.size();
+}
+
 void TaskScheduler::worker_thread() {
     // Other than running a task and waiting on condition variable, worker thread is locking the mutex.
     std::unique_lock lock(m_mutex);

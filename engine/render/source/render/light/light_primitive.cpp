@@ -11,15 +11,6 @@ LightPrimitive::LightPrimitive(float3 color, float power, const transform& local
 {
 }
 
-LightPrimitive::~LightPrimitive() {
-    // Scene must know whether the removed object is geometry, light or container to properly clean up acceleration
-    // structures. If `remove_child` is called from `Primitive`, there's no way to know whether this was geometry,
-    // light or container anymore.
-    if (m_parent != nullptr) {
-        m_parent->remove_child(*this);
-    }
-}
-
 const aabbox& LightPrimitive::get_bounds() const {
     return m_bounds;
 }
@@ -37,7 +28,7 @@ float LightPrimitive::get_power() const {
 }
 
 void LightPrimitive::set_power(float value) {
-    m_bounds = aabbox(float3(m_global_transform.translation), float3(std::sqrt(value * 10.f)));
+    m_bounds = aabbox(get_global_translation(), float3(std::sqrt(value * 10.f)));
 
     m_power = value;
 }
@@ -45,7 +36,7 @@ void LightPrimitive::set_power(float value) {
 void LightPrimitive::global_transform_updated() {
     AccelerationStructurePrimitive::global_transform_updated();
 
-    m_bounds = aabbox(float3(m_global_transform.translation), float3(std::sqrt(m_power * 10.f)));
+    m_bounds = aabbox(get_global_translation(), float3(std::sqrt(m_power * 10.f)));
 }
 
 } // namespace kw

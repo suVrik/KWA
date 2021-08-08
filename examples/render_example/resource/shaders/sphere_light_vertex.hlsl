@@ -14,7 +14,7 @@ cbuffer LightUniformBuffer {
     float2 specular_diffuse;
 };
 
-struct PointLightPushConstants {
+struct SphereLightPushConstants {
     float4 position;
     float4 luminance;
 
@@ -31,10 +31,10 @@ struct PointLightPushConstants {
     float4 shadow_params;
 };
 
-[[vk::push_constant]] PointLightPushConstants point_light_push_constants;
+[[vk::push_constant]] SphereLightPushConstants sphere_light_push_constants;
 
 VS_OUTPUT main(VS_INPUT input) {
     VS_OUTPUT result;
-    result.position = mul(view_projection, float4(input.position * point_light_push_constants.radius_frustum.y + point_light_push_constants.position.xyz, 1.0));
+    result.position = mul(view_projection, float4(input.position * sphere_light_push_constants.radius_frustum.y + sphere_light_push_constants.position.xyz, 1.0));
     return result;
 }

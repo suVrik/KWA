@@ -10,12 +10,14 @@ class AccelerationStructure;
 class AccelerationStructurePrimitive : public Primitive {
 public:
     explicit AccelerationStructurePrimitive(const transform& local_transform = transform());
+    AccelerationStructurePrimitive(const AccelerationStructurePrimitive& other);
     ~AccelerationStructurePrimitive() override;
+    AccelerationStructurePrimitive& operator=(const AccelerationStructurePrimitive& other);
 
     // Acceleration structure is set from AccelerationStructure's `add` method.
-    AccelerationStructure* get_acceleration_structure() const {
-        return m_acceleration_structure;
-    }
+    AccelerationStructure* get_acceleration_structure() const;
+    
+    // Bounds are defined by global transform, geometry, light radius, etc.
 
     virtual const aabbox& get_bounds() const = 0;
 

@@ -5,7 +5,7 @@
 namespace kw {
 
 template <typename T>
-bool BinaryReader::read_le(T* output, size_t count = 1) {
+bool BinaryReader::read_le(T* output, size_t count) {
     if (read(output, sizeof(T) * count)) {
         for (size_t i = 0; i < count; i++) {
             if constexpr (std::is_enum_v<T>) {
@@ -31,7 +31,7 @@ std::optional<T> BinaryReader::read_le() {
 }
 
 template <typename T>
-bool BinaryReader::read_be(T* output, size_t count = 1) {
+bool BinaryReader::read_be(T* output, size_t count) {
     if (read(output, sizeof(T) * count)) {
         for (size_t i = 0; i < count; i++) {
             if constexpr (std::is_enum_v<T>) {

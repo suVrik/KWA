@@ -42,11 +42,11 @@ static void set_clipboard_text(void* user_data, const char* text) {
     ClipboardUtils::set_clipboard_text(text);
 }
 
-ImguiManager::ImguiManager(Input& input, Window& window, MemoryResource& transient_memory_resource, MemoryResource& persistent_memory_resource)
+ImguiManager::ImguiManager(Input& input, Window& window, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource)
     : m_input(input)
     , m_window(window)
-    , m_transient_memory_resource(transient_memory_resource)
     , m_persistent_memory_resource(persistent_memory_resource)
+    , m_transient_memory_resource(transient_memory_resource)
     , m_imgui({ imgui_alloc, imgui_free, &persistent_memory_resource })
 {
     IMGUI_CHECKVERSION(m_imgui);

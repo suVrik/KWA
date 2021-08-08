@@ -19,7 +19,7 @@
 #include <render/geometry/geometry_manager.h>
 #include <render/geometry/geometry_primitive.h>
 #include <render/geometry/skeleton.h>
-#include <render/light/point_light_primitive.h>
+#include <render/light/sphere_light_primitive.h>
 #include <render/material/material_manager.h>
 #include <render/render.h>
 #include <render/render_passes/debug_draw_render_pass.h>
@@ -42,8 +42,8 @@
 #include <core/debug/log.h>
 #include <core/error.h>
 #include <core/math/float4x4.h>
-#include <core/memory/linear_memory_resource.h>
 #include <core/memory/malloc_memory_resource.h>
+#include <core/memory/scratch_memory_resource.h>
 
 #include <fstream>
 
@@ -53,7 +53,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     DebugUtils::subscribe_to_segfault();
 
     MallocMemoryResource& persistent_memory_resource = MallocMemoryResource::instance();
-    LinearMemoryResource transient_memory_resource(persistent_memory_resource, 32 * 1024 * 1024);
+    ScratchMemoryResource transient_memory_resource(persistent_memory_resource, 32 * 1024 * 1024);
 
     EventLoop event_loop;
 
@@ -83,7 +83,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     Scene scene(persistent_memory_resource, transient_memory_resource);
     DebugDrawManager debug_draw_manager(transient_memory_resource);
-    ImguiManager imgui_manager(input, window, transient_memory_resource, persistent_memory_resource);
+    ImguiManager imgui_manager(input, window, persistent_memory_resource, transient_memory_resource);
     TaskScheduler task_scheduler(persistent_memory_resource, 1);
 
     ShadowRenderPass shadow_render_pass(*render, scene, task_scheduler, persistent_memory_resource, transient_memory_resource);
@@ -240,16 +240,16 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     robot_primitive.set_local_translation(float3(5.f, 0.f, 0.f));
     scene.add_child(robot_primitive);
 
-    PointLightPrimitive point_light_primitives[3]{
-        PointLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 4.f, 0.f))),
-        PointLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, 20.f))),
-        PointLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, -20.f))),
+    SphereLightPrimitive sphere_light_primitives[3]{
+        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 4.f, 0.f))),
+        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, 20.f))),
+        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, -20.f))),
     };
-    scene.add_child(point_light_primitives[0]);
-    scene.add_child(point_light_primitives[1]);
-    scene.add_child(point_light_primitives[2]);
+    scene.add_child(sphere_light_primitives[0]);
+    scene.add_child(sphere_light_primitives[1]);
+    scene.add_child(sphere_light_primitives[2]);
 
-    bool draw_light[std::size(point_light_primitives)]{};
+    bool draw_light[std::size(sphere_light_primitives)]{};
 
     float camera_yaw = radians(60.f);
     float camera_pitch = radians(-20.f);
@@ -318,18 +318,18 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         camera.set_translation(camera_position);
 
         if (imgui.Begin("Lights")) {
-            for (size_t i = 0; i < std::size(point_light_primitives); i++) {
+            for (size_t i = 0; i < std::size(sphere_light_primitives); i++) {
                 char header_text[] = "light0";
                 header_text[5] = char('0' + i);
 
                 imgui.PushID(header_text);
 
                 if (imgui.CollapsingHeader(header_text)) {
-                    float3 light_position = point_light_primitives[i].get_global_translation();
-                    float3 light_color = point_light_primitives[i].get_color();
-                    float light_power = point_light_primitives[i].get_power();
-                    float light_radius = point_light_primitives[i].get_radius();
-                    PointLightPrimitive::ShadowParams shadow_params = point_light_primitives[i].get_shadow_params();
+                    float3 light_position = sphere_light_primitives[i].get_global_translation();
+                    float3 light_color = sphere_light_primitives[i].get_color();
+                    float light_power = sphere_light_primitives[i].get_power();
+                    float light_radius = sphere_light_primitives[i].get_radius();
+                    SphereLightPrimitive::ShadowParams shadow_params = sphere_light_primitives[i].get_shadow_params();
 
                     imgui.DragFloat3("Light Position", &light_position, 0.01f);
                     imgui.ColorEdit3("Light Color", &light_color);
@@ -341,11 +341,11 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                     imgui.DragFloat("pcss_filter_factor", &shadow_params.pcss_filter_factor, 0.01, 0.f, FLT_MAX);
                     imgui.Checkbox("Draw Light", &draw_light[i]);
 
-                    point_light_primitives[i].set_global_translation(light_position);
-                    point_light_primitives[i].set_color(light_color);
-                    point_light_primitives[i].set_power(light_power);
-                    point_light_primitives[i].set_radius(light_radius);
-                    point_light_primitives[i].set_shadow_params(shadow_params);
+                    sphere_light_primitives[i].set_global_translation(light_position);
+                    sphere_light_primitives[i].set_color(light_color);
+                    sphere_light_primitives[i].set_power(light_power);
+                    sphere_light_primitives[i].set_radius(light_radius);
+                    sphere_light_primitives[i].set_shadow_params(shadow_params);
 
                     if (draw_light[i]) {
                         debug_draw_manager.icosahedron(light_position, 0.01f, float3(1.f, 0.f, 0.f));

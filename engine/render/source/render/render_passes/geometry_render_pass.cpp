@@ -5,11 +5,7 @@
 #include "render/scene/scene.h"
 
 #include <core/concurrency/task.h>
-#include <core/containers/unordered_map.h>
 #include <core/debug/assert.h>
-#include <core/math/aabbox.h>
-#include <core/math/float4x4.h>
-#include <core/memory/memory_resource.h>
 
 #include <algorithm>
 

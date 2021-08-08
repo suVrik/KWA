@@ -8,9 +8,9 @@ namespace kw {
 
 class LightPrimitive : public AccelerationStructurePrimitive {
 public:
-    explicit LightPrimitive(float3 color = float3(1.f, 1.f, 1.f), float power = 1.f,
+    explicit LightPrimitive(float3 color = float3(1.f, 1.f, 1.f),
+                            float power = 1.f,
                             const transform& local_transform = transform());
-    ~LightPrimitive();
 
     const aabbox& get_bounds() const override;
 

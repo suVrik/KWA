@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/memory/noop_memory_resource.h"
+#include "core/memory/malloc_memory_resource.h"
 
 #include <memory>
 
@@ -31,7 +31,7 @@ public:
     static_assert(!std::is_array_v<T>);
 
     UniquePtrDeleter()
-        : allocator(NoopMemoryResource::instance())
+        : allocator(MallocMemoryResource::instance())
     {
     }
 

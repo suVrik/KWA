@@ -5,7 +5,7 @@
 namespace kw {
 
 template <typename T>
-bool write_le(T* values, size_t count) {
+bool BinaryWriter::write_le(T* values, size_t count) {
     for (size_t i = 0; i < count; i++) {
         if constexpr (std::is_enum_v<T>) {
             // Enum types don't require custom endian swap function defined.
@@ -19,13 +19,13 @@ bool write_le(T* values, size_t count) {
 }
 
 template <typename T, typename U>
-bool write_le(const U& uvalue) {
+bool BinaryWriter::write_le(const U& uvalue) {
     T tvalue = static_cast<T>(uvalue);
     return write_le(&tvalue, 1);
 }
 
 template <typename T>
-bool write_be(T* values, size_t count) {
+bool BinaryWriter::write_be(T* values, size_t count) {
     for (size_t i = 0; i < count; i++) {
         if constexpr (std::is_enum_v<T>) {
             // Enum types don't require custom endian swap function defined.
@@ -40,7 +40,7 @@ bool write_be(T* values, size_t count) {
 }
 
 template <typename T, typename U>
-bool write_be(const U& uvalue) {
+bool BinaryWriter::write_be(const U& uvalue) {
     T tvalue = static_cast<T>(uvalue);
     return write_be(&tvalue, 1);
 }

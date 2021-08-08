@@ -24,9 +24,7 @@ public:
     void join();
 
     // Only the number of worker threads is returned. Main thread may join task scheduling too.
-    size_t get_thread_count() const {
-        return m_threads.size();
-    }
+    size_t get_thread_count() const;
 
 private:
     void worker_thread();

@@ -58,14 +58,16 @@ private:
 
     size_t m_transient_memory_allocation;
 
+    // All textures.
     UnorderedMap<String, SharedPtr<Texture*>> m_textures;
-    std::shared_mutex m_textures_mutex;
 
     // Textures that are not even opened yet.
     Vector<std::pair<const String&, SharedPtr<Texture*>>> m_pending_textures;
 
     // Opened textures with some not yet loaded mip levels.
     Vector<std::pair<UniquePtr<TextureLoader>, SharedPtr<Texture*>>> m_loading_textures;
+
+    std::shared_mutex m_textures_mutex;
 };
 
 } // namespace kw

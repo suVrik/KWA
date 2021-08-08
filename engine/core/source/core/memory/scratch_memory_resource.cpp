@@ -1,9 +1,9 @@
-#include "core/memory/linear_memory_resource.h"
+#include "core/memory/scratch_memory_resource.h"
 #include "core/debug/assert.h"
 
 namespace kw {
 
-LinearMemoryResource::LinearMemoryResource(MemoryResource& memory_resource, size_t capacity)
+ScratchMemoryResource::ScratchMemoryResource(MemoryResource& memory_resource, size_t capacity)
     : m_memory_resource(&memory_resource)
 {
     m_begin = memory_resource.allocate(capacity, 1);
@@ -11,7 +11,7 @@ LinearMemoryResource::LinearMemoryResource(MemoryResource& memory_resource, size
     m_end = static_cast<uint8_t*>(m_begin) + capacity;
 }
 
-LinearMemoryResource::LinearMemoryResource(void* data, size_t capacity)
+ScratchMemoryResource::ScratchMemoryResource(void* data, size_t capacity)
     : m_memory_resource(nullptr)
     , m_begin(data)
     , m_current(data)
@@ -19,13 +19,13 @@ LinearMemoryResource::LinearMemoryResource(void* data, size_t capacity)
 {
 }
 
-LinearMemoryResource::~LinearMemoryResource() {
+ScratchMemoryResource::~ScratchMemoryResource() {
     if (m_memory_resource != nullptr) {
         m_memory_resource->deallocate(m_begin);
     }
 }
 
-void* LinearMemoryResource::allocate(size_t size, size_t alignment) {
+void* ScratchMemoryResource::allocate(size_t size, size_t alignment) {
     KW_ASSERT(alignment > 0 && (alignment & (alignment - 1)) == 0, "Alignment must be power of two.");
     KW_ASSERT(size > 0, "Size must be greater than zero.");
     
@@ -39,7 +39,7 @@ void* LinearMemoryResource::allocate(size_t size, size_t alignment) {
     }
 }
 
-void* LinearMemoryResource::reallocate(void* memory, size_t size, size_t alignment) {
+void* ScratchMemoryResource::reallocate(void* memory, size_t size, size_t alignment) {
     KW_ASSERT(memory == nullptr || (memory >= m_begin && memory < m_current), "Invalid reallocation.");
 
     void* result = allocate(size, alignment);
@@ -50,11 +50,11 @@ void* LinearMemoryResource::reallocate(void* memory, size_t size, size_t alignme
     return result;
 }
 
-void LinearMemoryResource::deallocate(void* memory) {
+void ScratchMemoryResource::deallocate(void* memory) {
     // No-op.
 }
 
-void LinearMemoryResource::reset() {
+void ScratchMemoryResource::reset() {
     m_current = m_begin;
 }
 

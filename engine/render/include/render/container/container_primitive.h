@@ -9,7 +9,9 @@ namespace kw {
 class ContainerPrimitive : public Primitive {
 public:
     ContainerPrimitive(MemoryResource& persistent_memory_resource);
+    ContainerPrimitive(const ContainerPrimitive& other);
     ~ContainerPrimitive() override;
+    ContainerPrimitive& operator=(const ContainerPrimitive& other);
 
     // Given primitive must not have a parent. Updates child's global transform and bounds.
     void add_child(Primitive& primitive);
@@ -20,9 +22,7 @@ public:
     // Given primitive must be a child of this container. Updates child's global transform and bounds.
     void remove_child(Primitive& primitive);
 
-    const Vector<Primitive*>& get_children() const {
-        return m_children;
-    }
+    const Vector<Primitive*>& get_children() const;
 
 protected:
     void global_transform_updated() override;

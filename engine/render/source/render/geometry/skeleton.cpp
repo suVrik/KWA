@@ -5,6 +5,8 @@
 
 namespace kw {
 
+// `MallocMemoryResource` is required here because of MSVC's STL debug iterators.
+// It allocates some stuff in constructor (only in debug though).
 Skeleton::Skeleton()
     : m_parent_joints(MallocMemoryResource::instance())
     , m_inverse_bind_matrices(MallocMemoryResource::instance())
