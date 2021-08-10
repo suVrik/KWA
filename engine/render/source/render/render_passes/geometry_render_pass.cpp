@@ -63,7 +63,7 @@ public:
                             for (auto it = from_it; it != to_it; ++it) {
                                 Material::InstanceData instance_data;
                                 instance_data.model = float4x4((*it)->get_global_transform());
-                                instance_data.inverse_model = inverse(instance_data.model);
+                                instance_data.inverse_transpose_model = transpose(inverse(instance_data.model));
                                 instances_data.push_back(instance_data);
                             }
 
@@ -89,7 +89,7 @@ public:
 
                             Material::UniformData uniform_data{};
                             uniform_data.model = float4x4((*from_it)->get_global_transform());
-                            uniform_data.inverse_model = inverse(uniform_data.model);
+                            uniform_data.inverse_transpose_model = transpose(inverse(uniform_data.model));
                             std::copy(model_space_joint_matrices.begin(), model_space_joint_matrices.begin() + std::min(model_space_joint_matrices.size(), std::size(uniform_data.joint_data)), std::begin(uniform_data.joint_data));
 
                             uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&uniform_data, sizeof(Material::UniformData));

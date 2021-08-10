@@ -15,12 +15,12 @@ public:
 
     struct InstanceData {
         float4x4 model;
-        float4x4 inverse_model;
+        float4x4 inverse_transpose_model;
     };
 
     struct UniformData {
         float4x4 model;
-        float4x4 inverse_model;
+        float4x4 inverse_transpose_model;
         float4x4 joint_data[MAX_JOINT_COUNT];
     };
 

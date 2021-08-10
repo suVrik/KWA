@@ -8,7 +8,7 @@ SkeletonPose::SkeletonPose(MemoryResource& memory_resource)
     , m_model_space_matrices(memory_resource)
 {
 }
-    
+
 const Vector<float4x4>& SkeletonPose::get_joint_space_matrices() const {
     return m_joint_space_matrices;
 }

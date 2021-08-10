@@ -15,20 +15,20 @@ namespace kw {
 
 namespace EndianUtils {
 
-float2 swap_le(float2 vector) {
+static float2 swap_le(float2 vector) {
     vector.x = swap_le(vector.x);
     vector.y = swap_le(vector.y);
     return vector;
 }
 
-float3 swap_le(float3 vector) {
+static float3 swap_le(float3 vector) {
     vector.x = swap_le(vector.x);
     vector.y = swap_le(vector.y);
     vector.z = swap_le(vector.z);
     return vector;
 }
 
-float4 swap_le(float4 vector) {
+static float4 swap_le(float4 vector) {
     vector.x = swap_le(vector.x);
     vector.y = swap_le(vector.y);
     vector.z = swap_le(vector.z);
@@ -36,7 +36,7 @@ float4 swap_le(float4 vector) {
     return vector;
 }
 
-float4x4 swap_le(float4x4 vector) {
+static float4x4 swap_le(float4x4 vector) {
     vector._r0 = swap_le(vector._r0);
     vector._r1 = swap_le(vector._r1);
     vector._r2 = swap_le(vector._r2);
@@ -44,7 +44,7 @@ float4x4 swap_le(float4x4 vector) {
     return vector;
 }
 
-Geometry::Vertex swap_le(Geometry::Vertex vertex) {
+static Geometry::Vertex swap_le(Geometry::Vertex vertex) {
     vertex.position = swap_le(vertex.position);
     vertex.normal = swap_le(vertex.normal);
     vertex.tangent = swap_le(vertex.tangent);

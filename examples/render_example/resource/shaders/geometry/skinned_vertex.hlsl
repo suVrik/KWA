@@ -17,7 +17,7 @@ struct VS_OUTPUT {
 
 cbuffer GeometryUniform {
     float4x4 model;
-    float4x4 inverse_model;
+    float4x4 inverse_transpose_model;
     float4x4 joint_data[32];
 };
 
@@ -33,11 +33,14 @@ VS_OUTPUT main(VS_INPUT input) {
                         input.weights.z * joint_data[input.joints.z] +
                         input.weights.w * joint_data[input.joints.w];
 
+    float4x4 skinned_model = mul(model, skinning);
+    float4x4 skinned_inverse_transpose_model = mul(inverse_transpose_model, skinning);
+
     VS_OUTPUT output;
-    output.position = mul(geometry_push_constants.view_projection, mul(model, mul(skinning, float4(input.position, 1.0))));
-    output.normal = normalize(mul(float4(input.normal, 0.0), inverse_model).xyz);
-    output.tangent = normalize(mul(model, float4(input.tangent.xyz, 0.0)).xyz);
-    output.binormal = normalize(mul(model, float4(cross(input.normal, input.tangent.xyz) * input.tangent.w, 0.0)).xyz);
+    output.position = mul(geometry_push_constants.view_projection, mul(skinned_model, float4(input.position, 1.0)));
+    output.normal = normalize(mul(skinned_inverse_transpose_model, float4(input.normal, 0.0)).xyz);
+    output.tangent = normalize(mul(skinned_model, float4(input.tangent.xyz, 0.0)).xyz);
+    output.binormal = normalize(mul(skinned_model, float4(cross(input.normal, input.tangent.xyz) * input.tangent.w, 0.0)).xyz);
     output.texcoord = input.texcoord;
     return output;
 }

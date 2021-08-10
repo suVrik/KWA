@@ -83,19 +83,19 @@ public:
         instance_attribute_descriptors[4].semantic = Semantic::POSITION;
         instance_attribute_descriptors[4].semantic_index = 5;
         instance_attribute_descriptors[4].format = TextureFormat::RGBA32_FLOAT;
-        instance_attribute_descriptors[4].offset = offsetof(Material::InstanceData, inverse_model) + offsetof(float4x4, _r0);
+        instance_attribute_descriptors[4].offset = offsetof(Material::InstanceData, inverse_transpose_model) + offsetof(float4x4, _r0);
         instance_attribute_descriptors[5].semantic = Semantic::POSITION;
         instance_attribute_descriptors[5].semantic_index = 6;
         instance_attribute_descriptors[5].format = TextureFormat::RGBA32_FLOAT;
-        instance_attribute_descriptors[5].offset = offsetof(Material::InstanceData, inverse_model) + offsetof(float4x4, _r1);
+        instance_attribute_descriptors[5].offset = offsetof(Material::InstanceData, inverse_transpose_model) + offsetof(float4x4, _r1);
         instance_attribute_descriptors[6].semantic = Semantic::POSITION;
         instance_attribute_descriptors[6].semantic_index = 7;
         instance_attribute_descriptors[6].format = TextureFormat::RGBA32_FLOAT;
-        instance_attribute_descriptors[6].offset = offsetof(Material::InstanceData, inverse_model) + offsetof(float4x4, _r2);
+        instance_attribute_descriptors[6].offset = offsetof(Material::InstanceData, inverse_transpose_model) + offsetof(float4x4, _r2);
         instance_attribute_descriptors[7].semantic = Semantic::POSITION;
         instance_attribute_descriptors[7].semantic_index = 8;
         instance_attribute_descriptors[7].format = TextureFormat::RGBA32_FLOAT;
-        instance_attribute_descriptors[7].offset = offsetof(Material::InstanceData, inverse_model) + offsetof(float4x4, _r3);
+        instance_attribute_descriptors[7].offset = offsetof(Material::InstanceData, inverse_transpose_model) + offsetof(float4x4, _r3);
 
         // Won't be used for skinned geometry.
         BindingDescriptor instance_binding_descriptor{};
