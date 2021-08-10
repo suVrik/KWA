@@ -4,9 +4,14 @@
 
 namespace kw {
 
+struct TonemappingRenderPassDescriptor {
+    Render* render;
+    MemoryResource* transient_memory_resource;
+};
+
 class TonemappingRenderPass : public FullScreenQuadRenderPass {
 public:
-    TonemappingRenderPass(Render& render, MemoryResource& transient_memory_resource);
+    explicit TonemappingRenderPass(const TonemappingRenderPassDescriptor& descriptor);
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
     void get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;

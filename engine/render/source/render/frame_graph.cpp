@@ -2,6 +2,7 @@
 #include "render/render.h"
 #include "render/render_pass_impl.h"
 #include "render/vulkan/frame_graph_vulkan.h"
+#include "render/vulkan/render_vulkan.h"
 
 #include <core/debug/assert.h>
 #include <core/error.h>
@@ -400,7 +401,8 @@ FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& frame_graph_
 
     switch (frame_graph_descriptor.render->get_api()) {
     case RenderApi::VULKAN:
-        return new FrameGraphVulkan(frame_graph_descriptor);
+        // TODO: Perhaps own memory resource for frame graph? To distinguish memory allocations for profiling.
+        return new (static_cast<RenderVulkan*>(frame_graph_descriptor.render)->persistent_memory_resource.allocate<FrameGraphVulkan>()) FrameGraphVulkan(frame_graph_descriptor);
     default:
         KW_ERROR(false, "Chosen render API is not supported on your platform.");
     }

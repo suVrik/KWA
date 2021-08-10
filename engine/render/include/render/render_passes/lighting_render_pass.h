@@ -7,9 +7,16 @@ namespace kw {
 class Scene;
 class ShadowRenderPass;
 
+struct LightingRenderPassDescriptor {
+    Render* render;
+    Scene* scene;
+    ShadowRenderPass* shadow_render_pass;
+    MemoryResource* transient_memory_resource;
+};
+
 class LightingRenderPass : public BaseRenderPass {
 public:
-    LightingRenderPass(Render& render, Scene& scene, ShadowRenderPass& shadow_render_pass, MemoryResource& transient_memory_resource);
+    explicit LightingRenderPass(const LightingRenderPassDescriptor& descriptor);
     ~LightingRenderPass() override;
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;

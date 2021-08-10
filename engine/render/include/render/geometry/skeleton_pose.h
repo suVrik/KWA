@@ -20,6 +20,9 @@ public:
     // Uses joint space matrices and skeleton hierarchy to build model space matrices.
     void build_model_space_matrices(const Skeleton& skeleton);
 
+    // The number of joint space matrices.
+    size_t get_joint_count() const;
+
 private:
     Vector<float4x4> m_joint_space_matrices;
     Vector<float4x4> m_model_space_matrices;

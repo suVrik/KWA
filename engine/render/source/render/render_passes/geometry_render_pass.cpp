@@ -153,11 +153,14 @@ private:
     GeometryRenderPass& m_render_pass;
 };
 
-GeometryRenderPass::GeometryRenderPass(Render& render, Scene& scene, MemoryResource& transient_memory_resource)
-    : m_render(render)
-    , m_scene(scene)
-    , m_transient_memory_resource(transient_memory_resource)
+GeometryRenderPass::GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor)
+    : m_render(*descriptor.render)
+    , m_scene(*descriptor.scene)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 
 void GeometryRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {

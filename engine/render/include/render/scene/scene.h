@@ -10,20 +10,28 @@ namespace kw {
 
 class aabbox;
 class AccelerationStructure;
+class AnimationPlayer;
 class frustum;
 class GeometryPrimitive;
 class LightPrimitive;
 
+struct SceneDescriptor {
+    AnimationPlayer* animation_player;
+    AccelerationStructure* geometry_acceleration_structure;
+    AccelerationStructure* light_acceleration_structure;
+    MemoryResource* persistent_memory_resource;
+    MemoryResource* transient_memory_resource;
+};
+
 class Scene : public ContainerPrimitive {
 public:
-    Scene(MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource);
-    ~Scene() override;
+    explicit Scene(const SceneDescriptor& scene_descriptor);
 
-    Vector<GeometryPrimitive*> query_geometry(const aabbox& bounds);
-    Vector<GeometryPrimitive*> query_geometry(const frustum& frustum);
+    Vector<GeometryPrimitive*> query_geometry(const aabbox& bounds) const;
+    Vector<GeometryPrimitive*> query_geometry(const frustum& frustum) const;
     
-    Vector<LightPrimitive*> query_lights(const aabbox& bounds);
-    Vector<LightPrimitive*> query_lights(const frustum& frustum);
+    Vector<LightPrimitive*> query_lights(const aabbox& bounds) const;
+    Vector<LightPrimitive*> query_lights(const frustum& frustum) const;
 
     const Camera& get_camera() const;
     Camera& get_camera();
@@ -42,11 +50,10 @@ private:
     void add_container_primitive(ContainerPrimitive& container_primitive);
     void remove_container_primitive(ContainerPrimitive& container_primitive);
 
-    MemoryResource& m_persistent_memory_resource;
+    AnimationPlayer& m_animation_player;
+    AccelerationStructure& m_geometry_acceleration_structure;
+    AccelerationStructure& m_light_acceleration_structure;
     MemoryResource& m_transient_memory_resource;
-
-    UniquePtr<AccelerationStructure> m_geometry_acceleration_structure;
-    UniquePtr<AccelerationStructure> m_light_acceleration_structure;
 
     Camera m_camera;
     Camera m_occlusion_camera;

@@ -10,9 +10,16 @@ class Input;
 class MemoryResource;
 class Window;
 
+struct ImguiManagerDescriptor {
+    Input* input;
+    Window* window;
+    MemoryResource* persistent_memory_resource;
+    MemoryResource* transient_memory_resource;
+};
+
 class ImguiManager {
 public:
-    ImguiManager(Input& input, Window& window, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource);
+    explicit ImguiManager(const ImguiManagerDescriptor& descriptor);
 
     // Must be called every frame before any ImGui call.
     void update();

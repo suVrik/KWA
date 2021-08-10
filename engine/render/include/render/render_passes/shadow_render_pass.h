@@ -9,6 +9,15 @@ class LightPrimitive;
 class Scene;
 class TaskScheduler;
 
+
+struct ShadowRenderPassDescriptor {
+    Render* render;
+    Scene* scene;
+    TaskScheduler* task_scheduler;
+    MemoryResource* persistent_memory_resource;
+    MemoryResource* transient_memory_resource;
+};
+
 class ShadowRenderPass : public BaseRenderPass {
 public:
     struct ShadowMap {
@@ -20,7 +29,7 @@ public:
         size_t primitive_count[6];
     };
 
-    ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& task_scheduler, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource);
+    explicit ShadowRenderPass(const ShadowRenderPassDescriptor& descriptor);
     ~ShadowRenderPass();
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;

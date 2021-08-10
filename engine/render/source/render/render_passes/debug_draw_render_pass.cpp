@@ -3,6 +3,7 @@
 #include "render/scene/scene.h"
 
 #include <core/concurrency/task.h>
+#include <core/debug/assert.h>
 #include <core/memory/memory_resource.h>
 
 #include <numeric>
@@ -76,13 +77,17 @@ private:
     DebugDrawRenderPass& m_render_pass;
 };
 
-DebugDrawRenderPass::DebugDrawRenderPass(Render& render, Scene& scene, DebugDrawManager& debug_draw_manager, MemoryResource& transient_memory_resource)
-    : m_render(render)
-    , m_scene(scene)
-    , m_debug_draw_manager(debug_draw_manager)
-    , m_transient_memory_resource(transient_memory_resource)
+DebugDrawRenderPass::DebugDrawRenderPass(const DebugDrawRenderPassDescriptor& descriptor)
+    : m_render(*descriptor.render)
+    , m_debug_draw_manager(*descriptor.debug_draw_manager)
+    , m_scene(*descriptor.scene)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_graphics_pipeline(nullptr)
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.debug_draw_manager != nullptr);
+    KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 
 void DebugDrawRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {

@@ -1,5 +1,6 @@
 #include "system/window.h"
 
+#include <core/debug/assert.h>
 #include <core/error.h>
 
 #include <SDL2/SDL.h>
@@ -8,6 +9,8 @@
 namespace kw {
 
 Window::Window(const WindowDescriptor& descriptor) {
+    KW_ASSERT(descriptor.title != nullptr);
+
     m_window = SDL_CreateWindow(descriptor.title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, static_cast<int>(descriptor.width), static_cast<int>(descriptor.height), SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_VULKAN);
     KW_ERROR(m_window != nullptr, "Failed to create window");
 

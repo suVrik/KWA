@@ -38,4 +38,8 @@ void SkeletonPose::build_model_space_matrices(const Skeleton& skeleton) {
     }
 }
 
+size_t SkeletonPose::get_joint_count() const {
+    return m_joint_space_matrices.size();
+}
+
 } // namespace kw

@@ -39,6 +39,11 @@ public:
         : allocator(allocator_)
     {
     }
+
+    UniquePtrDeleter(MemoryResource& memory_resource)
+        : allocator(memory_resource)
+    {
+    }
     
     void operator()(T* ptr) {
         ptr->~T();
@@ -54,8 +59,7 @@ using UniquePtr = std::unique_ptr<T, UniquePtrDeleter<T, Allocator>>;
 
 template <typename T, class... Args>
 UniquePtr<T> allocate_unique(MemoryResource& memory_resource, Args&&... args) {
-    T* ptr = new (memory_resource.allocate<T>()) T(std::forward<Args>(args)...);
-    return UniquePtr<T>(ptr, UniquePtrDeleter<T, MemoryResourceAllocator<T>>(memory_resource));
+    return UniquePtr<T>(new (memory_resource.allocate<T>()) T(std::forward<Args>(args)...), memory_resource);
 }
 
 template<class T, class U>

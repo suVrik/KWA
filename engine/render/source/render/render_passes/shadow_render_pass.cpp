@@ -318,14 +318,20 @@ private:
     Task* m_end_task;
 };
 
-ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& task_scheduler, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource)
-    : m_render(render)
-    , m_scene(scene)
-    , m_task_scheduler(task_scheduler)
-    , m_persistent_memory_resource(persistent_memory_resource)
-    , m_transient_memory_resource(transient_memory_resource)
-    , m_shadow_maps(persistent_memory_resource)
+ShadowRenderPass::ShadowRenderPass(const ShadowRenderPassDescriptor& descriptor)
+    : m_render(*descriptor.render)
+    , m_scene(*descriptor.scene)
+    , m_task_scheduler(*descriptor.task_scheduler)
+    , m_persistent_memory_resource(*descriptor.persistent_memory_resource)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
+    , m_shadow_maps(*descriptor.persistent_memory_resource)
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.task_scheduler != nullptr);
+    KW_ASSERT(descriptor.persistent_memory_resource != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
+
     m_shadow_maps.resize(3, ShadowMap{});
 
     for (ShadowMap& shadow_map : m_shadow_maps) {
@@ -338,7 +344,7 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
         create_texture_descriptor.height = 512;
 
         shadow_map.light_primitive = nullptr;
-        shadow_map.texture = render.create_texture(create_texture_descriptor);
+        shadow_map.texture = m_render.create_texture(create_texture_descriptor);
     }
 
     CreateTextureDescriptor create_texture_descriptor{};
@@ -349,7 +355,7 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
     create_texture_descriptor.width = 1;
     create_texture_descriptor.height = 1;
 
-    m_dummy_shadow_map = render.create_texture(create_texture_descriptor);
+    m_dummy_shadow_map = m_render.create_texture(create_texture_descriptor);
 
     uint16_t data[6];
     std::fill(std::begin(data), std::end(data), UINT16_MAX);
@@ -362,8 +368,7 @@ ShadowRenderPass::ShadowRenderPass(Render& render, Scene& scene, TaskScheduler& 
     upload_texture_descriptor.width = 1;
     upload_texture_descriptor.height = 1;
 
-    render.upload_texture(upload_texture_descriptor);
-
+    m_render.upload_texture(upload_texture_descriptor);
 }
 
 ShadowRenderPass::~ShadowRenderPass() {

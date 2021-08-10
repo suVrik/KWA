@@ -1,6 +1,7 @@
 #include "render/render_passes/tonemapping_render_pass.h"
 
 #include <core/concurrency/task.h>
+#include <core/debug/assert.h>
 
 namespace kw {
 
@@ -32,10 +33,12 @@ private:
     TonemappingRenderPass& m_render_pass;
 };
 
-TonemappingRenderPass::TonemappingRenderPass(Render& render, MemoryResource& transient_memory_resource)
-    : FullScreenQuadRenderPass(render)
-    , m_transient_memory_resource(transient_memory_resource)
+TonemappingRenderPass::TonemappingRenderPass(const TonemappingRenderPassDescriptor& descriptor)
+    : FullScreenQuadRenderPass(*descriptor.render)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 
 void TonemappingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {

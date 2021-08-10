@@ -119,16 +119,21 @@ private:
     UniformBuffer* m_transient_uniform_buffer;
 };
 
-LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRenderPass& shadow_render_pass, MemoryResource& transient_memory_resource)
-    : m_render(render)
-    , m_scene(scene)
-    , m_shadow_render_pass(shadow_render_pass)
-    , m_transient_memory_resource(transient_memory_resource)
+LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descriptor)
+    : m_render(*descriptor.render)
+    , m_scene(*descriptor.scene)
+    , m_shadow_render_pass(*descriptor.shadow_render_pass)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_pcf_rotation_texture(nullptr)
     , m_sphere_light_vertex_buffer(nullptr)
     , m_sphere_light_index_buffer(nullptr)
     , m_sphere_light_graphics_pipelines{ nullptr, nullptr }
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.shadow_render_pass != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
+
     CreateTextureDescriptor create_texture_descriptor{};
     create_texture_descriptor.name = "pcf_rotation_texture";
     create_texture_descriptor.type = TextureType::TEXTURE_3D;
@@ -137,7 +142,7 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
     create_texture_descriptor.height = 32;
     create_texture_descriptor.depth = 32;
 
-    m_pcf_rotation_texture = render.create_texture(create_texture_descriptor);
+    m_pcf_rotation_texture = m_render.create_texture(create_texture_descriptor);
 
     float2 data[32][32][32]{};
     for (size_t i = 0; i < 32; i++) {
@@ -158,7 +163,7 @@ LightingRenderPass::LightingRenderPass(Render& render, Scene& scene, ShadowRende
     upload_texture_descriptor.height = 32;
     upload_texture_descriptor.depth = 32;
 
-    render.upload_texture(upload_texture_descriptor);
+    m_render.upload_texture(upload_texture_descriptor);
 
     create_sphere_light_buffers();
 }

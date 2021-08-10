@@ -42,13 +42,18 @@ static void set_clipboard_text(void* user_data, const char* text) {
     ClipboardUtils::set_clipboard_text(text);
 }
 
-ImguiManager::ImguiManager(Input& input, Window& window, MemoryResource& persistent_memory_resource, MemoryResource& transient_memory_resource)
-    : m_input(input)
-    , m_window(window)
-    , m_persistent_memory_resource(persistent_memory_resource)
-    , m_transient_memory_resource(transient_memory_resource)
-    , m_imgui({ imgui_alloc, imgui_free, &persistent_memory_resource })
+ImguiManager::ImguiManager(const ImguiManagerDescriptor& descriptor)
+    : m_input(*descriptor.input)
+    , m_window(*descriptor.window)
+    , m_persistent_memory_resource(*descriptor.persistent_memory_resource)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
+    , m_imgui({ imgui_alloc, imgui_free, descriptor.persistent_memory_resource })
 {
+    KW_ASSERT(descriptor.input != nullptr);
+    KW_ASSERT(descriptor.window != nullptr);
+    KW_ASSERT(descriptor.persistent_memory_resource != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
+
     IMGUI_CHECKVERSION(m_imgui);
 
     ImGuiIO& io = m_imgui.GetIO();

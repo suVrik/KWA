@@ -10,7 +10,11 @@
 #undef OUT
 #undef RELATIVE
 
+#include <render/acceleration_structure/linear_acceleration_structure.h>
+#include <render/acceleration_structure/octree_acceleration_structure.h>
 #include <render/animation/animated_geometry_primitive.h>
+#include <render/animation/animation_manager.h>
+#include <render/animation/animation_player.h>
 #include <render/container/container_primitive.h>
 #include <render/debug/debug_draw_manager.h>
 #include <render/debug/imgui_manager.h>
@@ -33,6 +37,7 @@
 
 #include <system/event_loop.h>
 #include <system/input.h>
+#include <system/timer.h>
 #include <system/window.h>
 
 #include <core/concurrency/task.h>
@@ -66,6 +71,41 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     Input input(window);
 
+    Timer timer;
+
+    TaskScheduler task_scheduler(persistent_memory_resource, 1);
+
+    AnimationPlayerDescriptor animation_player_descriptor{};
+    animation_player_descriptor.timer = &timer;
+    animation_player_descriptor.task_scheduler = &task_scheduler;
+    animation_player_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    animation_player_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    AnimationPlayer animation_player(animation_player_descriptor);
+
+    OctreeAccelerationStructure geometry_acceleration_structure(persistent_memory_resource);
+
+    LinearAccelerationStructure light_acceleration_structure(persistent_memory_resource);
+
+    SceneDescriptor scene_descriptor{};
+    scene_descriptor.animation_player = &animation_player;
+    scene_descriptor.geometry_acceleration_structure = &geometry_acceleration_structure;
+    scene_descriptor.light_acceleration_structure = &light_acceleration_structure;
+    scene_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    scene_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    Scene scene(scene_descriptor);
+
+    DebugDrawManager debug_draw_manager(transient_memory_resource);
+
+    ImguiManagerDescriptor imgui_manager_descriptor{};
+    imgui_manager_descriptor.input = &input;
+    imgui_manager_descriptor.window = &window;
+    imgui_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    imgui_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ImguiManager imgui_manager(imgui_manager_descriptor);
+
     RenderDescriptor render_descriptor{};
     render_descriptor.api = RenderApi::VULKAN;
     render_descriptor.persistent_memory_resource = &persistent_memory_resource;
@@ -79,19 +119,52 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     render_descriptor.texture_allocation_size = 128 * 1024 * 1024;
     render_descriptor.texture_block_size = 1024 * 1024;
 
-    std::unique_ptr<Render> render(Render::create_instance(render_descriptor));
+    UniquePtr<Render> render(Render::create_instance(render_descriptor), persistent_memory_resource);
 
-    Scene scene(persistent_memory_resource, transient_memory_resource);
-    DebugDrawManager debug_draw_manager(transient_memory_resource);
-    ImguiManager imgui_manager(input, window, persistent_memory_resource, transient_memory_resource);
-    TaskScheduler task_scheduler(persistent_memory_resource, 1);
+    ShadowRenderPassDescriptor shadow_render_pass_descriptor{};
+    shadow_render_pass_descriptor.render = render.get();
+    shadow_render_pass_descriptor.scene = &scene;
+    shadow_render_pass_descriptor.task_scheduler = &task_scheduler;
+    shadow_render_pass_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    shadow_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
-    ShadowRenderPass shadow_render_pass(*render, scene, task_scheduler, persistent_memory_resource, transient_memory_resource);
-    GeometryRenderPass geometry_render_pass(*render, scene, transient_memory_resource);
-    LightingRenderPass lighting_render_pass(*render, scene, shadow_render_pass, transient_memory_resource);
-    TonemappingRenderPass tonemapping_render_pass(*render, transient_memory_resource);
-    DebugDrawRenderPass debug_draw_render_pass(*render, scene, debug_draw_manager, transient_memory_resource);
-    ImguiRenderPass imgui_render_pass(*render, imgui_manager, transient_memory_resource);
+    ShadowRenderPass shadow_render_pass(shadow_render_pass_descriptor);
+
+    GeometryRenderPassDescriptor geometry_render_pass_descriptor{};
+    geometry_render_pass_descriptor.render = render.get();
+    geometry_render_pass_descriptor.scene = &scene;
+    geometry_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    GeometryRenderPass geometry_render_pass(geometry_render_pass_descriptor);
+
+    LightingRenderPassDescriptor lighting_render_pass_descriptor{};
+    lighting_render_pass_descriptor.render = render.get();
+    lighting_render_pass_descriptor.scene = &scene;
+    lighting_render_pass_descriptor.shadow_render_pass = &shadow_render_pass;
+    lighting_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    LightingRenderPass lighting_render_pass(lighting_render_pass_descriptor);
+
+    TonemappingRenderPassDescriptor tonemapping_render_pass_descriptor{};
+    tonemapping_render_pass_descriptor.render = render.get();
+    tonemapping_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    TonemappingRenderPass tonemapping_render_pass(tonemapping_render_pass_descriptor);
+
+    DebugDrawRenderPassDescriptor debug_draw_render_pass_descriptor{};
+    debug_draw_render_pass_descriptor.render = render.get();
+    debug_draw_render_pass_descriptor.debug_draw_manager = &debug_draw_manager;
+    debug_draw_render_pass_descriptor.scene = &scene;
+    debug_draw_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    DebugDrawRenderPass debug_draw_render_pass(debug_draw_render_pass_descriptor);
+
+    ImguiRenderPassDescriptor imgui_render_pass_descriptor{};
+    imgui_render_pass_descriptor.render = render.get();
+    imgui_render_pass_descriptor.imgui_manager = &imgui_manager;
+    imgui_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ImguiRenderPass imgui_render_pass(imgui_render_pass_descriptor);
 
     Vector<AttachmentDescriptor> color_attachment_descriptors(persistent_memory_resource);
     shadow_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
@@ -134,7 +207,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     frame_graph_descriptor.render_pass_descriptors = render_pass_descriptors.data();
     frame_graph_descriptor.render_pass_descriptor_count = render_pass_descriptors.size();
 
-    std::unique_ptr<FrameGraph> frame_graph(FrameGraph::create_instance(frame_graph_descriptor));
+    UniquePtr<FrameGraph> frame_graph(FrameGraph::create_instance(frame_graph_descriptor), persistent_memory_resource);
 
     shadow_render_pass.create_graphics_pipelines(*frame_graph);
     geometry_render_pass.create_graphics_pipelines(*frame_graph);
@@ -168,6 +241,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     material_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     MaterialManager material_manager(material_manager_descriptor);
+    
+    AnimationManagerDescriptor animation_manager_descriptor{};
+    animation_manager_descriptor.task_scheduler = &task_scheduler;
+    animation_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    animation_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    AnimationManager animation_manager(animation_manager_descriptor);
 
     std::ifstream level_stream("resource/levels/level1.txt");
     KW_ERROR(level_stream, "Failed to open level.");
@@ -232,16 +312,51 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     KW_ERROR(level_stream, "Failed to read level.");
 
-    AnimatedGeometryPrimitive robot_primitive(
-        persistent_memory_resource,
-        geometry_manager.load("resource/geometry/robot_blue.kwg"),
-        material_manager.load("resource/materials/robot_blue.kwm")
-    );
-    robot_primitive.set_local_translation(float3(5.f, 0.f, 0.f));
-    scene.add_child(robot_primitive);
+    AnimatedGeometryPrimitive robot_primitives[5]{
+        AnimatedGeometryPrimitive(
+            persistent_memory_resource,
+            animation_manager.load("resource/animations/robot_orange/idle_look_back.kwg"),
+            geometry_manager.load("resource/geometry/robot_orange.kwg"),
+            material_manager.load("resource/materials/robot_orange.kwm"),
+            transform(float3(2.f, 0.05f, -3.f))
+        ),
+        AnimatedGeometryPrimitive(
+            persistent_memory_resource,
+            animation_manager.load("resource/animations/robot_blue/idle.kwg"),
+            geometry_manager.load("resource/geometry/robot_blue.kwg"),
+            material_manager.load("resource/materials/robot_blue.kwm"),
+            transform(float3(5.f, 0.f, 0.f))
+        ),
+        AnimatedGeometryPrimitive(
+            persistent_memory_resource,
+            animation_manager.load("resource/animations/robot_orange/idle_look_side.kwg"),
+            geometry_manager.load("resource/geometry/robot_orange.kwg"),
+            material_manager.load("resource/materials/robot_orange.kwm"),
+            transform(float3(8.f, 0.05f, -3.f))
+        ),
+        AnimatedGeometryPrimitive(
+            persistent_memory_resource,
+            animation_manager.load("resource/animations/robot_blue/idle.kwg"),
+            geometry_manager.load("resource/geometry/robot_blue.kwg"),
+            material_manager.load("resource/materials/robot_blue.kwm"),
+            transform(float3(3.5f, 1.f, 18.f), quaternion::rotation(float3(0.f, 1.f, 0.f), PI / 4.f))
+        ),
+        AnimatedGeometryPrimitive(
+            persistent_memory_resource,
+            animation_manager.load("resource/animations/robot_orange/idle.kwg"),
+            geometry_manager.load("resource/geometry/robot_orange.kwg"),
+            material_manager.load("resource/materials/robot_orange.kwm"),
+            transform(float3(6.5f, 1.05f, -22.f), quaternion::rotation(float3(0.f, 1.f, 0.f), -PI / 4.f))
+        )
+    };
+    scene.add_child(robot_primitives[0]);
+    scene.add_child(robot_primitives[1]);
+    scene.add_child(robot_primitives[2]);
+    scene.add_child(robot_primitives[3]);
+    scene.add_child(robot_primitives[4]);
 
     SphereLightPrimitive sphere_light_primitives[3]{
-        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 4.f, 0.f))),
+        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(3.f, 4.f, 3.f))),
         SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, 20.f))),
         SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, -20.f))),
     };
@@ -255,9 +370,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     float camera_pitch = radians(-20.f);
     float3 camera_position(6.f, 3.f, 5.f);
     float mouse_sensitivity = 0.0025f;
-    float camera_speed = 0.2f;
+    float camera_speed = 12.f;
 
     bool draw_occlusion_camera = false;
+
+    bool auto_play = true;
+    float time_ = 0.f;
+    float old_time = 0.f;
 
     Camera& camera = scene.get_camera();
     camera.set_fov(radians(60.f));
@@ -280,6 +399,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
 
         input.update();
+        timer.update();
         debug_draw_manager.update();
         imgui_manager.update();
 
@@ -295,22 +415,22 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         float3 up = float3(0.f, 1.f, 0.f);
 
         if (input.is_key_down(Scancode::W)) {
-            camera_position += forward * camera_speed;
+            camera_position += forward * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::A)) {
-            camera_position += left * camera_speed;
+            camera_position += left * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::S)) {
-            camera_position -= forward * camera_speed;
+            camera_position -= forward * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::D)) {
-            camera_position -= left * camera_speed;
+            camera_position -= left * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::Q)) {
-            camera_position -= up * camera_speed;
+            camera_position -= up * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::E)) {
-            camera_position += up * camera_speed;
+            camera_position += up * camera_speed * timer.get_elapsed_time();
         }
 
         camera.set_aspect_ratio(static_cast<float>(window.get_width()) / window.get_height());
@@ -393,14 +513,18 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
         imgui.End();
 
-        if (robot_primitive.get_geometry()) {
-            const Skeleton* skeleton = robot_primitive.get_geometry()->get_skeleton();
+        if (robot_primitives[1].get_geometry()) {
+            const Skeleton* skeleton = robot_primitives[1].get_geometry()->get_skeleton();
             if (skeleton != nullptr) {
-                SkeletonPose& skeleton_pose = robot_primitive.get_skeleton_pose();
+                SkeletonPose& skeleton_pose = robot_primitives[1].get_skeleton_pose();
                 const Vector<float4x4>& joint_space_matrices = skeleton_pose.get_joint_space_matrices();
+                const Vector<float4x4>& model_space_matrices = skeleton_pose.get_model_space_matrices();
                 size_t joint_count = skeleton->get_joint_count();
 
                 if (imgui.Begin("Skinning")) {
+                    imgui.Checkbox("Play", &auto_play);
+                    imgui.DragFloat("Time", &time_, 0.01, 1.3f, 1.6f);
+
                     for (size_t i = 0; i < joint_count; i++) {
                         const String& name = skeleton->get_joint_name(i);
 
@@ -500,9 +624,11 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
         imgui.End();
 
+        auto [animation_player_begin, animation_player_end] = animation_player.create_tasks();
         auto [texture_manager_begin, texture_manager_end] = texture_manager.create_tasks();
         auto [geometry_manager_begin, geometry_manager_end] = geometry_manager.create_tasks();
         MaterialManagerTasks material_manager_tasks = material_manager.create_tasks();
+        auto [animation_manager_begin, animation_manager_end] = animation_manager.create_tasks();
         auto [acquire_frame_task, present_frame_task] = frame_graph->create_tasks();
         auto [shadow_render_pass_task_begin, shadow_render_pass_task_end] = shadow_render_pass.create_tasks();
         Task* geometry_render_pass_task = geometry_render_pass.create_task();
@@ -512,22 +638,28 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
         Task* flush_task = render->create_task();
 
+        animation_player_end->add_input_dependencies(transient_memory_resource, { animation_player_begin });
         material_manager_tasks.material_end->add_input_dependencies(transient_memory_resource, { material_manager_tasks.begin });
         material_manager_tasks.graphics_pipeline_end->add_input_dependencies(transient_memory_resource, { material_manager_tasks.material_end });
         texture_manager_begin->add_input_dependencies(transient_memory_resource, { material_manager_tasks.material_end });
         texture_manager_end->add_input_dependencies(transient_memory_resource, { texture_manager_begin });
         geometry_manager_end->add_input_dependencies(transient_memory_resource, { geometry_manager_begin });
-        acquire_frame_task->add_input_dependencies(transient_memory_resource, { material_manager_tasks.graphics_pipeline_end, texture_manager_end, geometry_manager_end });
-        shadow_render_pass_task_begin->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        animation_manager_end->add_input_dependencies(transient_memory_resource, { animation_manager_begin });
+        acquire_frame_task->add_input_dependencies(transient_memory_resource, { animation_manager_end, material_manager_tasks.graphics_pipeline_end, texture_manager_end, geometry_manager_end });
+        shadow_render_pass_task_begin->add_input_dependencies(transient_memory_resource, { acquire_frame_task, animation_player_end });
         shadow_render_pass_task_end->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_begin });
-        geometry_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
-        lighting_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        geometry_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, animation_player_end });
+        lighting_render_pass_task->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_end });
         tonemapping_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         debug_draw_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         imgui_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         flush_task->add_input_dependencies(transient_memory_resource, { shadow_render_pass_task_end, geometry_render_pass_task, lighting_render_pass_task, tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task });
         present_frame_task->add_input_dependencies(transient_memory_resource, { flush_task });
 
+        task_scheduler.enqueue_task(transient_memory_resource, animation_player_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, animation_player_end);
+        task_scheduler.enqueue_task(transient_memory_resource, animation_manager_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, animation_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.begin);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.material_end);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.graphics_pipeline_end);

@@ -7,9 +7,16 @@ namespace kw {
 class DebugDrawManager;
 class Scene;
 
+struct DebugDrawRenderPassDescriptor {
+    Render* render;
+    DebugDrawManager* debug_draw_manager;
+    Scene* scene;
+    MemoryResource* transient_memory_resource;
+};
+
 class DebugDrawRenderPass : public BaseRenderPass {
 public:
-    DebugDrawRenderPass(Render& render, Scene& scene, DebugDrawManager& debug_draw_manager, MemoryResource& transient_memory_resource);
+    explicit DebugDrawRenderPass(const DebugDrawRenderPassDescriptor& descriptor);
     
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
     void get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
@@ -24,8 +31,8 @@ private:
     class Task;
 
     Render& m_render;
-    Scene& m_scene;
     DebugDrawManager& m_debug_draw_manager;
+    Scene& m_scene;
     MemoryResource& m_transient_memory_resource;
 
     GraphicsPipeline* m_graphics_pipeline;

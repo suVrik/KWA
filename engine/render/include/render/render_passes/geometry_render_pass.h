@@ -6,9 +6,15 @@ namespace kw {
 
 class Scene;
 
+struct GeometryRenderPassDescriptor {
+    Render* render;
+    Scene* scene;
+    MemoryResource* transient_memory_resource;
+};
+
 class GeometryRenderPass : public BaseRenderPass {
 public:
-    GeometryRenderPass(Render& render, Scene& scene, MemoryResource& transient_memory_resource);
+    explicit GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor);
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
     void get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;

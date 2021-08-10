@@ -6,9 +6,15 @@ namespace kw {
 
 class ImguiManager;
 
+struct ImguiRenderPassDescriptor {
+    Render* render;
+    ImguiManager* imgui_manager;
+    MemoryResource* transient_memory_resource;
+};
+
 class ImguiRenderPass : public BaseRenderPass {
 public:
-    ImguiRenderPass(Render& render, ImguiManager& imgui_manager, MemoryResource& transient_memory_resource);
+    explicit ImguiRenderPass(const ImguiRenderPassDescriptor& descriptor);
     ~ImguiRenderPass();
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;

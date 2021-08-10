@@ -124,13 +124,17 @@ private:
     ImguiRenderPass& m_render_pass;
 };
 
-ImguiRenderPass::ImguiRenderPass(Render& render, ImguiManager& imgui_manager, MemoryResource& transient_memory_resource)
-    : m_render(render)
-    , m_imgui_manager(imgui_manager)
-    , m_transient_memory_resource(transient_memory_resource)
+ImguiRenderPass::ImguiRenderPass(const ImguiRenderPassDescriptor& descriptor)
+    : m_render(*descriptor.render)
+    , m_imgui_manager(*descriptor.imgui_manager)
+    , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_font_texture(nullptr)
     , m_graphics_pipeline(nullptr)
 {
+    KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.imgui_manager != nullptr);
+    KW_ASSERT(descriptor.transient_memory_resource != nullptr);
+
     ImGuiIO& io = m_imgui_manager.get_imgui().GetIO();
 
     io.Fonts->AddFontDefault();
