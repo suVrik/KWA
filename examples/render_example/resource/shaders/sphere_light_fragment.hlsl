@@ -211,7 +211,7 @@ float4 main(FS_INPUT input) : SV_TARGET {
     float radius_over_distance = light_radius.x / light_center_distance;
     float normal_dot_light_center = dot(normal_direction, light_center_direction);
 
-    float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo * integrate_sphere(radius_over_distance, normal_dot_light_center) * specular_diffuse.y;
+    float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo * ambient_occlusion * integrate_sphere(radius_over_distance, normal_dot_light_center) * specular_diffuse.y;
 
     float shadow_sample = pcss(sphere_light_push_constants.position.xyz, clip_position.xyz, normal_direction, sphere_light_push_constants.radius_frustum.x);
     
