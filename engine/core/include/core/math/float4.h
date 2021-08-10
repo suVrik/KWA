@@ -4,6 +4,8 @@
 
 namespace kw {
 
+class quaternion;
+
 class float4 {
 public:
     constexpr float4()
@@ -30,6 +32,8 @@ public:
         : x(value.x), y(value.y), z(value.z), w(w)
     {
     }
+
+    explicit float4(const quaternion& value);
 
     constexpr float* begin() {
         return data;

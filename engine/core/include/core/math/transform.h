@@ -10,21 +10,21 @@ public:
     constexpr transform()
         : translation()
         , rotation()
-        , scale(1.f, 1.f, 1.f)
+        , scale(1.f)
     {
     }
 
     explicit constexpr transform(const float3& translation)
         : translation(translation)
         , rotation()
-        , scale(1.f, 1.f, 1.f)
+        , scale(1.f)
     {
     }
 
     constexpr transform(const float3& translation, const quaternion& rotation)
         : translation(translation)
         , rotation(rotation)
-        , scale(1.f, 1.f, 1.f)
+        , scale(1.f)
     {
     }
 
@@ -113,6 +113,14 @@ constexpr transform inverse(const transform& value) {
         inverse_rotation,
         inverse_scale
     );
+}
+
+inline transform lerp(const transform& from, const transform& to, float factor) {
+    transform result;
+    result.translation = lerp(from.translation, to.translation, factor);
+    result.rotation = slerp(from.rotation, to.rotation, factor);
+    result.scale = lerp(from.scale, to.scale, factor);
+    return result;
 }
 
 constexpr bool equal(const transform& lhs, const transform& rhs, float epsilon = EPSILON) {

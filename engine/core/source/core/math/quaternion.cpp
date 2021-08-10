@@ -99,4 +99,9 @@ quaternion::quaternion(const float4x4& matrix)
 {
 }
 
+float4::float4(const quaternion& value)
+    : x(value.x), y(value.y), z(value.z), w(value.w)
+{
+}
+
 } // namespace kw

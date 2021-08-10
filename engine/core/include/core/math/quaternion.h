@@ -162,14 +162,21 @@ constexpr quaternion inverse(const quaternion& value) {
                       transposed.w * multiplier);
 }
 
-inline quaternion slerp(const quaternion& from, const quaternion& to, float factor) {
-    factor = factor * 0.5f;
+inline quaternion slerp(const quaternion& from, quaternion to, float factor) {
+    float cos_a = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w;
 
-    float a = std::acos(from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w);
-    if (a < 0.f) {
-        a = -a;
+    if (cos_a < 0.f) {
+        cos_a = -cos_a;
+        to = -to;
+    }
+    
+    if (cos_a > 0.995f) {
+        return normalize(quaternion(lerp(float4(from), float4(to), factor)));
     }
 
+    factor = factor * 0.5f;
+
+    float a = std::acos(cos_a);
     float b = 1.f / std::sin(a);
     float c = std::sin((1 - factor) * a) * b;
     float d = std::sin(factor * a) * b;
