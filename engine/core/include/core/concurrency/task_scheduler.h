@@ -27,7 +27,7 @@ public:
     size_t get_thread_count() const;
 
 private:
-    void worker_thread();
+    void worker_thread(size_t thread_index);
     void run_task(Task* task);
 
     std::mutex m_mutex;

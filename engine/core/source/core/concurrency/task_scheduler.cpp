@@ -3,6 +3,7 @@
 #include "core/concurrency/task.h"
 #include "core/concurrency/task_node.h"
 #include "core/debug/assert.h"
+#include "core/debug/cpu_profiler.h"
 
 namespace kw {
 
@@ -14,11 +15,7 @@ TaskScheduler::TaskScheduler(MemoryResource& persistent_memory_resource, size_t 
 {
     m_threads.reserve(thread_count);
     for (size_t i = 0; i < thread_count; i++) {
-        m_threads.push_back(std::thread(&TaskScheduler::worker_thread, this));
-
-        char name_buffer[24];
-        sprintf_s(name_buffer, sizeof(name_buffer), "Worker Thread %zu", i);
-        ConcurrencyUtils::set_thread_name(m_threads.back(), name_buffer);
+        m_threads.push_back(std::thread(&TaskScheduler::worker_thread, this, i));
     }
 }
 
@@ -70,10 +67,8 @@ void TaskScheduler::join() {
             lock.unlock();
             run_task(head->task);
         } else if (m_busy_threads > 0) {
-            do {
-                // No ready tasks are available, but there're busy worker threads that might add them.
-                m_busy_thread_condition_variable.wait(lock);
-            } while (m_busy_threads > 0);
+            // No ready tasks are available, but there're busy worker threads that might add them.
+            m_busy_thread_condition_variable.wait(lock);
         } else {
             // No ready tasks available, all worker threads are idle, so no new tasks will be produced.
             return;
@@ -85,9 +80,15 @@ size_t TaskScheduler::get_thread_count() const {
     return m_threads.size();
 }
 
-void TaskScheduler::worker_thread() {
+void TaskScheduler::worker_thread(size_t thread_index) {
     // Other than running a task and waiting on condition variable, worker thread is locking the mutex.
     std::unique_lock lock(m_mutex);
+
+    {
+        char name_buffer[24];
+        sprintf_s(name_buffer, sizeof(name_buffer), "Worker Thread %zu", thread_index);
+        ConcurrencyUtils::set_current_thread_name(name_buffer);
+    }
 
     while (m_is_running) {
         while (m_ready_tasks == nullptr) {
@@ -119,7 +120,11 @@ void TaskScheduler::worker_thread() {
 void TaskScheduler::run_task(Task* task) {
     // Run task.
 
-    task->run();
+    {
+        KW_CPU_PROFILER(task->get_name());
+
+        task->run();
+    }
 
     // Notify future dependencies that this task has completed.
 

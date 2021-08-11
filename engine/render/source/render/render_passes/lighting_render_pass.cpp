@@ -59,6 +59,10 @@ public:
         }
     }
 
+    const char* get_name() const override {
+        return "Lighting Render Pass";
+    }
+
 private:
     void draw_sphere_light(RenderPassContext* context, SphereLightPrimitive* sphere_light_primitive) {
         float3 color = sphere_light_primitive->get_color();
