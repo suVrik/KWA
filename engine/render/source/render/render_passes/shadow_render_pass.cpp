@@ -9,6 +9,7 @@
 #include <core/concurrency/task_scheduler.h>
 #include <core/containers/unordered_map.h>
 #include <core/debug/assert.h>
+#include <core/debug/cpu_profiler.h>
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
 #include <core/memory/memory_resource.h>
@@ -59,10 +60,20 @@ public:
         float4x4 projection = float4x4::perspective_lh(PI / 2.f, 1.f, 0.1f, 20.f);
         float4x4 view_projection = view * projection;
 
-        Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
+        Vector<GeometryPrimitive*> primitives(m_render_pass.m_transient_memory_resource);
+
+        {
+            KW_CPU_PROFILER("Occlusion Culling");
+
+            primitives = m_render_pass.m_scene.query_geometry(frustum(view_projection));
+        }
 
         // Sort primitives by geometry for instancing.
-        std::sort(primitives.begin(), primitives.end(), GeometrySort());
+        {
+            KW_CPU_PROFILER("Primitive Sort");
+
+            std::sort(primitives.begin(), primitives.end(), GeometrySort());
+        }
 
         // Find the most recent updated primitive.
         uint64_t max_counter = m_render_pass.m_shadow_maps[m_shadow_map_index].light_primitive->get_counter();
@@ -167,7 +178,11 @@ public:
                             draw_call_descriptor.push_constants = &push_constants;
                             draw_call_descriptor.push_constants_size = sizeof(push_constants);
 
-                            context->draw(draw_call_descriptor);
+                            {
+                                KW_CPU_PROFILER("Draw Call");
+
+                                context->draw(draw_call_descriptor);
+                            }
                         }
 
                         // MSVC is freaking out because of iterating past the end iterator.

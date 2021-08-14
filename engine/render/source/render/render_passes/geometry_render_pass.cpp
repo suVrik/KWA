@@ -6,6 +6,7 @@
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
+#include <core/debug/cpu_profiler.h>
 
 #include <algorithm>
 
@@ -21,11 +22,21 @@ public:
     void run() override {
         RenderPassContext* context = m_render_pass.begin();
         if (context != nullptr) {
-            Vector<GeometryPrimitive*> primitives = m_render_pass.m_scene.query_geometry(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
+            Vector<GeometryPrimitive*> primitives(m_render_pass.m_transient_memory_resource);
+
+            {
+                KW_CPU_PROFILER("Occlusion Culling");
+
+                primitives = m_render_pass.m_scene.query_geometry(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
+            }
 
             // Sort primitives by graphics pipeline (to avoid graphics pipeline switches),
             // by material (to avoid rebinding uniform data), by geometry (for instancing).
-            std::sort(primitives.begin(), primitives.end(), GeometrySort());
+            {
+                KW_CPU_PROFILER("Primitive Sort");
+
+                std::sort(primitives.begin(), primitives.end(), GeometrySort());
+            }
 
             // MSVC is freaking out because of iterating past the end iterator.
             if (primitives.empty()) return;
@@ -118,7 +129,11 @@ public:
                         draw_call_descriptor.push_constants = &geometry_push_constants;
                         draw_call_descriptor.push_constants_size = sizeof(geometry_push_constants);
 
-                        context->draw(draw_call_descriptor);
+                        {
+                            KW_CPU_PROFILER("Draw Call");
+
+                            context->draw(draw_call_descriptor);
+                        }
                     }
 
                     // MSVC is freaking out because of iterating past the end iterator.

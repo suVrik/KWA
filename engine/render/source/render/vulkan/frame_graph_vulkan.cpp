@@ -6,6 +6,7 @@
 #include <system/window.h>
 
 #include <core/debug/assert.h>
+#include <core/debug/cpu_profiler.h>
 #include <core/debug/log.h>
 #include <core/math/scalar.h>
 #include <core/utils/crc_utils.h>
@@ -5414,11 +5415,15 @@ void FrameGraphVulkan::AcquireTask::run() {
 
     m_frame_graph.m_semaphore_index = m_frame_graph.m_frame_index++ % SWAPCHAIN_IMAGE_COUNT;
 
-    VK_ERROR(
-        vkWaitForFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index], VK_TRUE, UINT64_MAX),
-        "Failed to wait for fences."
-    );
+    {
+        KW_CPU_PROFILER("Wait For Fences");
 
+        VK_ERROR(
+            vkWaitForFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index], VK_TRUE, UINT64_MAX),
+            "Failed to wait for fences."
+        );
+    }
+    
     //
     // Execute pending destroy commands.
     //
@@ -5460,35 +5465,41 @@ void FrameGraphVulkan::AcquireTask::run() {
     // Wait until swapchain image is available for render.
     //
 
-    VkResult acquire_result = vkAcquireNextImageKHR(
-        m_frame_graph.m_render.device,
-        m_frame_graph.m_swapchain,
-        UINT64_MAX,
-        m_frame_graph.m_image_acquired_binary_semaphores[m_frame_graph.m_semaphore_index],
-        VK_NULL_HANDLE,
-        &m_frame_graph.m_swapchain_image_index
-    );
+    {
+        KW_CPU_PROFILER("Acquire");
 
-    if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
-        m_frame_graph.recreate_swapchain();
+        VkResult acquire_result = vkAcquireNextImageKHR(
+            m_frame_graph.m_render.device,
+            m_frame_graph.m_swapchain,
+            UINT64_MAX,
+            m_frame_graph.m_image_acquired_binary_semaphores[m_frame_graph.m_semaphore_index],
+            VK_NULL_HANDLE,
+            &m_frame_graph.m_swapchain_image_index
+        );
 
-        // Semaphore wasn't signaled, so we don't need to present. Invalid swapchain image index notifies other
-        // subsystems that frame must be skipped.
-        m_frame_graph.m_swapchain_image_index = UINT32_MAX;
+        if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
+            m_frame_graph.recreate_swapchain();
 
-        return;
-    } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
-        VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
+            // Semaphore wasn't signaled, so we don't need to present. Invalid swapchain image index notifies other
+            // subsystems that frame must be skipped.
+            m_frame_graph.m_swapchain_image_index = UINT32_MAX;
+
+            return;
+        } else if (acquire_result != VK_SUBOPTIMAL_KHR) {
+            VK_ERROR(acquire_result, "Failed to acquire a swapchain image.");
+        }
     }
 
     //
     // Once we're guaranteed to submit the frame, we can transition the fence to unsignaled state.
     //
 
-    VK_ERROR(
-        vkResetFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index]),
-        "Failed to reset fences."
-    );
+    {
+        VK_ERROR(
+            vkResetFences(m_frame_graph.m_render.device, 1, &m_frame_graph.m_fences[m_frame_graph.m_semaphore_index]),
+            "Failed to reset fences."
+        );
+    }
 
     //
     // Increment timeline semaphore value, which provides a guarantee that no resources available right now
@@ -5501,15 +5512,17 @@ void FrameGraphVulkan::AcquireTask::run() {
     // Reset command pools.
     //
 
-    for (auto& [_, command_pool_data] : m_frame_graph.m_command_pool_data[m_frame_graph.m_semaphore_index]) {
-        KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
-        VK_ERROR(
-            vkResetCommandPool(m_frame_graph.m_render.device, command_pool_data.command_pool, 0),
-            "Failed to reset frame command pool."
-        );
+    {
+        for (auto& [_, command_pool_data] : m_frame_graph.m_command_pool_data[m_frame_graph.m_semaphore_index]) {
+            KW_ASSERT(command_pool_data.command_pool != VK_NULL_HANDLE);
+            VK_ERROR(
+                vkResetCommandPool(m_frame_graph.m_render.device, command_pool_data.command_pool, 0),
+                "Failed to reset frame command pool."
+            );
 
-        // All command buffers are available again.
-        command_pool_data.current_command_buffer = 0;
+            // All command buffers are available again.
+            command_pool_data.current_command_buffer = 0;
+        }
     }
 
     //
@@ -5626,6 +5639,8 @@ void FrameGraphVulkan::PresentTask::run() {
     //
 
     {
+        KW_CPU_PROFILER("Collect");
+
         std::shared_lock attachment_barrier_matrix_lock(m_frame_graph.m_attachment_barrier_matrix_mutex, std::defer_lock);
         std::shared_lock parallel_block_data_lock(m_frame_graph.m_parallel_block_data_mutex, std::defer_lock);
 
@@ -5848,6 +5863,8 @@ void FrameGraphVulkan::PresentTask::run() {
     submit_info.pSignalSemaphores = signal_semaphores;
 
     {
+        KW_CPU_PROFILER("Submit");
+
         std::lock_guard lock(*m_frame_graph.m_render.graphics_queue_spinlock);
 
         VK_ERROR(
@@ -5871,6 +5888,8 @@ void FrameGraphVulkan::PresentTask::run() {
 
     VkResult present_result;
     {
+        KW_CPU_PROFILER("Present");
+
         std::lock_guard lock(*m_frame_graph.m_render.graphics_queue_spinlock);
 
         present_result = vkQueuePresentKHR(m_frame_graph.m_render.graphics_queue, &present_info);
