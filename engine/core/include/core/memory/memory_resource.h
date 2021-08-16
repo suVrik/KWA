@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <utility>
 
 namespace kw {
 
@@ -15,6 +15,11 @@ public:
     template <typename T>
     T* allocate(size_t count = 1) {
         return static_cast<T*>(allocate(sizeof(T) * count, alignof(T)));
+    }
+
+    template <typename T, typename... Args>
+    T* construct(Args&&... args) {
+        return new (allocate<T>()) T(std::forward<Args>(args)...);
     }
 };
 

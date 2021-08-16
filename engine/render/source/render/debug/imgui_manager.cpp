@@ -2,6 +2,7 @@
 
 #include <system/clipboard_utils.h>
 #include <system/input.h>
+#include <system/timer.h>
 #include <system/window.h>
 
 #include <core/debug/assert.h>
@@ -43,12 +44,14 @@ static void set_clipboard_text(void* user_data, const char* text) {
 }
 
 ImguiManager::ImguiManager(const ImguiManagerDescriptor& descriptor)
-    : m_input(*descriptor.input)
+    : m_timer(*descriptor.timer)
+    , m_input(*descriptor.input)
     , m_window(*descriptor.window)
     , m_persistent_memory_resource(*descriptor.persistent_memory_resource)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_imgui({ imgui_alloc, imgui_free, descriptor.persistent_memory_resource })
 {
+    KW_ASSERT(descriptor.timer != nullptr);
     KW_ASSERT(descriptor.input != nullptr);
     KW_ASSERT(descriptor.window != nullptr);
     KW_ASSERT(descriptor.persistent_memory_resource != nullptr);
@@ -118,9 +121,7 @@ void ImguiManager::update() {
         m_input.stop_mouse_propagation();
     }
 
-    // TODO: Elapsed time.
-    // ImGui doesn't accept zero elapsed_time value.
-    io.DeltaTime = std::max(1.f / 60.f, 1e-4f);
+    io.DeltaTime = m_timer.get_elapsed_time();
 
     io.DisplaySize.x = static_cast<float>(m_window.get_render_width());
     io.DisplaySize.y = static_cast<float>(m_window.get_render_height());

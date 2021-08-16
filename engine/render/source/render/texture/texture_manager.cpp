@@ -222,6 +222,8 @@ SharedPtr<Texture*> TextureManager::load(const char* relative_path) {
 }
 
 const String& TextureManager::get_relative_path(const SharedPtr<Texture*>& texture) const {
+    std::shared_lock shared_lock(m_textures_mutex);
+
     for (auto& [relative_path, stored_texture] : m_textures) {
         if (texture == stored_texture) {
             return relative_path;

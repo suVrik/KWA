@@ -104,6 +104,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     DebugDrawManager debug_draw_manager(transient_memory_resource);
 
     ImguiManagerDescriptor imgui_manager_descriptor{};
+    imgui_manager_descriptor.timer = &timer;
     imgui_manager_descriptor.input = &input;
     imgui_manager_descriptor.window = &window;
     imgui_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;

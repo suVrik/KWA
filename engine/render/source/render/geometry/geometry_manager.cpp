@@ -56,9 +56,9 @@ static Geometry::Vertex swap_le(Geometry::Vertex vertex) {
 
 constexpr uint32_t KWG_SIGNATURE = ' GWK';
 
-class GeometryManager::PendingTask final : public Task {
+class GeometryManager::WorkerTask final : public Task {
 public:
-    PendingTask(GeometryManager& manager, Geometry& geometry, const char* relative_path)
+    WorkerTask(GeometryManager& manager, Geometry& geometry, const char* relative_path)
         : m_manager(manager)
         , m_geometry(geometry)
         , m_relative_path(relative_path)
@@ -157,7 +157,7 @@ public:
     }
 
     const char* get_name() const override {
-        return "Geometry Manager Pending";
+        return "Geometry Manager Worker";
     }
 
 private:
@@ -189,7 +189,7 @@ public:
         //
 
         for (auto& [relative_path, geometry] : m_manager.m_pending_geometry) {
-            PendingTask* pending_task = new (m_manager.m_transient_memory_resource.allocate<PendingTask>()) PendingTask(m_manager, *geometry, relative_path.c_str());
+            WorkerTask* pending_task = m_manager.m_transient_memory_resource.construct<WorkerTask>(m_manager, *geometry, relative_path.c_str());
             KW_ASSERT(pending_task != nullptr);
 
             pending_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
@@ -283,6 +283,8 @@ SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
 }
 
 const String& GeometryManager::get_relative_path(const SharedPtr<Geometry>& geometry) const {
+    std::shared_lock shared_lock(m_geometry_mutex);
+
     for (auto& [relative_path, stored_geometry] : m_geometry) {
         if (geometry == stored_geometry) {
             return relative_path;

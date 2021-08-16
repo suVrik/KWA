@@ -8,9 +8,11 @@ namespace kw {
 
 class Input;
 class MemoryResource;
+class Timer;
 class Window;
 
 struct ImguiManagerDescriptor {
+    Timer* timer;
     Input* input;
     Window* window;
     MemoryResource* persistent_memory_resource;
@@ -29,6 +31,7 @@ public:
     ImGui& get_imgui();
 
 private:
+    Timer& m_timer;
     Input& m_input;
     Window& m_window;
     MemoryResource& m_persistent_memory_resource;

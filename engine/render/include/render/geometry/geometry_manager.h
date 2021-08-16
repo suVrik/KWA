@@ -43,7 +43,7 @@ public:
 
 private:
     class BeginTask;
-    class PendingTask;
+    class WorkerTask;
 
     Render& m_render;
     TaskScheduler& m_task_scheduler;
@@ -53,7 +53,7 @@ private:
 
     UnorderedMap<String, SharedPtr<Geometry>> m_geometry;
     Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
-    std::shared_mutex m_geometry_mutex;
+    mutable std::shared_mutex m_geometry_mutex;
 
     GeometryNotifier m_geometry_notifier;
 };

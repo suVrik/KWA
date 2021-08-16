@@ -1,5 +1,7 @@
 #include "system/timer.h"
 
+#include <core/math/scalar.h>
+
 #include <SDL_timer.h>
 
 namespace kw {
@@ -16,7 +18,7 @@ void Timer::update() {
     uint64_t now = SDL_GetPerformanceCounter();
     uint64_t frequency = SDL_GetPerformanceFrequency();
 
-    m_elapsed_time = static_cast<float>(now - m_previous_frame) / frequency;
+    m_elapsed_time = clamp(static_cast<float>(now - m_previous_frame) / frequency, 1e-4f, 1.f);
     m_absolute_time = static_cast<float>(now - m_startup_time) / frequency;
 
     m_previous_frame = now;

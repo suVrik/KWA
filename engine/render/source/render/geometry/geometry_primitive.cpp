@@ -60,6 +60,11 @@ GeometryPrimitive::~GeometryPrimitive() {
 GeometryPrimitive& GeometryPrimitive::operator=(const GeometryPrimitive& other) {
     AccelerationStructurePrimitive::operator=(other);
 
+    if (m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        m_geometry->unsubscribe(*this);
+    }
+
     m_geometry = other.m_geometry;
     m_material = other.m_material;
 
@@ -75,6 +80,11 @@ GeometryPrimitive& GeometryPrimitive::operator=(GeometryPrimitive&& other) {
     AccelerationStructurePrimitive::operator=(std::move(other));
 
     m_material = std::move(other.m_material);
+
+    if (m_geometry) {
+        // No effect if `geometry_loaded` for this primitive & geometry was already called.
+        m_geometry->unsubscribe(*this);
+    }
 
     if (other.m_geometry) {
         // No effect if `geometry_loaded` for this primitive & geometry was already called.

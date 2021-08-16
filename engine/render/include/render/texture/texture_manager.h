@@ -67,7 +67,7 @@ private:
     // Opened textures with some not yet loaded mip levels.
     Vector<std::pair<UniquePtr<TextureLoader>, SharedPtr<Texture*>>> m_loading_textures;
 
-    std::shared_mutex m_textures_mutex;
+    mutable std::shared_mutex m_textures_mutex;
 };
 
 } // namespace kw

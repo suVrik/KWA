@@ -9,33 +9,36 @@ namespace kw {
 template <typename T, typename Allocator>
 class UniquePtrDeleter {
 public:
-    static_assert(!std::is_array_v<T>);
-
     UniquePtrDeleter(const Allocator& allocator_)
         : allocator(allocator_)
     {
     }
 
     void operator()(T* ptr) {
+        static_assert(!std::is_array_v<T>);
+
         ptr->~T();
 
+        // Any other allocator may use `count`, so we can't do the trick we do for `MemoryResourceAllocator`
+        // with trivially destructible types.
         allocator.deallocate(ptr, 1);
     }
 
     Allocator allocator;
 };
 
-template <typename T>
-class UniquePtrDeleter<T, MemoryResourceAllocator<T>> {
+template <typename T, typename U>
+class UniquePtrDeleter<T, MemoryResourceAllocator<U>> {
 public:
-    static_assert(!std::is_array_v<T>);
+    // When T is `float[]`, Allocator is `MemoryResourceAllocator<float>`.
+    static_assert(std::is_same_v<std::remove_extent_t<T>, U>);
 
     UniquePtrDeleter()
         : allocator(MallocMemoryResource::instance())
     {
     }
 
-    UniquePtrDeleter(const MemoryResourceAllocator<T>& allocator_)
+    UniquePtrDeleter(const MemoryResourceAllocator<U>& allocator_)
         : allocator(allocator_)
     {
     }
@@ -45,21 +48,40 @@ public:
     {
     }
     
-    void operator()(T* ptr) {
-        ptr->~T();
+    void operator()(U* ptr) {
+        static_assert(!std::is_array_v<T> || std::is_trivially_destructible_v<std::remove_extent_t<T>>);
 
-        allocator.deallocate(ptr, 1);
+        // Array guarantees to store trivially destructible types, so no need to call destructor.
+        if constexpr (!std::is_array_v<T>) {
+            ptr->~T();
+        }
+
+        // `MemoryResourceAllocator` doesn't use count in any way.
+        allocator.deallocate(ptr, 0);
     }
 
-    MemoryResourceAllocator<T> allocator;
+    MemoryResourceAllocator<U> allocator;
 };
 
 template <typename T, typename Allocator = MemoryResourceAllocator<std::remove_extent_t<T>>>
 using UniquePtr = std::unique_ptr<T, UniquePtrDeleter<T, Allocator>>;
 
 template <typename T, class... Args>
-UniquePtr<T> allocate_unique(MemoryResource& memory_resource, Args&&... args) {
-    return UniquePtr<T>(new (memory_resource.allocate<T>()) T(std::forward<Args>(args)...), memory_resource);
+std::enable_if_t<!std::is_array_v<T>, UniquePtr<T>> allocate_unique(MemoryResource& memory_resource, Args&&... args) {
+    return UniquePtr<T>(memory_resource.construct<T>(std::forward<Args>(args)...), memory_resource);
+}
+
+template <typename T, class... Args>
+std::enable_if_t<std::is_array_v<T>, UniquePtr<T>> allocate_unique(MemoryResource& memory_resource, size_t count) {
+    using U = std::remove_extent_t<T>;
+
+    static_assert(std::is_default_constructible_v<U> && std::is_trivially_destructible_v<U>);
+
+    U* items = memory_resource.allocate<U>(count);
+    for (size_t i = 0; i < count; i++) {
+        new (&items[i]) U();
+    }
+    return UniquePtr<T>(items, memory_resource);
 }
 
 template<class T, class U>
