@@ -598,7 +598,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
     //
 
     GraphicsPipelineVulkan* graphics_pipeline_vulkan =
-        new (m_render.persistent_memory_resource.allocate<GraphicsPipelineVulkan>()) GraphicsPipelineVulkan(m_render.persistent_memory_resource);
+        m_render.persistent_memory_resource.construct<GraphicsPipelineVulkan>(m_render.persistent_memory_resource);
 
     //
     // Search for render pass.
@@ -2317,8 +2317,8 @@ void FrameGraphVulkan::destroy_graphics_pipeline(GraphicsPipeline* graphics_pipe
 
 Pair<Task*, Task*> FrameGraphVulkan::create_tasks() {
     return {
-        new (m_render.transient_memory_resource.allocate<AcquireTask>()) AcquireTask(*this),
-        new (m_render.transient_memory_resource.allocate<PresentTask>()) PresentTask(*this)
+        m_render.transient_memory_resource.construct<AcquireTask>(*this),
+        m_render.transient_memory_resource.construct<PresentTask>(*this)
     };
 }
 

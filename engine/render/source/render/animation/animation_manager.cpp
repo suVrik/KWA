@@ -116,7 +116,7 @@ public:
         //
 
         for (auto& [relative_path, animation] : m_manager.m_pending_animations) {
-            PendingTask* pending_task = new (m_manager.m_transient_memory_resource.allocate<PendingTask>()) PendingTask(m_manager, *animation, relative_path.c_str());
+            PendingTask* pending_task = m_manager.m_transient_memory_resource.construct<PendingTask>(m_manager, *animation, relative_path.c_str());
             KW_ASSERT(pending_task != nullptr);
 
             pending_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
@@ -210,8 +210,8 @@ const String& AnimationManager::get_relative_path(const SharedPtr<Animation>& an
 }
 
 Pair<Task*, Task*> AnimationManager::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Animation Manager End");
-    Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
+    Task* end_task = m_transient_memory_resource.construct<NoopTask>("Animation Manager End");
+    Task* begin_task = m_transient_memory_resource.construct<BeginTask>(*this, end_task);
 
     return { begin_task, end_task };
 }

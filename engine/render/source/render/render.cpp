@@ -134,7 +134,7 @@ Render* Render::create_instance(const RenderDescriptor& descriptor) {
 
     switch (descriptor.api) {
     case RenderApi::VULKAN:
-        return new (descriptor.persistent_memory_resource->allocate<RenderVulkan>()) RenderVulkan(descriptor);
+        return descriptor.persistent_memory_resource->construct<RenderVulkan>(descriptor);
     default:
         KW_ERROR(false, "Chosen render API is not supported on your platform.");
     }

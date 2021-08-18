@@ -245,7 +245,7 @@ void ImguiRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
 }
 
 Task* ImguiRenderPass::create_task() {
-    return new (m_transient_memory_resource.allocate<Task>()) Task(*this);
+    return m_transient_memory_resource.construct<Task>(*this);
 }
 
 } // namespace kw

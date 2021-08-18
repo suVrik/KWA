@@ -417,7 +417,7 @@ VertexBuffer* RenderVulkan::create_vertex_buffer(const char* name, size_t size) 
     // Find device memory range to store the buffer and bind the buffer to this range.
     //
 
-    DeviceAllocation device_allocation = allocate_device_buffer_memory(memory_requirements.size, memory_requirements.alignment);
+    const DeviceAllocation device_allocation = allocate_device_buffer_memory(memory_requirements.size, memory_requirements.alignment);
     KW_ASSERT(device_allocation.data_index < m_buffer_device_data.size());
 
     VK_ERROR(
@@ -429,7 +429,7 @@ VertexBuffer* RenderVulkan::create_vertex_buffer(const char* name, size_t size) 
     // Create buffer handle and return it.
     //
 
-    return new (persistent_memory_resource.allocate<VertexBufferVulkan>()) VertexBufferVulkan(
+    return persistent_memory_resource.construct<VertexBufferVulkan>(
         size, device_buffer, device_allocation.data_index, device_allocation.data_offset
     );
 }
@@ -537,7 +537,7 @@ IndexBuffer* RenderVulkan::create_index_buffer(const char* name, size_t size, In
     // Find device memory range to store the buffer and bind the buffer to this range.
     //
 
-    DeviceAllocation device_allocation = allocate_device_buffer_memory(memory_requirements.size, memory_requirements.alignment);
+    const DeviceAllocation device_allocation = allocate_device_buffer_memory(memory_requirements.size, memory_requirements.alignment);
     KW_ASSERT(device_allocation.data_index < m_buffer_device_data.size());
 
     VK_ERROR(
@@ -549,7 +549,7 @@ IndexBuffer* RenderVulkan::create_index_buffer(const char* name, size_t size, In
     // Create buffer handle and return it.
     //
 
-    return new (persistent_memory_resource.allocate<IndexBufferVulkan>()) IndexBufferVulkan(
+    return persistent_memory_resource.construct<IndexBufferVulkan>(
         size, index_size, device_buffer, device_allocation.data_index, device_allocation.data_offset
     );
 }
@@ -731,7 +731,7 @@ Texture* RenderVulkan::create_texture(const CreateTextureDescriptor& texture_des
     VkMemoryRequirements memory_requirements;
     vkGetImageMemoryRequirements(device, image, &memory_requirements);
 
-    DeviceAllocation device_allocation = allocate_device_texture_memory(memory_requirements.size, memory_requirements.alignment);
+    const DeviceAllocation device_allocation = allocate_device_texture_memory(memory_requirements.size, memory_requirements.alignment);
     KW_ASSERT(device_allocation.data_index < m_texture_device_data.size());
 
     VK_ERROR(
@@ -743,7 +743,7 @@ Texture* RenderVulkan::create_texture(const CreateTextureDescriptor& texture_des
     // Create texture handle and return it.
     //
 
-    return new (persistent_memory_resource.allocate<TextureVulkan>()) TextureVulkan(
+    return persistent_memory_resource.construct<TextureVulkan>(
         texture_descriptor.type,
         texture_descriptor.format,
         std::max(texture_descriptor.mip_level_count, 1U),
@@ -1347,7 +1347,7 @@ HostTexture* RenderVulkan::create_host_texture(const char* name, TextureFormat f
     // Create host texture handle and return it.
     //
 
-    return new (persistent_memory_resource.allocate<HostTextureVulkan>()) HostTextureVulkan(
+    return persistent_memory_resource.construct<HostTextureVulkan>(
         format, width, height, buffer, memory, map_memory(memory), memory_requirements.size
     );
 }
@@ -1377,7 +1377,7 @@ VertexBuffer* RenderVulkan::acquire_transient_vertex_buffer(const void* data, si
     // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
     std::memcpy(static_cast<uint8_t*>(m_transient_memory_mapping) + transient_buffer_offset, data, size);
 
-    return new (transient_memory_resource.allocate<VertexBufferVulkan>()) VertexBufferVulkan(
+    return transient_memory_resource.construct<VertexBufferVulkan>(
         size, m_transient_buffer, transient_buffer_offset
     );
 }
@@ -1392,7 +1392,7 @@ IndexBuffer* RenderVulkan::acquire_transient_index_buffer(const void* data, size
     // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
     std::memcpy(static_cast<uint8_t*>(m_transient_memory_mapping) + transient_buffer_offset, data, size);
 
-    return new (transient_memory_resource.allocate<IndexBufferVulkan>()) IndexBufferVulkan(
+    return transient_memory_resource.construct<IndexBufferVulkan>(
         size, index_size, m_transient_buffer, transient_buffer_offset
     );
 }
@@ -1407,13 +1407,13 @@ UniformBuffer* RenderVulkan::acquire_transient_uniform_buffer(const void* data, 
     // Memory is mapped persistently so it can be accessed from multiple threads simultaneously.
     std::memcpy(static_cast<uint8_t*>(m_transient_memory_mapping) + transient_buffer_offset, data, size);
 
-    return new (transient_memory_resource.allocate<UniformBufferVulkan>()) UniformBufferVulkan(
+    return transient_memory_resource.construct<UniformBufferVulkan>(
         size, transient_buffer_offset
     );
 }
 
 Task* RenderVulkan::create_task() {
-    return new (transient_memory_resource.allocate<FlushTask>()) FlushTask(*this);
+    return transient_memory_resource.construct<FlushTask>(*this);
 }
 
 RenderApi RenderVulkan::get_api() const {

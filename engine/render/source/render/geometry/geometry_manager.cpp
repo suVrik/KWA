@@ -296,8 +296,8 @@ const String& GeometryManager::get_relative_path(const SharedPtr<Geometry>& geom
 }
 
 Pair<Task*, Task*> GeometryManager::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Geometry Manager End");
-    Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
+    Task* end_task = m_transient_memory_resource.construct<NoopTask>("Geometry Manager End");
+    Task* begin_task = m_transient_memory_resource.construct<BeginTask>(*this, end_task);
 
     return { begin_task, end_task };
 }

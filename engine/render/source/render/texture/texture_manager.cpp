@@ -60,7 +60,7 @@ public:
         m_texture = m_manager.m_render.create_texture(create_texture_descriptor);
         KW_ASSERT(m_texture != nullptr);
 
-        LoadingTask* loading_task = new (m_manager.m_transient_memory_resource.allocate<LoadingTask>()) LoadingTask(m_manager, m_texture_loader, m_texture, m_bytes_per_texture);
+        LoadingTask* loading_task = m_manager.m_transient_memory_resource.construct<LoadingTask>(m_manager, m_texture_loader, m_texture, m_bytes_per_texture);
         KW_ASSERT(loading_task != nullptr);
 
         loading_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
@@ -106,7 +106,7 @@ public:
             for (size_t i = 0; i < m_manager.m_loading_textures.size(); ) {
                 auto& [texture_loader, texture] = m_manager.m_loading_textures[i];
                 if (!texture_loader->is_loaded()) {
-                    LoadingTask* loading_task = new (m_manager.m_transient_memory_resource.allocate<LoadingTask>()) LoadingTask(m_manager, *texture_loader, *texture, bytes_per_texture);
+                    LoadingTask* loading_task = m_manager.m_transient_memory_resource.construct<LoadingTask>(m_manager, *texture_loader, *texture, bytes_per_texture);
                     KW_ASSERT(loading_task != nullptr);
 
                     loading_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
@@ -129,7 +129,7 @@ public:
             for (auto& [relative_path, texture] : m_manager.m_pending_textures) {
                 auto& [texture_loader_, texture_] = m_manager.m_loading_textures.emplace_back(allocate_unique<TextureLoader>(m_manager.m_persistent_memory_resource), std::move(texture));
 
-                PendingTask* pending_task = new (m_manager.m_transient_memory_resource.allocate<PendingTask>()) PendingTask(m_manager, *texture_loader_, *texture_, relative_path.c_str(), bytes_per_texture, m_end_task);
+                PendingTask* pending_task = m_manager.m_transient_memory_resource.construct<PendingTask>(m_manager, *texture_loader_, *texture_, relative_path.c_str(), bytes_per_texture, m_end_task);
                 KW_ASSERT(pending_task != nullptr);
 
                 pending_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
@@ -235,8 +235,8 @@ const String& TextureManager::get_relative_path(const SharedPtr<Texture*>& textu
 }
 
 Pair<Task*, Task*> TextureManager::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Texture Manager End");
-    Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
+    Task* end_task = m_transient_memory_resource.construct<NoopTask>("Texture Manager End");
+    Task* begin_task = m_transient_memory_resource.construct<BeginTask>(*this, end_task);
 
     return { begin_task, end_task };
 }

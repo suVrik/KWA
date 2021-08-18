@@ -402,7 +402,7 @@ FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& frame_graph_
     switch (frame_graph_descriptor.render->get_api()) {
     case RenderApi::VULKAN:
         // TODO: Perhaps own memory resource for frame graph? To distinguish memory allocations for profiling.
-        return new (static_cast<RenderVulkan*>(frame_graph_descriptor.render)->persistent_memory_resource.allocate<FrameGraphVulkan>()) FrameGraphVulkan(frame_graph_descriptor);
+        return static_cast<RenderVulkan*>(frame_graph_descriptor.render)->persistent_memory_resource.construct<FrameGraphVulkan>(frame_graph_descriptor);
     default:
         KW_ERROR(false, "Chosen render API is not supported on your platform.");
     }

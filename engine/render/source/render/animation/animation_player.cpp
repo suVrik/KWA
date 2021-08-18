@@ -74,7 +74,7 @@ public:
         std::lock_guard lock(m_animation_player.m_primitives_mutex);
 
         for (size_t i = 0; i < m_animation_player.m_primitives.size(); i++) {
-            WorkerTask* worker_task = new (m_animation_player.m_transient_memory_resource.allocate<WorkerTask>()) WorkerTask(m_animation_player, i, m_elapsed_time);
+            WorkerTask* worker_task = m_animation_player.m_transient_memory_resource.construct<WorkerTask>(m_animation_player, i, m_elapsed_time);
             KW_ASSERT(worker_task != nullptr);
 
             worker_task->add_output_dependencies(m_animation_player.m_transient_memory_resource, { m_end_task });
@@ -131,8 +131,8 @@ void AnimationPlayer::remove(AnimatedGeometryPrimitive& primitive) {
 }
 
 Pair<Task*, Task*> AnimationPlayer::create_tasks() {
-    Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Animation Player End");
-    Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task, m_timer.get_elapsed_time());
+    Task* end_task = m_transient_memory_resource.construct<NoopTask>("Animation Player End");
+    Task* begin_task = m_transient_memory_resource.construct<BeginTask>(*this, end_task, m_timer.get_elapsed_time());
 
     return { begin_task, end_task };
 }
