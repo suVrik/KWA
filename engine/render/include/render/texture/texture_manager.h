@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/containers/pair.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unique_ptr.h>
@@ -43,7 +44,7 @@ public:
     // before the second task starts. If you are planning to load textures on this frame, you need to place your task
     // before the first task. If you are planning to use texture loaded on this frame, you need to place your task
     // after the second task.
-    std::pair<Task*, Task*> create_tasks();
+    Pair<Task*, Task*> create_tasks();
 
 private:
     class BeginTask;
@@ -62,10 +63,10 @@ private:
     UnorderedMap<String, SharedPtr<Texture*>> m_textures;
 
     // Textures that are not even opened yet.
-    Vector<std::pair<const String&, SharedPtr<Texture*>>> m_pending_textures;
+    Vector<Pair<const String&, SharedPtr<Texture*>>> m_pending_textures;
 
     // Opened textures with some not yet loaded mip levels.
-    Vector<std::pair<UniquePtr<TextureLoader>, SharedPtr<Texture*>>> m_loading_textures;
+    Vector<Pair<UniquePtr<TextureLoader>, SharedPtr<Texture*>>> m_loading_textures;
 
     mutable std::shared_mutex m_textures_mutex;
 };

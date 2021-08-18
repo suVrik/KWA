@@ -2038,7 +2038,7 @@ uint64_t RenderVulkan::allocate_from_staging_memory(uint64_t size, uint64_t alig
     return allocate_from_staging_memory(size, size, alignment).second;
 }
 
-std::pair<uint64_t, uint64_t> RenderVulkan::allocate_from_staging_memory(uint64_t min, uint64_t max, uint64_t alignment) {
+Pair<uint64_t, uint64_t> RenderVulkan::allocate_from_staging_memory(uint64_t min, uint64_t max, uint64_t alignment) {
     KW_ASSERT(max >= min, "Max must be greater than min.");
     KW_ASSERT(alignment > 0 && is_pow2(alignment), "Alignment must be power of 2.");
     KW_ASSERT(
@@ -2545,7 +2545,7 @@ void RenderVulkan::submit_upload_commands() {
     }
 }
 
-std::pair<VkCommandBuffer, uint64_t> RenderVulkan::upload_resources() {
+Pair<VkCommandBuffer, uint64_t> RenderVulkan::upload_resources() {
     KW_ASSERT(!m_buffer_upload_commands.empty() || !m_texture_upload_commands.empty());
 
     //
@@ -2905,7 +2905,7 @@ VkCommandBuffer RenderVulkan::acquire_graphics_ownership() {
 
     VK_ERROR(
         vkEndCommandBuffer(graphics_command_buffer),
-        "Failed to end a transfer command buffer."
+        "Failed to end a graphics command buffer."
     );
 
     uint64_t transfer_signal_value = m_intermediate_semaphore->value;

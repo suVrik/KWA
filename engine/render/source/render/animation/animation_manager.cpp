@@ -209,7 +209,7 @@ const String& AnimationManager::get_relative_path(const SharedPtr<Animation>& an
     return EMPTY_STRING;
 }
 
-std::pair<Task*, Task*> AnimationManager::create_tasks() {
+Pair<Task*, Task*> AnimationManager::create_tasks() {
     Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Animation Manager End");
     Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
 

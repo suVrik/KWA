@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/containers/pair.h>
 #include <core/containers/vector.h>
 
 #include <shared_mutex>
@@ -25,7 +26,7 @@ public:
     void add(AnimatedGeometryPrimitive& primitive);
     void remove(AnimatedGeometryPrimitive& primitive);
     
-    std::pair<Task*, Task*> create_tasks();
+    Pair<Task*, Task*> create_tasks();
 
 private:
     class BeginTask;

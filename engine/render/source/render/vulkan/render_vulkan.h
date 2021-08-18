@@ -5,6 +5,7 @@
 
 #include <core/concurrency/spinlock.h>
 #include <core/concurrency/task.h>
+#include <core/containers/pair.h>
 #include <core/containers/queue.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/unique_ptr.h>
@@ -332,7 +333,7 @@ private:
     // Allocate from `min` to `max` bytes from staging memory. `min` must be not greater than `m_staging_buffer_size / 2`.
     // Smaller `min` leads to lower staging memory fragmentation. Might cause one or more synchrnonous flushes
     // unless `min` is 0. First value is the number of bytes allocated, second is the offset.
-    std::pair<uint64_t, uint64_t> allocate_from_staging_memory(uint64_t min, uint64_t max, uint64_t alignment);
+    Pair<uint64_t, uint64_t> allocate_from_staging_memory(uint64_t min, uint64_t max, uint64_t alignment);
 
     // Wait until some more staging memory is available. Might cause a synchrnonous flush.
     void wait_for_staging_memory();
@@ -364,7 +365,7 @@ private:
 
     void submit_upload_commands();
 
-    std::pair<VkCommandBuffer, uint64_t> upload_resources();
+    Pair<VkCommandBuffer, uint64_t> upload_resources();
     uint64_t upload_buffers(VkCommandBuffer transfer_command_buffer);
     uint64_t upload_textures(VkCommandBuffer transfer_command_buffer);
 

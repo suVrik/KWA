@@ -2315,7 +2315,7 @@ void FrameGraphVulkan::destroy_graphics_pipeline(GraphicsPipeline* graphics_pipe
     }
 }
 
-std::pair<Task*, Task*> FrameGraphVulkan::create_tasks() {
+Pair<Task*, Task*> FrameGraphVulkan::create_tasks() {
     return {
         new (m_render.transient_memory_resource.allocate<AcquireTask>()) AcquireTask(*this),
         new (m_render.transient_memory_resource.allocate<PresentTask>()) PresentTask(*this)

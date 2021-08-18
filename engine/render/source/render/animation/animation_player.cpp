@@ -130,7 +130,7 @@ void AnimationPlayer::remove(AnimatedGeometryPrimitive& primitive) {
     *it = nullptr;
 }
 
-std::pair<Task*, Task*> AnimationPlayer::create_tasks() {
+Pair<Task*, Task*> AnimationPlayer::create_tasks() {
     Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Animation Player End");
     Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task, m_timer.get_elapsed_time());
 

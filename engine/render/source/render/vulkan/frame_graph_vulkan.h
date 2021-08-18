@@ -4,6 +4,7 @@
 
 #include <core/concurrency/task.h>
 #include <core/containers/map.h>
+#include <core/containers/pair.h>
 #include <core/containers/queue.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
@@ -125,7 +126,7 @@ public:
     GraphicsPipeline* create_graphics_pipeline(const GraphicsPipelineDescriptor& graphics_pipeline_descriptor) override;
     void destroy_graphics_pipeline(GraphicsPipeline* graphics_pipeline) override;
 
-    std::pair<Task*, Task*> create_tasks() override;
+    Pair<Task*, Task*> create_tasks() override;
     
     void recreate_swapchain() override;
 

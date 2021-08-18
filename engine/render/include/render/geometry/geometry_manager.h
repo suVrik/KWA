@@ -2,6 +2,7 @@
 
 #include "render/geometry/geometry_notifier.h"
 
+#include <core/containers/pair.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unordered_map.h>
@@ -39,7 +40,7 @@ public:
     // before the second task starts. If you are planning to load geometry on this frame, you need to place your task
     // before the first task. If you are planning to use geometry loaded on this frame, you need to place your task
     // after the second task.
-    std::pair<Task*, Task*> create_tasks();
+    Pair<Task*, Task*> create_tasks();
 
 private:
     class BeginTask;
@@ -52,7 +53,7 @@ private:
     MemoryResource& m_transient_memory_resource;
 
     UnorderedMap<String, SharedPtr<Geometry>> m_geometry;
-    Vector<std::pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
+    Vector<Pair<const String&, SharedPtr<Geometry>>> m_pending_geometry;
     mutable std::shared_mutex m_geometry_mutex;
 
     GeometryNotifier m_geometry_notifier;

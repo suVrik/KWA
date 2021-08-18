@@ -234,7 +234,7 @@ const String& TextureManager::get_relative_path(const SharedPtr<Texture*>& textu
     return EMPTY_STRING;
 }
 
-std::pair<Task*, Task*> TextureManager::create_tasks() {
+Pair<Task*, Task*> TextureManager::create_tasks() {
     Task* end_task = new (m_transient_memory_resource.allocate<NoopTask>()) NoopTask("Texture Manager End");
     Task* begin_task = new (m_transient_memory_resource.allocate<BeginTask>()) BeginTask(*this, end_task);
 

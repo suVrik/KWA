@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/containers/pair.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unordered_map.h>
@@ -81,7 +82,7 @@ private:
     std::shared_mutex m_graphics_pipelines_mutex;
 
     UnorderedMap<String, SharedPtr<Material>> m_materials;
-    Vector<std::pair<const String&, SharedPtr<Material>>> m_pending_materials;
+    Vector<Pair<const String&, SharedPtr<Material>>> m_pending_materials;
     std::shared_mutex m_materials_mutex;
 };
 

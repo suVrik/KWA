@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/containers/pair.h>
 #include <core/containers/shared_ptr.h>
 #include <core/containers/string.h>
 #include <core/containers/unordered_map.h>
@@ -35,7 +36,7 @@ public:
     // before the second task starts. If you are planning to load animations on this frame, you need to place your task
     // before the first task. If you are planning to use animations loaded on this frame, you need to place your task
     // after the second task.
-    std::pair<Task*, Task*> create_tasks();
+    Pair<Task*, Task*> create_tasks();
 
 private:
     class BeginTask;
@@ -47,7 +48,7 @@ private:
     MemoryResource& m_transient_memory_resource;
 
     UnorderedMap<String, SharedPtr<Animation>> m_animations;
-    Vector<std::pair<const String&, SharedPtr<Animation>>> m_pending_animations;
+    Vector<Pair<const String&, SharedPtr<Animation>>> m_pending_animations;
     std::shared_mutex m_animations_mutex;
 };
 

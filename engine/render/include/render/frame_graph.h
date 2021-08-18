@@ -2,7 +2,7 @@
 
 #include "render/render.h"
 
-#include <utility>
+#include <core/containers/pair.h>
 
 namespace kw {
 
@@ -467,7 +467,7 @@ public:
 
     // The first task acquires the swapchain and resets render pass implementations.
     // The second task submits the frame and presents the swapchain.
-    virtual std::pair<Task*, Task*> create_tasks() = 0;
+    virtual Pair<Task*, Task*> create_tasks() = 0;
 
     // Must be called when window size changes.
     virtual void recreate_swapchain() = 0;

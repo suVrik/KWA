@@ -1,5 +1,6 @@
 #include "render/debug/debug_draw_manager.h"
 
+#include <core/containers/pair.h>
 #include <core/memory/memory_resource.h>
 
 #include <array>
@@ -16,7 +17,7 @@ static const float3 ICOSAHEDRON_VERTICES[] = {
     float3( 0.72360679f, -0.44721359f,  0.52573111f), float3(-0.27639320f, -0.44721359f,  0.85065080f),
 };
 
-static const std::pair<size_t, size_t> ICOSAHEDRON_EDGES[] = {
+static const Pair<size_t, size_t> ICOSAHEDRON_EDGES[] = {
     { 0,  1  }, { 0,  2  }, { 0,  3  }, { 0,  4  }, { 0,  5  }, { 1,  2  },
     { 1,  5  }, { 1,  9  }, { 1,  10 }, { 2,  3  }, { 2,  10 }, { 2,  11 },
     { 3,  4  }, { 3,  7  }, { 3,  11 }, { 4,  5  }, { 4,  7  }, { 4,  8  },
@@ -29,7 +30,7 @@ static const float3 FRUSTUM_VERTICES[] = {
     float3(-1.f,  1.f, 1.f), float3( 1.f,  1.f, 1.f), float3(-1.f, -1.f, 1.f), float3( 1.f, -1.f, 1.f),
 };
 
-static const std::pair<size_t, size_t> FRUSTUM_EDGES[] = {
+static const Pair<size_t, size_t> FRUSTUM_EDGES[] = {
     { 0, 1 }, { 0, 2 }, { 0, 4 }, { 1, 3 }, { 1, 5 }, { 2, 3 },
     { 2, 6 }, { 3, 7 }, { 4, 5 }, { 4, 6 }, { 5, 7 }, { 6, 7 },
 };
