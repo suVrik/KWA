@@ -133,6 +133,7 @@ public:
 
     Texture* create_texture(const CreateTextureDescriptor& create_texture_descriptor) override;
     void upload_texture(const UploadTextureDescriptor& upload_texture_descriptor) override;
+    void clear_texture(const ClearTextureDescriptor& clear_texture_descriptor) override;
     void destroy_texture(Texture* texture) override;
 
     HostTexture* create_host_texture(const char* name, TextureFormat format, uint32_t width, uint32_t height) override;

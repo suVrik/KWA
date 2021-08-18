@@ -1246,6 +1246,164 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
     }
 }
 
+// TODO RENDER: Make it run in flush rather right now synchronously.
+void RenderVulkan::clear_texture(const ClearTextureDescriptor& clear_texture_descriptor) {
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = m_graphics_command_pool;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_buffer_allocate_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    VK_ERROR(
+        vkAllocateCommandBuffers(device, &command_buffer_allocate_info, &command_buffer),
+        "Failed to allocate a clear texture command buffer."
+    );
+    VK_NAME(*this, command_buffer, "Clear texture command buffer");
+
+    VkCommandBufferBeginInfo graphics_command_buffer_begin_info{};
+    graphics_command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    graphics_command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    VK_ERROR(
+        vkBeginCommandBuffer(command_buffer, &graphics_command_buffer_begin_info),
+        "Failed to begin a clear texture command buffer."
+    );
+
+    TextureVulkan* texture_vulkan = static_cast<TextureVulkan*>(clear_texture_descriptor.texture);
+    KW_ASSERT(texture_vulkan != nullptr);
+
+    VkImageAspectFlags aspect_mask;
+
+    if (TextureFormatUtils::is_depth(texture_vulkan->get_format())) {
+        if (TextureFormatUtils::is_depth_stencil(texture_vulkan->get_format())) {
+            aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        } else {
+            aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        }
+    } else {
+        aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+
+    VkImageSubresourceRange image_subresource_range{};
+    image_subresource_range.aspectMask = aspect_mask;
+    image_subresource_range.baseMipLevel = 0;
+    image_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+    image_subresource_range.baseArrayLayer = 0;
+    image_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    VkImageMemoryBarrier acquire_barrier{};
+    acquire_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    acquire_barrier.srcAccessMask = 0;
+    acquire_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    acquire_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    acquire_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    acquire_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    acquire_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    acquire_barrier.image = texture_vulkan->image;
+    acquire_barrier.subresourceRange = image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &acquire_barrier
+    );
+
+    if (TextureFormatUtils::is_depth(texture_vulkan->get_format())) {
+        VkClearDepthStencilValue clear_depth_stencil_value{};
+        clear_depth_stencil_value.depth = clear_texture_descriptor.clear_depth;
+        clear_depth_stencil_value.stencil = clear_texture_descriptor.clear_stencil;
+
+        vkCmdClearDepthStencilImage(command_buffer, texture_vulkan->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_depth_stencil_value, 1, &image_subresource_range);
+    } else {
+        VkClearColorValue clear_color_value{};
+        std::copy(std::begin(clear_texture_descriptor.clear_color), std::end(clear_texture_descriptor.clear_color), std::begin(clear_color_value.float32));
+
+        vkCmdClearColorImage(command_buffer, texture_vulkan->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color_value, 1, &image_subresource_range);
+    }
+
+    VkImageMemoryBarrier release_barrier{};
+    release_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    release_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    release_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    release_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    release_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    release_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    release_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    release_barrier.image = texture_vulkan->image;
+    release_barrier.subresourceRange = image_subresource_range;
+
+    vkCmdPipelineBarrier(
+        command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
+        0, nullptr, 0, nullptr, 1, &release_barrier
+    );
+
+    VK_ERROR(
+        vkEndCommandBuffer(command_buffer),
+        "Failed to end a clear texture command buffer."
+    );
+
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 0;
+    submit_info.pWaitSemaphores = nullptr;
+    submit_info.pWaitDstStageMask = nullptr;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = nullptr;
+
+    VK_ERROR(
+        vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE),
+        "Failed to submit clear texture command to device."
+    );
+
+    VK_ERROR(vkDeviceWaitIdle(device), "Failed to wait idle.");
+
+    vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &command_buffer);
+
+    if (texture_vulkan->get_available_mip_level_count() != texture_vulkan->get_mip_level_count()) {
+        if (texture_vulkan->image_view != nullptr) {
+            // Must be safe to destroy image view right now after `vkDeviceWaitIdle`.
+            vkDestroyImageView(device, texture_vulkan->image_view, &allocation_callbacks);
+        }
+
+        VkImageViewType image_view_type;
+
+        switch (texture_vulkan->get_type()) {
+        case TextureType::TEXTURE_2D:
+            image_view_type = VK_IMAGE_VIEW_TYPE_2D;
+            break;
+        case TextureType::TEXTURE_CUBE:
+            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE;
+            break;
+        case TextureType::TEXTURE_3D:
+            image_view_type = VK_IMAGE_VIEW_TYPE_3D;
+            break;
+        case TextureType::TEXTURE_2D_ARRAY:
+            image_view_type = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+            break;
+        case TextureType::TEXTURE_CUBE_ARRAY:
+            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+            break;
+        }
+
+        VkImageViewCreateInfo image_view_create_info{};
+        image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        image_view_create_info.flags = 0;
+        image_view_create_info.image = texture_vulkan->image;
+        image_view_create_info.viewType = image_view_type;
+        image_view_create_info.format = TextureFormatUtils::convert_format_vulkan(texture_vulkan->get_format());
+        image_view_create_info.subresourceRange = image_subresource_range;
+
+        VK_ERROR(
+            vkCreateImageView(device, &image_view_create_info, &allocation_callbacks, &texture_vulkan->image_view),
+            "Failed to create image view."
+        );
+
+        texture_vulkan->set_available_mip_level_count(texture_vulkan->get_mip_level_count());
+    }
+}
+
 void RenderVulkan::destroy_texture(Texture* texture) {
     if (texture != nullptr) {
         std::lock_guard lock(m_texture_destroy_command_mutex);

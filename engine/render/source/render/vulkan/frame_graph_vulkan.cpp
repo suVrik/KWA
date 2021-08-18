@@ -4996,7 +4996,9 @@ void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment,
     }
 
     TextureVulkan* texture_vulkan = static_cast<TextureVulkan*>(destination_texture);
-    KW_ASSERT(texture_vulkan != nullptr);
+    KW_ASSERT(texture_vulkan != nullptr, "Invalid texture.");
+    KW_ASSERT(texture_vulkan->image_view != VK_NULL_HANDLE, "Image view is expected to be not null.");
+    KW_ASSERT(texture_vulkan->get_available_mip_level_count() == texture_vulkan->get_mip_level_count(), "All mip levels must be available.");
 
     uint32_t attachment_index = 0;
     for (; attachment_index < m_frame_graph.m_attachment_descriptors.size(); attachment_index++) {
@@ -5141,62 +5143,6 @@ void FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment,
         command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, attachment_barrier_data.destination_pipeline_stage_mask, 0,
         0, nullptr, 0, nullptr, 2, image_release_barriers
     );
-
-    KW_ASSERT(
-        texture_vulkan->get_available_mip_level_count() == texture_vulkan->get_mip_level_count() || texture_vulkan->get_available_mip_level_count() == 0,
-        "Texture must be either fully available or not available at all for blitting."
-    );
-
-    std::lock_guard lock2(m_frame_graph.m_blit_mutex);
-
-    if (texture_vulkan->get_available_mip_level_count() == 0) {
-        KW_ASSERT(
-            texture_vulkan->image_view == VK_NULL_HANDLE,
-            "Image view is expected to be null."
-        );
-
-        VkImageViewType image_view_type;
-
-        switch (texture_vulkan->get_type()) {
-        case TextureType::TEXTURE_2D:
-            image_view_type = VK_IMAGE_VIEW_TYPE_2D;
-            break;
-        case TextureType::TEXTURE_CUBE:
-            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE;
-            break;
-        case TextureType::TEXTURE_3D:
-            image_view_type = VK_IMAGE_VIEW_TYPE_3D;
-            break;
-        case TextureType::TEXTURE_2D_ARRAY:
-            image_view_type = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-            break;
-        case TextureType::TEXTURE_CUBE_ARRAY:
-            image_view_type = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
-            break;
-        }
-
-        VkImageSubresourceRange image_view_subresource_range{};
-        image_view_subresource_range.aspectMask = aspect_mask;
-        image_view_subresource_range.baseMipLevel = 0;
-        image_view_subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
-        image_view_subresource_range.baseArrayLayer = 0;
-        image_view_subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-        VkImageViewCreateInfo image_view_create_info{};
-        image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        image_view_create_info.flags = 0;
-        image_view_create_info.image = texture_vulkan->image;
-        image_view_create_info.viewType = image_view_type;
-        image_view_create_info.format = TextureFormatUtils::convert_format_vulkan(texture_vulkan->get_format());
-        image_view_create_info.subresourceRange = image_view_subresource_range;
-
-        VK_ERROR(
-            vkCreateImageView(m_frame_graph.m_render.device, &image_view_create_info, &m_frame_graph.m_render.allocation_callbacks, &texture_vulkan->image_view),
-            "Failed to create image view."
-        );
-
-        texture_vulkan->set_available_mip_level_count(texture_vulkan->get_mip_level_count());
-    }
 }
 
 uint64_t FrameGraphVulkan::RenderPassImplVulkan::blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index) {

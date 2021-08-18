@@ -327,6 +327,17 @@ struct UploadTextureDescriptor {
     uint32_t depth; // Depth of base mip level or sub-range within it. 0 is interpreted as 1.
 };
 
+struct ClearTextureDescriptor {
+    Texture* texture;
+
+    // For color formats.
+    float clear_color[4];
+
+    // For depth stencil formats.
+    float clear_depth;
+    uint8_t clear_stencil;
+};
+
 class Render {
 public:
     static Render* create_instance(const RenderDescriptor& descriptor);
@@ -363,6 +374,9 @@ public:
     // it automatically becomes available and can be sampled in shaders. May block if staging buffer is full
     // and needs to be flushed. If data is larger than staging buffer, multiple flushes will be performed.
     virtual void upload_texture(const UploadTextureDescriptor& upload_texture_descriptor) = 0;
+
+    // Clear texture with the given color/depth stencil and make all of its mip levels and array layers available.
+    virtual void clear_texture(const ClearTextureDescriptor& clear_texture_descriptor) = 0;
 
     // The actual resource is destroyed when all frames that were using it have completed on device.
     virtual void destroy_texture(Texture* texture) = 0;
