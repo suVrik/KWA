@@ -7,7 +7,6 @@ namespace kw {
 class Scene;
 
 struct GeometryRenderPassDescriptor {
-    Render* render;
     Scene* scene;
     MemoryResource* transient_memory_resource;
 };
@@ -28,7 +27,6 @@ public:
 private:
     class Task;
 
-    Render& m_render;
     Scene& m_scene;
     MemoryResource& m_transient_memory_resource;
 };

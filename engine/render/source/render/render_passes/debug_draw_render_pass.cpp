@@ -78,8 +78,7 @@ private:
 };
 
 DebugDrawRenderPass::DebugDrawRenderPass(const DebugDrawRenderPassDescriptor& descriptor)
-    : m_render(*descriptor.render)
-    , m_debug_draw_manager(*descriptor.debug_draw_manager)
+    : m_debug_draw_manager(*descriptor.debug_draw_manager)
     , m_scene(*descriptor.scene)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_graphics_pipeline(nullptr)

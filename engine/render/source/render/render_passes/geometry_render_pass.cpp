@@ -169,11 +169,9 @@ private:
 };
 
 GeometryRenderPass::GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor)
-    : m_render(*descriptor.render)
-    , m_scene(*descriptor.scene)
+    : m_scene(*descriptor.scene)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
-    KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.scene != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }

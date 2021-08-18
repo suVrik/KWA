@@ -8,7 +8,6 @@ class DebugDrawManager;
 class Scene;
 
 struct DebugDrawRenderPassDescriptor {
-    Render* render;
     DebugDrawManager* debug_draw_manager;
     Scene* scene;
     MemoryResource* transient_memory_resource;
@@ -30,7 +29,6 @@ public:
 private:
     class Task;
 
-    Render& m_render;
     DebugDrawManager& m_debug_draw_manager;
     Scene& m_scene;
     MemoryResource& m_transient_memory_resource;

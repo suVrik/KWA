@@ -43,6 +43,7 @@
 #include <core/concurrency/concurrency_utils.h>
 #include <core/concurrency/task.h>
 #include <core/concurrency/task_scheduler.h>
+#include <core/containers/pair.h>
 #include <core/containers/set.h>
 #include <core/debug/assert.h>
 #include <core/debug/cpu_profiler.h>
@@ -137,7 +138,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     ShadowRenderPass shadow_render_pass(shadow_render_pass_descriptor);
 
     GeometryRenderPassDescriptor geometry_render_pass_descriptor{};
-    geometry_render_pass_descriptor.render = render.get();
     geometry_render_pass_descriptor.scene = &scene;
     geometry_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
@@ -158,7 +158,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     TonemappingRenderPass tonemapping_render_pass(tonemapping_render_pass_descriptor);
 
     DebugDrawRenderPassDescriptor debug_draw_render_pass_descriptor{};
-    debug_draw_render_pass_descriptor.render = render.get();
     debug_draw_render_pass_descriptor.debug_draw_manager = &debug_draw_manager;
     debug_draw_render_pass_descriptor.scene = &scene;
     debug_draw_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
@@ -262,7 +261,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     uint32_t instance_count;
     level_stream >> prototype_count >> instance_count;
 
-    UnorderedMap<String, std::pair<String, String>> prototypes(persistent_memory_resource);
+    UnorderedMap<String, Pair<String, String>> prototypes(persistent_memory_resource);
     prototypes.reserve(prototype_count);
 
     for (uint32_t i = 0; i < prototype_count; i++) {
@@ -274,7 +273,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         level_stream >> geometry;
         level_stream >> material;
 
-        prototypes.emplace(std::move(name), std::pair<String, String>{ geometry, material });
+        prototypes.emplace(std::move(name), Pair<String, String>{ geometry, material });
     }
 
     Vector<GeometryPrimitive> instances(persistent_memory_resource);
