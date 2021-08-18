@@ -163,6 +163,11 @@ bool MarkdownReader::spaces() {
     return parse(&MarkdownReader::space, &MarkdownReader::opt_spaces);
 }
 
+bool MarkdownReader::comma_spaces() {
+    return parse(&MarkdownReader::opt_spaces, ',', &MarkdownReader::opt_spaces) ||
+           parse(&MarkdownReader::space, &MarkdownReader::opt_spaces);
+}
+
 bool MarkdownReader::real_number() {
     return parse(&MarkdownReader::int_number, '.', &MarkdownReader::digit, &MarkdownReader::opt_digits);
 }
@@ -225,7 +230,7 @@ bool MarkdownReader::key_value() {
 }
 
 bool MarkdownReader::opt_space_separated_key_values() {
-    return parse_recursive(&MarkdownReader::spaces, &MarkdownReader::key_value);
+    return parse_recursive(&MarkdownReader::comma_spaces, &MarkdownReader::key_value);
 }
 
 bool MarkdownReader::opt_key_values() {
@@ -233,7 +238,7 @@ bool MarkdownReader::opt_key_values() {
 }
 
 bool MarkdownReader::opt_space_separated_values() {
-    return parse_recursive(&MarkdownReader::spaces, &MarkdownReader::value);
+    return parse_recursive(&MarkdownReader::comma_spaces, &MarkdownReader::value);
 }
 
 bool MarkdownReader::opt_values() {

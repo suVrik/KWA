@@ -53,6 +53,7 @@ private:
     bool opt_spaces();
     bool opt_minus();
     bool spaces();
+    bool comma_spaces();
     bool real_number();
     bool int_number();
     bool number();
