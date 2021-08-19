@@ -14,8 +14,8 @@ extern std::atomic_uint64_t acceleration_structure_counter;
 
 AnimatedGeometryPrimitive::AnimatedGeometryPrimitive(MemoryResource& memory_resource, SharedPtr<Animation> animation,
                                                      SharedPtr<Geometry> geometry, SharedPtr<Material> material,
-                                                     const transform& local_transform)
-    : GeometryPrimitive(geometry, material, local_transform)
+                                                     SharedPtr<Material> shadow_material, const transform& local_transform)
+    : GeometryPrimitive(geometry, material, shadow_material, local_transform)
     , m_animation_player(nullptr)
     , m_skeleton_pose(memory_resource)
     , m_animation(std::move(animation))

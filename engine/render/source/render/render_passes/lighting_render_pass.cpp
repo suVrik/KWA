@@ -1,7 +1,7 @@
 #include "render/render_passes/lighting_render_pass.h"
 #include "render/light/sphere_light_primitive.h"
-#include "render/render_passes/shadow_render_pass.h"
 #include "render/scene/scene.h"
+#include "render/shadow/shadow_manager.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
@@ -91,17 +91,11 @@ private:
             graphics_pipeline = m_render_pass.m_sphere_light_graphics_pipelines[0];
         }
 
-        Texture* uniform_textures[2] = {
-            m_render_pass.m_shadow_render_pass.get_dummy_shadow_map(),
+        Texture* uniform_textures[3] = {
+            m_render_pass.m_shadow_manager.get_depth_texture(sphere_light_primitive),
+            m_render_pass.m_shadow_manager.get_color_texture(sphere_light_primitive),
             m_render_pass.m_pcf_rotation_texture,
         };
-
-        for (const ShadowRenderPass::ShadowMap& shadow_map : m_render_pass.m_shadow_render_pass.get_shadow_maps()) {
-            if (shadow_map.light_primitive == sphere_light_primitive) {
-                uniform_textures[0] = shadow_map.texture;
-                break;
-            }
-        }
 
         DrawCallDescriptor draw_call_descriptor{};
         draw_call_descriptor.graphics_pipeline = graphics_pipeline;
@@ -126,7 +120,7 @@ private:
 LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descriptor)
     : m_render(*descriptor.render)
     , m_scene(*descriptor.scene)
-    , m_shadow_render_pass(*descriptor.shadow_render_pass)
+    , m_shadow_manager(*descriptor.shadow_manager)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_pcf_rotation_texture(nullptr)
     , m_sphere_light_vertex_buffer(nullptr)
@@ -135,7 +129,7 @@ LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descr
 {
     KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.scene != nullptr);
-    KW_ASSERT(descriptor.shadow_render_pass != nullptr);
+    KW_ASSERT(descriptor.shadow_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 
     CreateTextureDescriptor create_texture_descriptor{};
@@ -307,11 +301,13 @@ void LightingRenderPass::create_sphere_light_graphics_pipelines(FrameGraph& fram
     uniform_attachment_descriptors[3].variable_name = "depth_uniform_attachment";
     uniform_attachment_descriptors[3].attachment_name = "depth_attachment";
 
-    UniformTextureDescriptor uniform_texture_descriptors[2]{};
+    UniformTextureDescriptor uniform_texture_descriptors[3]{};
     uniform_texture_descriptors[0].texture_type = TextureType::TEXTURE_CUBE;
-    uniform_texture_descriptors[0].variable_name = "shadow_uniform_texture";
-    uniform_texture_descriptors[1].texture_type = TextureType::TEXTURE_3D;
-    uniform_texture_descriptors[1].variable_name = "pcf_rotation_uniform_texture";
+    uniform_texture_descriptors[0].variable_name = "opaque_shadow_uniform_texture";
+    uniform_texture_descriptors[1].texture_type = TextureType::TEXTURE_CUBE;
+    uniform_texture_descriptors[1].variable_name = "translucent_shadow_uniform_texture";
+    uniform_texture_descriptors[2].texture_type = TextureType::TEXTURE_3D;
+    uniform_texture_descriptors[2].variable_name = "pcf_rotation_uniform_texture";
 
     UniformSamplerDescriptor uniform_sampler_descriptors[2]{};
     uniform_sampler_descriptors[0].variable_name = "sampler_uniform";

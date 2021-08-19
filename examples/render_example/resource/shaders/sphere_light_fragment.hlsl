@@ -9,7 +9,8 @@ Texture2D normal_roughness_uniform_attachment;
 Texture2D emission_metalness_uniform_attachment;
 Texture2D depth_uniform_attachment;
 
-TextureCube shadow_uniform_texture;
+TextureCube opaque_shadow_uniform_texture;
+TextureCube translucent_shadow_uniform_texture;
 Texture3D pcf_rotation_uniform_texture;
 
 SamplerState sampler_uniform;
@@ -61,7 +62,7 @@ static const float2 POISSON_DISK[16] = {
     float2( 0.14383161, -0.14100790)
 };
 
-float pcss(float3 light_position, float3 clip_position, float3 clip_normal, float light_radius) {
+float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal, float light_radius) {
     float3 light_clip_vector = clip_position + clip_normal * sphere_light_push_constants.shadow_params.x - light_position;
 
     float z_near = sphere_light_push_constants.radius_frustum.z;
@@ -91,15 +92,17 @@ float pcss(float3 light_position, float3 clip_position, float3 clip_normal, floa
 
         float3 uv = light_clip_vector + search_radius * (disk_basis_x * poisson_disk_x + disk_basis_y * poisson_disk_y);
 
-        float non_linear_blocker_depth = shadow_uniform_texture.SampleLevel(sampler_uniform, uv, 0.0).r;
+        float non_linear_blocker_depth = opaque_shadow_uniform_texture.SampleLevel(sampler_uniform, uv, 0.0).r;
         if (non_linear_blocker_depth < non_linear_depth - sphere_light_push_constants.shadow_params.y) {
             sum += non_linear_blocker_depth;
             count++;
         }
     }
 
+    float3 translucent = translucent_shadow_uniform_texture.SampleLevel(sampler_uniform, light_clip_vector, 0.0);
+
     if (count == 0) {
-        return 1.0;
+        return translucent;
     }
 
     float average_linear_blocker_depth = z_far * z_near / (z_far - sum / count * (z_far - z_near));
@@ -113,10 +116,11 @@ float pcss(float3 light_position, float3 clip_position, float3 clip_normal, floa
 
         float3 uv = light_clip_vector + filter_radius * (disk_basis_x * poisson_disk_x + disk_basis_y * poisson_disk_y);
 
-        sum += shadow_uniform_texture.SampleCmpLevelZero(shadow_sampler_uniform, uv, non_linear_depth - sphere_light_push_constants.shadow_params.y).r;
+        sum += opaque_shadow_uniform_texture.SampleCmpLevelZero(shadow_sampler_uniform, uv, non_linear_depth - sphere_light_push_constants.shadow_params.y).r;
     }
 
-    return sum / 16.0;
+    float opaque = sum / 16.0;
+    return opaque * translucent;
 }
 
 float specular_d(float n_dot_h, float sqr_alpha) {
@@ -213,7 +217,7 @@ float4 main(FS_INPUT input) : SV_TARGET {
 
     float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo * ambient_occlusion * integrate_sphere(radius_over_distance, normal_dot_light_center) * specular_diffuse.y;
 
-    float shadow_sample = pcss(sphere_light_push_constants.position.xyz, clip_position.xyz, normal_direction, sphere_light_push_constants.radius_frustum.x);
+    float3 shadow_sample = pcss(sphere_light_push_constants.position.xyz, clip_position.xyz, normal_direction, sphere_light_push_constants.radius_frustum.x);
     
     return float4((specular + diffuse) * attenuation(light_center_distance, light_radius.y) * light_luminance * shadow_sample, 1.0);
 }

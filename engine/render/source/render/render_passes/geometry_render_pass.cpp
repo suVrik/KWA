@@ -48,46 +48,50 @@ public:
                     (*to_it)->get_material() != (*from_it)->get_material() ||
                     ((*from_it)->get_material() && (*from_it)->get_material()->is_skinned()))
                 {
-                    if ((*from_it)->get_geometry() &&
-                        (*from_it)->get_material() &&
-                        (!(*from_it)->get_material()->is_skinned() || (*from_it)->get_geometry()->get_skinned_vertex_buffer() != nullptr))
+                    SharedPtr<Geometry> geometry = (*from_it)->get_geometry();
+                    SharedPtr<Material> material = (*from_it)->get_material();
+
+                    if (geometry && geometry->is_loaded() && material && material->is_loaded() &&
+                        (!material->is_skinned() || geometry->get_skinned_vertex_buffer() != nullptr))
                     {
-                        Geometry& geometry = *(*from_it)->get_geometry();
-                        Material& material = *(*from_it)->get_material();
+                        KW_ASSERT(
+                            !material->is_shadow() && material->is_geometry(),
+                            "Invalid geometry primitive material."
+                        );
 
                         VertexBuffer* vertex_buffers[2] = {
-                            geometry.get_vertex_buffer(),
-                            geometry.get_skinned_vertex_buffer(),
+                            geometry->get_vertex_buffer(),
+                            geometry->get_skinned_vertex_buffer(),
                         };
-                        size_t vertex_buffer_count = material.is_skinned() ? 2 : 1;
+                        size_t vertex_buffer_count = material->is_skinned() ? 2 : 1;
 
-                        IndexBuffer* index_buffer = geometry.get_index_buffer();
-                        uint32_t index_count = geometry.get_index_count();
+                        IndexBuffer* index_buffer = geometry->get_index_buffer();
+                        uint32_t index_count = geometry->get_index_count();
 
                         VertexBuffer* instance_buffer = nullptr;
                         size_t instance_buffer_count = 0;
 
-                        if (!material.is_skinned()) {
-                            Vector<Material::InstanceData> instances_data(m_render_pass.m_transient_memory_resource);
+                        if (!material->is_skinned()) {
+                            Vector<Material::GeometryInstanceData> instances_data(m_render_pass.m_transient_memory_resource);
                             instances_data.reserve(to_it - from_it);
 
                             for (auto it = from_it; it != to_it; ++it) {
-                                Material::InstanceData instance_data;
+                                Material::GeometryInstanceData instance_data;
                                 instance_data.model = float4x4((*it)->get_global_transform());
                                 instance_data.inverse_transpose_model = transpose(inverse(instance_data.model));
                                 instances_data.push_back(instance_data);
                             }
 
-                            instance_buffer = context->get_render().acquire_transient_vertex_buffer(instances_data.data(), instances_data.size() * sizeof(Material::InstanceData));
+                            instance_buffer = context->get_render().acquire_transient_vertex_buffer(instances_data.data(), instances_data.size() * sizeof(Material::GeometryInstanceData));
                             KW_ASSERT(instance_buffer != nullptr);
 
                             instance_buffer_count = 1;
                         }
 
                         Vector<Texture*> uniform_textures(m_render_pass.m_transient_memory_resource);
-                        uniform_textures.reserve(material.get_textures().size());
+                        uniform_textures.reserve(material->get_textures().size());
 
-                        for (const SharedPtr<Texture*>& texture : material.get_textures()) {
+                        for (const SharedPtr<Texture*>& texture : material->get_textures()) {
                             KW_ASSERT(texture && *texture != nullptr);
                             uniform_textures.push_back(*texture);
                         }
@@ -95,7 +99,7 @@ public:
                         UniformBuffer* uniform_buffer = nullptr;
                         size_t uniform_buffer_count = 0;
 
-                        if (material.is_skinned()) {
+                        if (material->is_skinned()) {
                             Vector<float4x4> model_space_joint_matrices = (*from_it)->get_model_space_joint_matrices(m_render_pass.m_transient_memory_resource);
 
                             Material::UniformData uniform_data{};
@@ -109,11 +113,11 @@ public:
                             uniform_buffer_count = 1;
                         }
 
-                        Material::PushConstants geometry_push_constants{};
+                        Material::GeometryPushConstants geometry_push_constants{};
                         geometry_push_constants.view_projection = m_render_pass.m_scene.get_camera().get_view_projection_matrix();
 
                         DrawCallDescriptor draw_call_descriptor{};
-                        draw_call_descriptor.graphics_pipeline = *material.get_graphics_pipeline();
+                        draw_call_descriptor.graphics_pipeline = *material->get_graphics_pipeline();
                         draw_call_descriptor.vertex_buffers = vertex_buffers;
                         draw_call_descriptor.vertex_buffer_count = vertex_buffer_count;
                         draw_call_descriptor.instance_buffers = &instance_buffer;

@@ -52,6 +52,18 @@ private:
     class MaterialTask;
     class GraphicsPipelineTask;
 
+    struct GraphicsPipelineKey {
+        GraphicsPipelineKey(String&& vertex_shader_, String&& fragment_shader_, bool is_shadow_);
+        bool operator==(const GraphicsPipelineKey& other) const;
+
+        String vertex_shader;
+        String fragment_shader;
+
+        // Two graphics pipelines with the same vertex and fragment shaders but different `is_shadow` values
+        // are allowed for particles and are different because they target different render passes.
+        bool is_shadow;
+    };
+
     struct GraphicsPipelineContext {
         GraphicsPipelineContext(MemoryResource& memory_resource);
 
@@ -60,16 +72,16 @@ private:
         // These are used on graphics pipeline creation and to validate further graphics pipeline loads.
         Vector<String> textures;
         bool is_skinned;
+        bool is_particle;
     };
 
     struct GraphicsPipelineHash {
-        size_t operator()(const std::pair<String, String>& value) const;
+        size_t operator()(const GraphicsPipelineKey& value) const;
     };
 
     // If graphics pipeline with given vertex and fragment shaders doesn't exist, graphics pipeline task is enqueued.
-    SharedPtr<GraphicsPipeline*> load(const char* vertex_shader, const char* fragment_shader,
-                                      const Vector<String>& textures, bool is_skinned,
-                                      Task* graphics_pipeline_end);
+    SharedPtr<GraphicsPipeline*> load(const char* vertex_shader, const char* fragment_shader, const Vector<String>& textures,
+                                      bool is_shadow, bool is_skinned, bool is_particle, Task* graphics_pipeline_end);
 
     FrameGraph& m_frame_graph;
     TaskScheduler& m_task_scheduler;
@@ -78,7 +90,7 @@ private:
     MemoryResource& m_persistent_memory_resource;
     MemoryResource& m_transient_memory_resource;
 
-    UnorderedMap<std::pair<String, String>, GraphicsPipelineContext, GraphicsPipelineHash> m_graphics_pipelines;
+    UnorderedMap<GraphicsPipelineKey, GraphicsPipelineContext, GraphicsPipelineHash> m_graphics_pipelines;
     std::shared_mutex m_graphics_pipelines_mutex;
 
     UnorderedMap<String, SharedPtr<Material>> m_materials;

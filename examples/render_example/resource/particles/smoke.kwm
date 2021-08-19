@@ -1,0 +1,64 @@
+{
+  duration: 1,
+  loop_count: 0,
+  max_particle_count: 32,
+  max_bounds: {
+    center: [ 0, 3, 0 ],
+    extent: [ 1, 3, 1 ]
+  },
+  geometry: "resource/geometry/particle_quad_02.kwg",
+  material: "resource/materials/smoke.kwm",
+  shadow_material: "resource/materials/smoke_shadow.kwm",
+  spritesheet_x: 8,
+  spritesheet_y: 8,
+  axes: "YZ",
+  emitters: {
+    OverLifetimeParticleSystemEmitter: {
+      from: 15,
+      to: 15
+    }
+  },
+  generators: {
+    LifetimeParticleSystemGenerator: {
+      min: 2,
+      max: 3
+    },
+    ScaleParticleSystemGenerator: {
+      is_uniform: true,
+      min: [ 0.04, 0.04, 0.04 ],
+      max: [ 0.09, 0.09, 0.09 ]
+    },
+    VelocityParticleSystemGenerator: {
+      min: [ -0.4, 1, -0.15 ],
+      max: [ 0.4, 2, 0.15 ]
+    },
+    CylinderPositionParticleSystemGenerator: {
+      origin: [ 0, 0, 0 ]
+      radius: 0.6,
+      height: 0.2
+    },
+    FrameParticleSystemGenerator: {
+      min: 0,
+      max: 0
+    }
+  },
+  updaters: {
+    PositionParticleSystemUpdater: {},
+    FrameParticleSystemUpdater: {
+      framerate: 45
+    },
+    ColorOverLifetimeParticleSystemUpdater: {
+      inputs: [ 0, 1 ],
+      outputs: [ [ 0, 0, 0 ], [ 0.05, 0.05, 0.05 ] ]
+    },
+    AlphaOverLifetimeParticleSystemUpdater: {
+      inputs: [ 0, 0.2, 0.7, 1 ],
+      outputs: [ 0, 1, 1, 0 ]
+    },
+    ScaleOverLifetimeParticleSystemUpdater: {
+      inputs: [ 0, 0.1, 1 ],
+      outputs: [ [ 5, 5, 5 ], [ 10, 10, 10 ], [ 50, 50, 50 ] ]
+    },
+    LifetimeParticleSystemUpdater: {}
+  }
+}

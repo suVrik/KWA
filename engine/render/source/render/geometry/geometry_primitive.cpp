@@ -11,10 +11,11 @@ namespace kw {
 // Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
 extern std::atomic_uint64_t acceleration_structure_counter;
 
-GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, const transform& local_transform)
+GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, SharedPtr<Material> shadow_material, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)
     , m_geometry(std::move(geometry))
     , m_material(std::move(material))
+    , m_shadow_material(std::move(shadow_material))
 {
     // If geometry is not loaded yet, it will end up in center acceleration structure's node.
 
@@ -28,6 +29,7 @@ GeometryPrimitive::GeometryPrimitive(const GeometryPrimitive& other)
     : AccelerationStructurePrimitive(other)
     , m_geometry(other.m_geometry)
     , m_material(other.m_material)
+    , m_shadow_material(other.m_shadow_material)
 {
     if (m_geometry) {
         // If geometry is already loaded, `geometry_loaded` will be called immediately.
@@ -38,6 +40,7 @@ GeometryPrimitive::GeometryPrimitive(const GeometryPrimitive& other)
 GeometryPrimitive::GeometryPrimitive(GeometryPrimitive&& other)
     : AccelerationStructurePrimitive(std::move(other))
     , m_material(std::move(other.m_material))
+    , m_shadow_material(std::move(other.m_shadow_material))
 {
     if (other.m_geometry) {
         // No effect if `geometry_loaded` for this primitive & geometry was already called.
@@ -67,6 +70,7 @@ GeometryPrimitive& GeometryPrimitive::operator=(const GeometryPrimitive& other) 
 
     m_geometry = other.m_geometry;
     m_material = other.m_material;
+    m_shadow_material = other.m_shadow_material;
 
     if (m_geometry) {
         // If geometry is already loaded, `geometry_loaded` will be called immediately.
@@ -80,6 +84,7 @@ GeometryPrimitive& GeometryPrimitive::operator=(GeometryPrimitive&& other) {
     AccelerationStructurePrimitive::operator=(std::move(other));
 
     m_material = std::move(other.m_material);
+    m_shadow_material = std::move(other.m_shadow_material);
 
     if (m_geometry) {
         // No effect if `geometry_loaded` for this primitive & geometry was already called.
@@ -127,9 +132,23 @@ const SharedPtr<Material>& GeometryPrimitive::get_material() const {
 
 void GeometryPrimitive::set_material(SharedPtr<Material> material) {
     if (m_material != material) {
+        // TODO: Actually we need to re-render the shadow map when object's material is loaded, not changed.
         m_counter = ++acceleration_structure_counter;
 
         m_material = std::move(material);
+    }
+}
+
+const SharedPtr<Material>& GeometryPrimitive::get_shadow_material() const {
+    return m_shadow_material;
+}
+
+void GeometryPrimitive::set_shadow_material(SharedPtr<Material> material) {
+    if (m_shadow_material != material) {
+        // TODO: Actually we need to re-render the shadow map when object's material is loaded, not changed.
+        m_counter = ++acceleration_structure_counter;
+
+        m_shadow_material = std::move(material);
     }
 }
 

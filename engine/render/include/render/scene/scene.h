@@ -14,11 +14,15 @@ class AnimationPlayer;
 class frustum;
 class GeometryPrimitive;
 class LightPrimitive;
+class ParticleSystemPlayer;
+class ParticleSystemPrimitive;
 
 struct SceneDescriptor {
     AnimationPlayer* animation_player;
+    ParticleSystemPlayer* particle_system_player;
     AccelerationStructure* geometry_acceleration_structure;
     AccelerationStructure* light_acceleration_structure;
+    AccelerationStructure* particle_system_acceleration_structure;
     MemoryResource* persistent_memory_resource;
     MemoryResource* transient_memory_resource;
 };
@@ -32,6 +36,9 @@ public:
     
     Vector<LightPrimitive*> query_lights(const aabbox& bounds) const;
     Vector<LightPrimitive*> query_lights(const frustum& frustum) const;
+    
+    Vector<ParticleSystemPrimitive*> query_particle_systems(const aabbox& bounds) const;
+    Vector<ParticleSystemPrimitive*> query_particle_systems(const frustum& frustum) const;
 
     const Camera& get_camera() const;
     Camera& get_camera();
@@ -51,8 +58,10 @@ private:
     void remove_container_primitive(ContainerPrimitive& container_primitive);
 
     AnimationPlayer& m_animation_player;
+    ParticleSystemPlayer& m_particle_system_player;
     AccelerationStructure& m_geometry_acceleration_structure;
     AccelerationStructure& m_light_acceleration_structure;
+    AccelerationStructure& m_particle_system_acceleration_structure;
     MemoryResource& m_transient_memory_resource;
 
     Camera m_camera;

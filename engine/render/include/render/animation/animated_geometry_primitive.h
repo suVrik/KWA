@@ -14,6 +14,7 @@ public:
                               SharedPtr<Animation> animation = nullptr,
                               SharedPtr<Geometry> geometry = nullptr,
                               SharedPtr<Material> material = nullptr,
+                              SharedPtr<Material> shadow_material = nullptr,
                               const transform& local_transform = transform());
     AnimatedGeometryPrimitive(const AnimatedGeometryPrimitive& other);
     AnimatedGeometryPrimitive(AnimatedGeometryPrimitive&& other);

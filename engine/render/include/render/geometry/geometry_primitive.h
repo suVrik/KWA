@@ -15,6 +15,7 @@ class GeometryPrimitive : public AccelerationStructurePrimitive, public Geometry
 public:
     explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr,
                                SharedPtr<Material> material = nullptr,
+                               SharedPtr<Material> shadow_material = nullptr,
                                const transform& local_transform = transform());
     GeometryPrimitive(const GeometryPrimitive& other);
     GeometryPrimitive(GeometryPrimitive&& other);
@@ -26,7 +27,10 @@ public:
     void set_geometry(SharedPtr<Geometry> geometry);
 
     const SharedPtr<Material>& get_material() const;
-    void set_material(SharedPtr<Material> geometry);
+    void set_material(SharedPtr<Material> material);
+
+    const SharedPtr<Material>& get_shadow_material() const;
+    void set_shadow_material(SharedPtr<Material> material);
 
     // Returns joint transformation matrcies in model space. Returns an empty array if this geometry is not skinned.
     // Returns default bind pose if this geometry doesn't have a custom pose (i.e. not an `AnimatedGeometryPrimitive`).
@@ -39,6 +43,7 @@ protected:
 private:
     SharedPtr<Geometry> m_geometry;
     SharedPtr<Material> m_material;
+    SharedPtr<Material> m_shadow_material;
 };
 
 } // namespace kw

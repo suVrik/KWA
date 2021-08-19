@@ -5,12 +5,12 @@
 namespace kw {
 
 class Scene;
-class ShadowRenderPass;
+class ShadowManager;
 
 struct LightingRenderPassDescriptor {
     Render* render;
     Scene* scene;
-    ShadowRenderPass* shadow_render_pass;
+    ShadowManager* shadow_manager;
     MemoryResource* transient_memory_resource;
 };
 
@@ -36,7 +36,7 @@ private:
 
     Render& m_render;
     Scene& m_scene;
-    ShadowRenderPass& m_shadow_render_pass;
+    ShadowManager& m_shadow_manager;
     MemoryResource& m_transient_memory_resource;
 
     Texture* m_pcf_rotation_texture;
