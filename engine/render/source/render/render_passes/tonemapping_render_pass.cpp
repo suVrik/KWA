@@ -25,7 +25,7 @@ public:
         }
     }
 
-    const char* get_name() const {
+    const char* get_name() const override {
         return "HDR Render Pass";
     }
 

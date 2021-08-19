@@ -51,7 +51,7 @@ public:
         }
     }
 
-    const char* get_name() const {
+    const char* get_name() const override {
         return "Animation Player Worker";
     }
 
@@ -83,7 +83,7 @@ public:
         }
     }
 
-    const char* get_name() const {
+    const char* get_name() const override {
         return "Animation Player Begin";
     }
 

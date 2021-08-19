@@ -69,7 +69,7 @@ public:
         }
     }
 
-    const char* get_name() const {
+    const char* get_name() const override {
         return "Debug Draw Render Pass";
     }
 
@@ -83,7 +83,6 @@ DebugDrawRenderPass::DebugDrawRenderPass(const DebugDrawRenderPassDescriptor& de
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_graphics_pipeline(nullptr)
 {
-    KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.debug_draw_manager != nullptr);
     KW_ASSERT(descriptor.scene != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
