@@ -1,4 +1,4 @@
-#include "render/scene/camera.h"
+#include "render/camera/camera.h"
 
 namespace kw {
 
@@ -111,7 +111,7 @@ void Camera::update_view_matrix() {
 }
 
 void Camera::update_projection_matrix() {
-    m_projection_matrix = float4x4::perspective_rh(m_fov, m_aspect_ratio, m_z_near, m_z_far);
+    m_projection_matrix = float4x4::perspective_lh(m_fov, m_aspect_ratio, m_z_near, m_z_far);
 
     m_inverse_projection_matrix = inverse(m_projection_matrix);
 

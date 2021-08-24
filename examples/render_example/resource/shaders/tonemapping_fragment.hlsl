@@ -30,6 +30,10 @@ float3 uncharted_tonemapping(float3 color) {
     return color;
 }
 
+float3 raw_tonemapping(float3 color) {
+    return color;
+}
+
 float4 main(FS_INPUT input) : SV_TARGET {
     return float4(uncharted_tonemapping(lighting_uniform_attachment.Sample(sampler_uniform, input.texcoord).xyz), 1.0);
 }

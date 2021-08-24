@@ -4,12 +4,14 @@
 
 namespace kw {
 
+class CameraManager;
 class Scene;
 class ShadowManager;
 
 struct LightingRenderPassDescriptor {
     Render* render;
     Scene* scene;
+    CameraManager* camera_manager;
     ShadowManager* shadow_manager;
     MemoryResource* transient_memory_resource;
 };
@@ -31,19 +33,17 @@ public:
 private:
     class Task;
 
-    void create_sphere_light_buffers();
-    void create_sphere_light_graphics_pipelines(FrameGraph& frame_graph);
-
     Render& m_render;
     Scene& m_scene;
+    CameraManager& m_camera_manager;
     ShadowManager& m_shadow_manager;
     MemoryResource& m_transient_memory_resource;
 
     Texture* m_pcf_rotation_texture;
 
-    VertexBuffer* m_sphere_light_vertex_buffer;
-    IndexBuffer* m_sphere_light_index_buffer;
-    GraphicsPipeline* m_sphere_light_graphics_pipelines[2];
+    VertexBuffer* m_vertex_buffer;
+    IndexBuffer* m_index_buffer;
+    GraphicsPipeline* m_graphics_pipelines[2];
 };
 
 } // namespace kw

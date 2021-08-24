@@ -4,12 +4,12 @@
 
 namespace kw {
 
+class CameraManager;
 class DebugDrawManager;
-class Scene;
 
 struct DebugDrawRenderPassDescriptor {
     DebugDrawManager* debug_draw_manager;
-    Scene* scene;
+    CameraManager* camera_manager;
     MemoryResource* transient_memory_resource;
 };
 
@@ -30,7 +30,7 @@ private:
     class Task;
 
     DebugDrawManager& m_debug_draw_manager;
-    Scene& m_scene;
+    CameraManager& m_camera_manager;
     MemoryResource& m_transient_memory_resource;
 
     GraphicsPipeline* m_graphics_pipeline;

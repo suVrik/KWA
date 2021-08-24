@@ -34,7 +34,7 @@ float LightPrimitive::get_power() const {
 
 void LightPrimitive::set_power(float value) {
     if (m_power != value) {
-        m_bounds = aabbox(get_global_translation(), float3(std::sqrt(value * 10.f)));
+        m_bounds = aabbox(get_global_translation(), float3(std::sqrt(value * 50.f)));
 
         m_counter = ++acceleration_structure_counter;
 
@@ -43,7 +43,7 @@ void LightPrimitive::set_power(float value) {
 }
 
 void LightPrimitive::global_transform_updated() {
-    m_bounds = aabbox(get_global_translation(), float3(std::sqrt(m_power * 10.f)));
+    m_bounds = aabbox(get_global_translation(), float3(std::sqrt(m_power * 50.f)));
 
     AccelerationStructurePrimitive::global_transform_updated();
 }

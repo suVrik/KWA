@@ -4,10 +4,12 @@
 
 namespace kw {
 
+class CameraManager;
 class Scene;
 
 struct ParticleSystemRenderPassDescriptor {
     Scene* scene;
+    CameraManager* camera_manager;
     MemoryResource* transient_memory_resource;
 };
 
@@ -28,6 +30,7 @@ private:
     class Task;
 
     Scene& m_scene;
+    CameraManager& m_camera_manager;
     MemoryResource& m_transient_memory_resource;
 };
 

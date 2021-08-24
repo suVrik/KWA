@@ -1,4 +1,5 @@
 #include "render/render_passes/geometry_render_pass.h"
+#include "render/camera/camera_manager.h"
 #include "render/geometry/geometry.h"
 #include "render/geometry/geometry_primitive.h"
 #include "render/material/material.h"
@@ -27,7 +28,7 @@ public:
             {
                 KW_CPU_PROFILER("Occlusion Culling");
 
-                primitives = m_render_pass.m_scene.query_geometry(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
+                primitives = m_render_pass.m_scene.query_geometry(m_render_pass.m_camera_manager.get_occlusion_camera().get_frustum());
             }
 
             // Sort primitives by graphics pipeline (to avoid graphics pipeline switches),
@@ -114,7 +115,7 @@ public:
                         }
 
                         Material::GeometryPushConstants geometry_push_constants{};
-                        geometry_push_constants.view_projection = m_render_pass.m_scene.get_camera().get_view_projection_matrix();
+                        geometry_push_constants.view_projection = m_render_pass.m_camera_manager.get_camera().get_view_projection_matrix();
 
                         DrawCallDescriptor draw_call_descriptor{};
                         draw_call_descriptor.graphics_pipeline = *material->get_graphics_pipeline();
@@ -174,16 +175,18 @@ private:
 
 GeometryRenderPass::GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor)
     : m_scene(*descriptor.scene)
+    , m_camera_manager(*descriptor.camera_manager)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
     KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.camera_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 
 void GeometryRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
-    attachment_descriptors.push_back(AttachmentDescriptor{ "albedo_ao_attachment", TextureFormat::RGBA8_UNORM,  LoadOp::DONT_CARE });
+    attachment_descriptors.push_back(AttachmentDescriptor{ "albedo_metalness_attachment", TextureFormat::RGBA8_UNORM,  LoadOp::DONT_CARE });
     attachment_descriptors.push_back(AttachmentDescriptor{ "normal_roughness_attachment", TextureFormat::RGBA16_SNORM, LoadOp::DONT_CARE });
-    attachment_descriptors.push_back(AttachmentDescriptor{ "emission_metalness_attachment", TextureFormat::RGBA8_UNORM, LoadOp::DONT_CARE });
+    attachment_descriptors.push_back(AttachmentDescriptor{ "emission_ao_attachment", TextureFormat::RGBA8_UNORM, LoadOp::DONT_CARE });
 }
 
 void GeometryRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
@@ -196,9 +199,9 @@ void GeometryRenderPass::get_depth_stencil_attachment_descriptors(Vector<Attachm
 
 void GeometryRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
     static const char* const COLOR_ATTACHMENT_NAMES[] = {
-        "albedo_ao_attachment",
+        "albedo_metalness_attachment",
         "normal_roughness_attachment",
-        "emission_metalness_attachment",
+        "emission_ao_attachment",
     };
 
     RenderPassDescriptor render_pass_descriptor{};

@@ -15,6 +15,7 @@
 #include <render/animation/animated_geometry_primitive.h>
 #include <render/animation/animation_manager.h>
 #include <render/animation/animation_player.h>
+#include <render/camera/camera_manager.h>
 #include <render/container/container_primitive.h>
 #include <render/debug/debug_draw_manager.h>
 #include <render/debug/imgui_manager.h>
@@ -23,18 +24,22 @@
 #include <render/geometry/geometry_manager.h>
 #include <render/geometry/geometry_primitive.h>
 #include <render/geometry/skeleton.h>
-#include <render/light/sphere_light_primitive.h>
+#include <render/light/point_light_primitive.h>
 #include <render/material/material_manager.h>
 #include <render/particles/particle_system_manager.h>
 #include <render/particles/particle_system_player.h>
 #include <render/particles/particle_system_primitive.h>
+#include <render/reflection_probe/reflection_probe_manager.h>
+#include <render/reflection_probe/reflection_probe_primitive.h>
 #include <render/render.h>
 #include <render/render_passes/debug_draw_render_pass.h>
+#include <render/render_passes/emission_render_pass.h>
 #include <render/render_passes/geometry_render_pass.h>
 #include <render/render_passes/imgui_render_pass.h>
 #include <render/render_passes/lighting_render_pass.h>
 #include <render/render_passes/opaque_shadow_render_pass.h>
 #include <render/render_passes/particle_system_render_pass.h>
+#include <render/render_passes/reflection_probe_render_pass.h>
 #include <render/render_passes/tonemapping_render_pass.h>
 #include <render/render_passes/translucent_shadow_render_pass.h>
 #include <render/scene/scene.h>
@@ -86,6 +91,21 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     Timer timer;
 
     TaskScheduler task_scheduler(persistent_memory_resource, 3);
+    
+    RenderDescriptor render_descriptor{};
+    render_descriptor.api = RenderApi::VULKAN;
+    render_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    render_descriptor.transient_memory_resource = &transient_memory_resource;
+    render_descriptor.is_validation_enabled = true;
+    render_descriptor.is_debug_names_enabled = true;
+    render_descriptor.staging_buffer_size = 4 * 1024 * 1024;
+    render_descriptor.transient_buffer_size = 4 * 1024 * 1024;
+    render_descriptor.buffer_allocation_size = 1024 * 1024;
+    render_descriptor.buffer_block_size = 32 * 1024;
+    render_descriptor.texture_allocation_size = 128 * 1024 * 1024;
+    render_descriptor.texture_block_size = 1024 * 1024;
+
+    UniquePtr<Render> render(Render::create_instance(render_descriptor), persistent_memory_resource);
 
     AnimationPlayerDescriptor animation_player_descriptor{};
     animation_player_descriptor.timer = &timer;
@@ -103,22 +123,38 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     
     ParticleSystemPlayer particle_system_player(particle_system_player_descriptor);
 
+    ReflectionProbeManagerDescriptor reflection_probe_manager_descriptor{};
+    reflection_probe_manager_descriptor.task_scheduler = &task_scheduler;
+    reflection_probe_manager_descriptor.cubemap_dimension = 512;
+    reflection_probe_manager_descriptor.irradiance_map_dimension = 64;
+    reflection_probe_manager_descriptor.prefiltered_environment_map_dimension = 256;
+    reflection_probe_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    reflection_probe_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ReflectionProbeManager reflection_probe_manager(reflection_probe_manager_descriptor);
+
     OctreeAccelerationStructure geometry_acceleration_structure(persistent_memory_resource);
 
     LinearAccelerationStructure light_acceleration_structure(persistent_memory_resource);
 
     LinearAccelerationStructure particle_system_acceleration_structure(persistent_memory_resource);
 
+    LinearAccelerationStructure reflection_probe_acceleration_structure(persistent_memory_resource);
+
     SceneDescriptor scene_descriptor{};
     scene_descriptor.animation_player = &animation_player;
     scene_descriptor.particle_system_player = &particle_system_player;
+    scene_descriptor.reflection_probe_manager = &reflection_probe_manager;
     scene_descriptor.geometry_acceleration_structure = &geometry_acceleration_structure;
     scene_descriptor.light_acceleration_structure = &light_acceleration_structure;
     scene_descriptor.particle_system_acceleration_structure = &particle_system_acceleration_structure;
+    scene_descriptor.reflection_probe_acceleration_structure = &reflection_probe_acceleration_structure;
     scene_descriptor.persistent_memory_resource = &persistent_memory_resource;
     scene_descriptor.transient_memory_resource = &transient_memory_resource;
 
     Scene scene(scene_descriptor);
+
+    CameraManager camera_manager;
 
     DebugDrawManager debug_draw_manager(transient_memory_resource);
 
@@ -131,24 +167,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     ImguiManager imgui_manager(imgui_manager_descriptor);
 
-    RenderDescriptor render_descriptor{};
-    render_descriptor.api = RenderApi::VULKAN;
-    render_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    render_descriptor.transient_memory_resource = &transient_memory_resource;
-    render_descriptor.is_validation_enabled = true;
-    render_descriptor.is_debug_names_enabled = true;
-    render_descriptor.staging_buffer_size = 4 * 1024 * 1024;
-    render_descriptor.transient_buffer_size = 4 * 1024 * 1024;
-    render_descriptor.buffer_allocation_size = 1024 * 1024;
-    render_descriptor.buffer_block_size = 32 * 1024;
-    render_descriptor.texture_allocation_size = 128 * 1024 * 1024;
-    render_descriptor.texture_block_size = 1024 * 1024;
-
-    UniquePtr<Render> render(Render::create_instance(render_descriptor), persistent_memory_resource);
-
     ShadowManagerDescriptor shadow_manager_descriptor{};
     shadow_manager_descriptor.render = render.get();
     shadow_manager_descriptor.scene = &scene;
+    shadow_manager_descriptor.camera_manager = &camera_manager;
     shadow_manager_descriptor.shadow_map_count = 3;
     shadow_manager_descriptor.shadow_map_dimension = 512;
     shadow_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
@@ -174,6 +196,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     GeometryRenderPassDescriptor geometry_render_pass_descriptor{};
     geometry_render_pass_descriptor.scene = &scene;
+    geometry_render_pass_descriptor.camera_manager = &camera_manager;
     geometry_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
     GeometryRenderPass geometry_render_pass(geometry_render_pass_descriptor);
@@ -181,13 +204,29 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     LightingRenderPassDescriptor lighting_render_pass_descriptor{};
     lighting_render_pass_descriptor.render = render.get();
     lighting_render_pass_descriptor.scene = &scene;
+    lighting_render_pass_descriptor.camera_manager = &camera_manager;
     lighting_render_pass_descriptor.shadow_manager = &shadow_manager;
     lighting_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
     LightingRenderPass lighting_render_pass(lighting_render_pass_descriptor);
+    
+    ReflectionProbeRenderPassDescriptor reflection_probe_render_pass_descriptor{};
+    reflection_probe_render_pass_descriptor.render = render.get();
+    reflection_probe_render_pass_descriptor.scene = &scene;
+    reflection_probe_render_pass_descriptor.camera_manager = &camera_manager;
+    reflection_probe_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ReflectionProbeRenderPass reflection_probe_render_pass(reflection_probe_render_pass_descriptor);
+    
+    EmissionRenderPassDescriptor emission_render_pass_descriptor{};
+    emission_render_pass_descriptor.render = render.get();
+    emission_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    EmissionRenderPass emission_render_pass(emission_render_pass_descriptor);
 
     ParticleSystemRenderPassDescriptor particle_system_render_pass_descriptor{};
     particle_system_render_pass_descriptor.scene = &scene;
+    particle_system_render_pass_descriptor.camera_manager = &camera_manager;
     particle_system_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
     ParticleSystemRenderPass particle_system_render_pass(particle_system_render_pass_descriptor);
@@ -200,7 +239,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     DebugDrawRenderPassDescriptor debug_draw_render_pass_descriptor{};
     debug_draw_render_pass_descriptor.debug_draw_manager = &debug_draw_manager;
-    debug_draw_render_pass_descriptor.scene = &scene;
+    debug_draw_render_pass_descriptor.camera_manager = &camera_manager;
     debug_draw_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
     DebugDrawRenderPass debug_draw_render_pass(debug_draw_render_pass_descriptor);
@@ -217,6 +256,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     transcluent_shadow_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     geometry_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     lighting_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
+    reflection_probe_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
+    emission_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     particle_system_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     tonemapping_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     debug_draw_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
@@ -227,6 +268,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     transcluent_shadow_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     geometry_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     lighting_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
+    reflection_probe_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
+    emission_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     particle_system_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     tonemapping_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     debug_draw_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
@@ -237,6 +280,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     transcluent_shadow_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     geometry_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     lighting_render_pass.get_render_pass_descriptors(render_pass_descriptors);
+    reflection_probe_render_pass.get_render_pass_descriptors(render_pass_descriptors);
+    emission_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     particle_system_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     tonemapping_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     debug_draw_render_pass.get_render_pass_descriptors(render_pass_descriptors);
@@ -265,6 +310,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     transcluent_shadow_render_pass.create_graphics_pipelines(*frame_graph);
     geometry_render_pass.create_graphics_pipelines(*frame_graph);
     lighting_render_pass.create_graphics_pipelines(*frame_graph);
+    reflection_probe_render_pass.create_graphics_pipelines(*frame_graph);
+    emission_render_pass.create_graphics_pipelines(*frame_graph);
     particle_system_render_pass.create_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.create_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.create_graphics_pipelines(*frame_graph);
@@ -311,6 +358,9 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
+
+    SharedPtr<Texture*> brdf_lut = texture_manager.load("resource/textures/brdf_lut.kwt");
+    reflection_probe_render_pass.set_brdf_lut(brdf_lut);
 
     std::ifstream level_stream("resource/levels/level1.txt");
     KW_ERROR(level_stream, "Failed to open level.");
@@ -375,6 +425,11 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     }
 
     KW_ERROR(level_stream, "Failed to read level.");
+
+    ReflectionProbePrimitive reflection_probe_primitive(
+        nullptr, nullptr, 8.f, aabbox(float3(5.f, 3.f, 0.f), float3(7.5f, 2.f, 7.5f)), transform(float3(5.f, 2.5f, 0.f))
+    );
+    scene.add_child(reflection_probe_primitive);
 
     ParticleSystemPrimitive fire_particle_system_primitive(
         persistent_memory_resource,
@@ -445,20 +500,22 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     scene.add_child(robot_primitives[3]);
     scene.add_child(robot_primitives[4]);
 
-    SphereLightPrimitive sphere_light_primitives[3]{
-        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(3.f, 4.f, 3.f))),
-        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, 20.f))),
-        SphereLightPrimitive(0.3f, true, float3(0.6f, 1.f, 1.f), 30.f, transform(float3(5.f, 3.5f, -20.f))),
+    PointLightPrimitive point_light_primitives[3]{
+        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(3.f, 4.f, 3.f))),
+        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(5.f, 3.5f, 20.f))),
+        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(5.f, 3.5f, -20.f))),
     };
-    scene.add_child(sphere_light_primitives[0]);
-    scene.add_child(sphere_light_primitives[1]);
-    scene.add_child(sphere_light_primitives[2]);
+    scene.add_child(point_light_primitives[0]);
+    scene.add_child(point_light_primitives[1]);
+    scene.add_child(point_light_primitives[2]);
 
-    bool draw_light[std::size(sphere_light_primitives)]{};
+    reflection_probe_manager.bake(*render, scene, std::move(brdf_lut));
 
-    float camera_yaw = radians(60.f);
-    float camera_pitch = radians(-20.f);
-    float3 camera_position(6.f, 3.f, 5.f);
+    bool draw_light[std::size(point_light_primitives)]{};
+
+    float camera_yaw = radians(0.f);
+    float camera_pitch = radians(5.f);
+    float3 camera_position(5.f, 3.5f, 7.f);
     float mouse_sensitivity = 0.0025f;
     float camera_speed = 12.f;
 
@@ -470,9 +527,9 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     int cpu_profiler_offset = 0;
 
-    Camera& camera = scene.get_camera();
+    Camera& camera = camera_manager.get_camera();
     camera.set_fov(radians(60.f));
-    camera.set_z_near(0.05f);
+    camera.set_z_near(0.1f);
     camera.set_z_far(100.f);
 
     ImGui& imgui = imgui_manager.get_imgui();
@@ -496,8 +553,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         imgui_manager.update();
 
         if (input.is_button_down(BUTTON_LEFT)) {
-            camera_yaw -= input.get_mouse_dx() * mouse_sensitivity;
-            camera_pitch -= input.get_mouse_dy() * mouse_sensitivity;
+            camera_yaw += input.get_mouse_dx() * mouse_sensitivity;
+            camera_pitch += input.get_mouse_dy() * mouse_sensitivity;
         }
 
         quaternion camera_rotation = quaternion::rotation(float3(0.f, 1.f, 0.f), camera_yaw) * quaternion::rotation(float3(1.f, 0.f, 0.f), camera_pitch);
@@ -507,13 +564,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         float3 up = float3(0.f, 1.f, 0.f);
 
         if (input.is_key_down(Scancode::W)) {
-            camera_position += forward * camera_speed * timer.get_elapsed_time();
+            camera_position -= forward * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::A)) {
             camera_position += left * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::S)) {
-            camera_position -= forward * camera_speed * timer.get_elapsed_time();
+            camera_position += forward * camera_speed * timer.get_elapsed_time();
         }
         if (input.is_key_down(Scancode::D)) {
             camera_position -= left * camera_speed * timer.get_elapsed_time();
@@ -530,38 +587,35 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         camera.set_translation(camera_position);
 
         if (imgui.Begin("Lights")) {
-            for (size_t i = 0; i < std::size(sphere_light_primitives); i++) {
+            for (size_t i = 0; i < std::size(point_light_primitives); i++) {
                 char header_text[] = "light0";
                 header_text[5] = char('0' + i);
 
                 imgui.PushID(header_text);
 
                 if (imgui.CollapsingHeader(header_text)) {
-                    float3 light_position = sphere_light_primitives[i].get_global_translation();
-                    float3 light_color = sphere_light_primitives[i].get_color();
-                    float light_power = sphere_light_primitives[i].get_power();
-                    float light_radius = sphere_light_primitives[i].get_radius();
-                    SphereLightPrimitive::ShadowParams shadow_params = sphere_light_primitives[i].get_shadow_params();
+                    float3 light_position = point_light_primitives[i].get_global_translation();
+                    float3 light_color = point_light_primitives[i].get_color();
+                    float light_power = point_light_primitives[i].get_power();
+                    PointLightPrimitive::ShadowParams shadow_params = point_light_primitives[i].get_shadow_params();
 
                     imgui.DragFloat3("Light Position", &light_position, 0.01f);
                     imgui.ColorEdit3("Light Color", &light_color);
                     imgui.DragFloat("Light Power", &light_power, 0.01f, 0.f, FLT_MAX);
-                    imgui.DragFloat("Light Radius", &light_radius, 0.01f, 0.f, 1.5f);
                     imgui.DragFloat("normal_bias", &shadow_params.normal_bias, 0.001, 0.f, FLT_MAX);
                     imgui.DragFloat("perspective_bias", &shadow_params.perspective_bias, 0.00001, 0.f, FLT_MAX, "%.6f");
-                    imgui.DragFloat("pcss_radius_factor", &shadow_params.pcss_radius_factor, 0.1, 0.f, FLT_MAX);
+                    imgui.DragFloat("pcss_radius", &shadow_params.pcss_radius, 0.1, 0.f, FLT_MAX);
                     imgui.DragFloat("pcss_filter_factor", &shadow_params.pcss_filter_factor, 0.01, 0.f, FLT_MAX);
                     imgui.Checkbox("Draw Light", &draw_light[i]);
 
-                    sphere_light_primitives[i].set_global_translation(light_position);
-                    sphere_light_primitives[i].set_color(light_color);
-                    sphere_light_primitives[i].set_power(light_power);
-                    sphere_light_primitives[i].set_radius(light_radius);
-                    sphere_light_primitives[i].set_shadow_params(shadow_params);
+                    point_light_primitives[i].set_global_translation(light_position);
+                    point_light_primitives[i].set_color(light_color);
+                    point_light_primitives[i].set_power(light_power);
+                    point_light_primitives[i].set_shadow_params(shadow_params);
 
                     if (draw_light[i]) {
                         debug_draw_manager.icosahedron(light_position, 0.01f, float3(1.f, 0.f, 0.f));
-                        debug_draw_manager.icosahedron(light_position, light_radius, float3(1.f));
+                        debug_draw_manager.icosahedron(light_position, shadow_params.pcss_radius * 0.1f, float3(1.f));
                     }
 
                     static quaternion SIDE_ROTATIONS[] = {
@@ -585,11 +639,11 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                             float z_near = 0.1f;
                             float z_far = 20.f;
 
-                            bool use_occlusion_camera = scene.is_occlusion_camera_used();
+                            bool use_occlusion_camera = camera_manager.is_occlusion_camera_used();
 
-                            scene.toggle_occlusion_camera_used(true);
-                            Camera& occlusion_camera = scene.get_occlusion_camera();
-                            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+                            camera_manager.toggle_occlusion_camera_used(true);
+                            Camera& occlusion_camera = camera_manager.get_occlusion_camera();
+                            camera_manager.toggle_occlusion_camera_used(use_occlusion_camera);
 
                             occlusion_camera.set_transform(transform);
                             occlusion_camera.set_fov(fov);
@@ -669,11 +723,11 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         imgui.End();
 
         if (imgui.Begin("Occlusion Camera")) {
-            bool use_occlusion_camera = scene.is_occlusion_camera_used();
+            bool use_occlusion_camera = camera_manager.is_occlusion_camera_used();
 
-            scene.toggle_occlusion_camera_used(true);
-            Camera& occlusion_camera = scene.get_occlusion_camera();
-            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+            camera_manager.toggle_occlusion_camera_used(true);
+            Camera& occlusion_camera = camera_manager.get_occlusion_camera();
+            camera_manager.toggle_occlusion_camera_used(use_occlusion_camera);
 
             transform transform = occlusion_camera.get_transform();
             float fov = occlusion_camera.get_fov();
@@ -712,7 +766,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
                 debug_draw_manager.frustum(occlusion_camera.get_inverse_view_projection_matrix(), float3(1.f));
             }
 
-            scene.toggle_occlusion_camera_used(use_occlusion_camera);
+            camera_manager.toggle_occlusion_camera_used(use_occlusion_camera);
         }
         imgui.End();
 
@@ -846,17 +900,24 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         auto [animation_manager_begin, animation_manager_end] = animation_manager.create_tasks();
         auto [particle_system_manager_begin, particle_system_manager_end] = particle_system_manager.create_tasks();
         auto [acquire_frame_task, present_frame_task] = frame_graph->create_tasks();
+        auto [reflection_probe_manager_begin, reflection_probe_manager_end] = reflection_probe_manager.create_tasks();
         Task* shadow_manager_task = shadow_manager.create_task();
         auto [opaque_shadow_render_pass_task_begin, opaque_shadow_render_pass_task_end] = opaque_shadow_render_pass.create_tasks();
         auto [transcluent_shadow_render_pass_task_begin, transcluent_shadow_render_pass_task_end] = transcluent_shadow_render_pass.create_tasks();
         Task* geometry_render_pass_task = geometry_render_pass.create_task();
         Task* lighting_render_pass_task = lighting_render_pass.create_task();
+        Task* reflection_probe_render_pass_task = reflection_probe_render_pass.create_task();
+        Task* emission_render_pass_task = emission_render_pass.create_task();
         Task* particle_system_render_pass_task = particle_system_render_pass.create_task();
         Task* tonemapping_render_pass_task = tonemapping_render_pass.create_task();
         Task* debug_draw_render_pass_task = debug_draw_render_pass.create_task();
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
         Task* flush_task = render->create_task();
 
+        animation_player_begin->add_input_dependencies(transient_memory_resource, { animation_manager_end });
+        particle_system_player_begin->add_input_dependencies(transient_memory_resource, { particle_system_manager_end });
+        reflection_probe_manager_begin->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        reflection_probe_manager_end->add_input_dependencies(transient_memory_resource, { reflection_probe_manager_begin, flush_task });
         animation_player_end->add_input_dependencies(transient_memory_resource, { animation_player_begin });
         particle_system_player_end->add_input_dependencies(transient_memory_resource, { particle_system_player_begin });
         material_manager_tasks.begin->add_input_dependencies(transient_memory_resource, { particle_system_manager_end });
@@ -874,13 +935,21 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         transcluent_shadow_render_pass_task_end->add_input_dependencies(transient_memory_resource, { transcluent_shadow_render_pass_task_begin });
         geometry_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, animation_player_end });
         lighting_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, shadow_manager_task });
+        reflection_probe_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        emission_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         particle_system_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, particle_system_player_end });
         tonemapping_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         debug_draw_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         imgui_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
-        flush_task->add_input_dependencies(transient_memory_resource, { opaque_shadow_render_pass_task_end, transcluent_shadow_render_pass_task_end, geometry_render_pass_task, lighting_render_pass_task, particle_system_render_pass_task, tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task });
-        present_frame_task->add_input_dependencies(transient_memory_resource, { flush_task });
+        flush_task->add_input_dependencies(transient_memory_resource, {
+            opaque_shadow_render_pass_task_end, transcluent_shadow_render_pass_task_end, geometry_render_pass_task,
+            lighting_render_pass_task, reflection_probe_render_pass_task, emission_render_pass_task, particle_system_render_pass_task,
+            tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task
+        });
+        present_frame_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, flush_task });
 
+        task_scheduler.enqueue_task(transient_memory_resource, reflection_probe_manager_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, reflection_probe_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, animation_player_begin);
         task_scheduler.enqueue_task(transient_memory_resource, animation_player_end);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_player_begin);
@@ -904,6 +973,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, transcluent_shadow_render_pass_task_end);
         task_scheduler.enqueue_task(transient_memory_resource, geometry_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, lighting_render_pass_task);
+        task_scheduler.enqueue_task(transient_memory_resource, reflection_probe_render_pass_task);
+        task_scheduler.enqueue_task(transient_memory_resource, emission_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, tonemapping_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, debug_draw_render_pass_task);
@@ -915,12 +986,16 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
         CpuProfiler::instance().update();
     }
+
+    reflection_probe_render_pass.set_brdf_lut(nullptr);
     
     imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.destroy_graphics_pipelines(*frame_graph);
-    lighting_render_pass.destroy_graphics_pipelines(*frame_graph);
     particle_system_render_pass.destroy_graphics_pipelines(*frame_graph);
+    emission_render_pass.destroy_graphics_pipelines(*frame_graph);
+    reflection_probe_render_pass.destroy_graphics_pipelines(*frame_graph);
+    lighting_render_pass.destroy_graphics_pipelines(*frame_graph);
     geometry_render_pass.destroy_graphics_pipelines(*frame_graph);
     transcluent_shadow_render_pass.destroy_graphics_pipelines(*frame_graph);
     opaque_shadow_render_pass.destroy_graphics_pipelines(*frame_graph);

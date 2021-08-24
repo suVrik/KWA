@@ -1,7 +1,7 @@
 #include "render/render_passes/opaque_shadow_render_pass.h"
 #include "render/geometry/geometry.h"
 #include "render/geometry/geometry_primitive.h"
-#include "render/light/sphere_light_primitive.h"
+#include "render/light/light_primitive.h"
 #include "render/material/material.h"
 #include "render/scene/scene.h"
 #include "render/shadow/shadow_manager.h"
@@ -13,6 +13,7 @@
 #include <core/debug/cpu_profiler.h>
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
+#include <core/math/frustum.h>
 #include <core/memory/memory_resource.h>
 
 #include <algorithm>
@@ -178,7 +179,7 @@ public:
                 }
             }
 
-            m_render_pass.blit("proxy_depth_attachment", shadow_map.depth_texture, m_face_index, m_shadow_map_index * 6 + m_face_index);
+            m_render_pass.blit("proxy_depth_attachment", shadow_map.depth_texture, 0, m_face_index, m_shadow_map_index * 6 + m_face_index);
 
             shadow_map.depth_max_counter[m_face_index] = max_counter;
             shadow_map.depth_primitive_count[m_face_index] = primitives.size();

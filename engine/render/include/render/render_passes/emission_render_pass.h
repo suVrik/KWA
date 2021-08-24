@@ -1,21 +1,17 @@
 #pragma once
 
-#include "render/render_passes/base_render_pass.h"
+#include "render/render_passes/full_screen_quad_render_pass.h"
 
 namespace kw {
 
-class CameraManager;
-class Scene;
-
-struct GeometryRenderPassDescriptor {
-    Scene* scene;
-    CameraManager* camera_manager;
+struct EmissionRenderPassDescriptor {
+    Render* render;
     MemoryResource* transient_memory_resource;
 };
 
-class GeometryRenderPass : public BaseRenderPass {
+class EmissionRenderPass : public FullScreenQuadRenderPass {
 public:
-    explicit GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor);
+    explicit EmissionRenderPass(const EmissionRenderPassDescriptor& descriptor);
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
     void get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
@@ -29,9 +25,9 @@ public:
 private:
     class Task;
 
-    Scene& m_scene;
-    CameraManager& m_camera_manager;
     MemoryResource& m_transient_memory_resource;
+
+    GraphicsPipeline* m_graphics_pipeline;
 };
 
 } // namespace kw

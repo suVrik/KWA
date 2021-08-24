@@ -4,18 +4,18 @@
 
 namespace kw {
 
-class CameraManager;
-class Scene;
+class float4x4;
 
-struct GeometryRenderPassDescriptor {
-    Scene* scene;
-    CameraManager* camera_manager;
+struct ConvolutionRenderPassDescriptor {
+    Render* render;
+    uint32_t side_dimension;
     MemoryResource* transient_memory_resource;
 };
 
-class GeometryRenderPass : public BaseRenderPass {
+class ConvolutionRenderPass : public BaseRenderPass {
 public:
-    explicit GeometryRenderPass(const GeometryRenderPassDescriptor& descriptor);
+    explicit ConvolutionRenderPass(const ConvolutionRenderPassDescriptor& descriptor);
+    ~ConvolutionRenderPass();
 
     void get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
     void get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) override;
@@ -24,14 +24,19 @@ public:
     void destroy_graphics_pipelines(FrameGraph& frame_graph) override;
 
     // Must be placed between acquire and present frame graph's tasks.
-    Task* create_task();
+    Task* create_task(Texture* texture, const float4x4& view_projection);
 
 private:
     class Task;
 
-    Scene& m_scene;
-    CameraManager& m_camera_manager;
+    Render& m_render;
+    uint32_t m_side_dimension;
     MemoryResource& m_transient_memory_resource;
+
+    VertexBuffer* m_vertex_buffer;
+    IndexBuffer* m_index_buffer;
+
+    GraphicsPipeline* m_graphics_pipeline;
 };
 
 } // namespace kw

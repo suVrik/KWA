@@ -185,21 +185,6 @@ public:
         std::lock_guard lock_guard(m_manager.m_geometry_mutex);
 
         //
-        // Start loading brand new geometry.
-        //
-
-        for (auto& [relative_path, geometry] : m_manager.m_pending_geometry) {
-            WorkerTask* pending_task = m_manager.m_transient_memory_resource.construct<WorkerTask>(m_manager, *geometry, relative_path.c_str());
-            KW_ASSERT(pending_task != nullptr);
-
-            pending_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
-
-            m_manager.m_task_scheduler.enqueue_task(m_manager.m_transient_memory_resource, pending_task);
-        }
-
-        m_manager.m_pending_geometry.clear();
-
-        //
         // Destroy geometry that only referenced from `GeometryManager`.
         //
 
@@ -214,6 +199,21 @@ public:
                 ++it;
             }
         }
+
+        //
+        // Start loading brand new geometry.
+        //
+
+        for (auto& [relative_path, geometry] : m_manager.m_pending_geometry) {
+            WorkerTask* pending_task = m_manager.m_transient_memory_resource.construct<WorkerTask>(m_manager, *geometry, relative_path.c_str());
+            KW_ASSERT(pending_task != nullptr);
+
+            pending_task->add_output_dependencies(m_manager.m_transient_memory_resource, { m_end_task });
+
+            m_manager.m_task_scheduler.enqueue_task(m_manager.m_transient_memory_resource, pending_task);
+        }
+
+        m_manager.m_pending_geometry.clear();
     }
 
     const char* get_name() const override {

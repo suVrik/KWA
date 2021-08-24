@@ -1,4 +1,5 @@
 #include "render/render_passes/particle_system_render_pass.h"
+#include "render/camera/camera_manager.h"
 #include "render/geometry/geometry.h"
 #include "render/material/material.h"
 #include "render/particles/particle_system.h"
@@ -28,10 +29,10 @@ public:
             {
                 KW_CPU_PROFILER("Occlusion Culling");
 
-                primitives = m_render_pass.m_scene.query_particle_systems(m_render_pass.m_scene.get_occlusion_camera().get_frustum());
+                primitives = m_render_pass.m_scene.query_particle_systems(m_render_pass.m_camera_manager.get_occlusion_camera().get_frustum());
             }
 
-            Camera& camera = m_render_pass.m_scene.get_camera();
+            Camera& camera = m_render_pass.m_camera_manager.get_camera();
 
             {
                 KW_CPU_PROFILER("Primitive Sort");
@@ -242,9 +243,11 @@ private:
 
 ParticleSystemRenderPass::ParticleSystemRenderPass(const ParticleSystemRenderPassDescriptor& descriptor)
     : m_scene(*descriptor.scene)
+    , m_camera_manager(*descriptor.camera_manager)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
     KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.camera_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 

@@ -111,6 +111,9 @@ AnimationPlayer::AnimationPlayer(const AnimationPlayerDescriptor& descriptor)
 void AnimationPlayer::add(AnimatedGeometryPrimitive& primitive) {
     std::lock_guard lock(m_primitives_mutex);
 
+    KW_ASSERT(primitive.m_animation_player == nullptr);
+    primitive.m_animation_player = this;
+
     for (AnimatedGeometryPrimitive*& animated_geometry_primitive : m_primitives) {
         if (animated_geometry_primitive == nullptr) {
             animated_geometry_primitive = &primitive;
@@ -123,6 +126,9 @@ void AnimationPlayer::add(AnimatedGeometryPrimitive& primitive) {
 
 void AnimationPlayer::remove(AnimatedGeometryPrimitive& primitive) {
     std::lock_guard lock(m_primitives_mutex);
+
+    KW_ASSERT(primitive.m_animation_player == this);
+    primitive.m_animation_player = nullptr;
 
     auto it = std::find(m_primitives.begin(), m_primitives.end(), &primitive);
     KW_ASSERT(it != m_primitives.end());

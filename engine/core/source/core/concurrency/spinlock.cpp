@@ -11,7 +11,7 @@ void Spinlock::lock() {
 }
 
 bool Spinlock::try_lock() {
-    return m_is_locked.test_and_set(std::memory_order_acquire);
+    return !m_is_locked.test_and_set(std::memory_order_acquire);
 }
 
 void Spinlock::unlock() {

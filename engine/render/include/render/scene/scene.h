@@ -1,7 +1,6 @@
 #pragma once
 
 #include "render/container/container_primitive.h"
-#include "render/scene/camera.h"
 
 #include <core/containers/unique_ptr.h>
 #include <core/containers/vector.h>
@@ -16,13 +15,17 @@ class GeometryPrimitive;
 class LightPrimitive;
 class ParticleSystemPlayer;
 class ParticleSystemPrimitive;
+class ReflectionProbeManager;
+class ReflectionProbePrimitive;
 
 struct SceneDescriptor {
     AnimationPlayer* animation_player;
     ParticleSystemPlayer* particle_system_player;
+    ReflectionProbeManager* reflection_probe_manager;
     AccelerationStructure* geometry_acceleration_structure;
     AccelerationStructure* light_acceleration_structure;
     AccelerationStructure* particle_system_acceleration_structure;
+    AccelerationStructure* reflection_probe_acceleration_structure;
     MemoryResource* persistent_memory_resource;
     MemoryResource* transient_memory_resource;
 };
@@ -40,14 +43,8 @@ public:
     Vector<ParticleSystemPrimitive*> query_particle_systems(const aabbox& bounds) const;
     Vector<ParticleSystemPrimitive*> query_particle_systems(const frustum& frustum) const;
 
-    const Camera& get_camera() const;
-    Camera& get_camera();
-
-    const Camera& get_occlusion_camera() const;
-    Camera& get_occlusion_camera();
-
-    bool is_occlusion_camera_used() const;
-    void toggle_occlusion_camera_used(bool value);
+    Vector<ReflectionProbePrimitive*> query_reflection_probes(const aabbox& bounds) const;
+    Vector<ReflectionProbePrimitive*> query_reflection_probes(const frustum& frustum) const;
 
 protected:
     void child_added(Primitive& primitive) override;
@@ -59,14 +56,12 @@ private:
 
     AnimationPlayer& m_animation_player;
     ParticleSystemPlayer& m_particle_system_player;
+    ReflectionProbeManager& m_reflection_probe_manager;
     AccelerationStructure& m_geometry_acceleration_structure;
     AccelerationStructure& m_light_acceleration_structure;
     AccelerationStructure& m_particle_system_acceleration_structure;
+    AccelerationStructure& m_reflection_probe_acceleration_structure;
     MemoryResource& m_transient_memory_resource;
-
-    Camera m_camera;
-    Camera m_occlusion_camera;
-    bool m_is_occlusion_camera_used;
 };
 
 } // namespace kw

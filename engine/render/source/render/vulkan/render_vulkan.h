@@ -148,6 +148,9 @@ public:
 
     RenderApi get_api() const override;
 
+    // Wait until all device operations are complete.
+    void wait_idle();
+
     // A no-op if `is_debug_names_enabled` in `RenderDescriptor` was false.
     template <typename T>
     void set_debug_name(T* handle, const char* format, ...) const;

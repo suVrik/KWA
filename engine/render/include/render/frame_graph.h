@@ -73,16 +73,17 @@ public:
     // on device is defined by context index. The previous attachment content is not guaranteed to be preserved.
     RenderPassContext* begin(uint32_t context_index = 0);
 
+    // If source attachment is smaller than destination texture, the remaining host texture area is undefined.
+    // If source attachment is larger than destination texture, the source attachment is cropped.
+    // Context index specifies after which context to run on device.
+    void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_mip_level = 0,
+              uint32_t destination_array_layer = 0, uint32_t context_index = 0);
+    
     // If source attachment is smaller than destination host texture, the remaining host texture area is undefined.
     // If source attachment is larger than destination host texture, the source attachment is cropped.
     // Returns index that can be tested in `FrameGraph` on when host texture can be accessed on host.
     // Context index specifies after which context to run on device.
     uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index = 0);
-
-    // If source attachment is smaller than destination texture, the remaining host texture area is undefined.
-    // If source attachment is larger than destination texture, the source attachment is cropped.
-    // Context index specifies after which context to run on device.
-    void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer = 0, uint32_t context_index = 0);
 
 private:
     // API-specific structure set by frame graph.
@@ -144,8 +145,8 @@ enum class CullMode : uint32_t {
 constexpr size_t CULL_MODE_COUNT = 3;
 
 enum class FrontFace : uint32_t {
-    COUNTER_CLOCKWISE,
     CLOCKWISE,
+    COUNTER_CLOCKWISE,
 };
 
 constexpr size_t FRONT_FACE_COUNT = 2;
@@ -426,6 +427,8 @@ struct AttachmentDescriptor {
 
 struct FrameGraphDescriptor {
     Render* render;
+
+    // Window is allowed to be `nullptr` in which case swapchain is not created, acquire and present are never called.
     Window* window;
 
     bool is_aliasing_enabled;

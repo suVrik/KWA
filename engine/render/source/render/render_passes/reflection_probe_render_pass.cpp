@@ -1,8 +1,7 @@
-#include "render/render_passes/lighting_render_pass.h"
+#include "render/render_passes/reflection_probe_render_pass.h"
 #include "render/camera/camera_manager.h"
-#include "render/light/point_light_primitive.h"
+#include "render/reflection_probe/reflection_probe_primitive.h"
 #include "render/scene/scene.h"
-#include "render/shadow/shadow_manager.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
@@ -11,116 +10,121 @@
 
 namespace kw {
 
-struct LightUniformBuffer {
+struct ReflectionProbeUniformBuffer {
     float4x4 view_projection;
     float4x4 inverse_view_projection;
     float4 view_position;
     float4 texel_size;
 };
 
-struct PointLightPushConstants {
+struct ReflectionProbePushConstants {
     float4 position;
-    float4 luminance;
-    float4 radius_frustum;
-    float4 shadow_params;
+
+    float4 aabbox_min;
+    float4 aabbox_max;
+
+    float4 radius_lod;
 };
 
-class LightingRenderPass::Task : public kw::Task {
+class ReflectionProbeRenderPass::Task : public kw::Task {
 public:
-    Task(LightingRenderPass& render_pass)
+    Task(ReflectionProbeRenderPass& render_pass)
         : m_render_pass(render_pass)
     {
     }
 
     void run() override {
+        KW_ASSERT(
+            m_render_pass.m_texture != nullptr,
+            "BRDF LUT is not set!"
+        );
+        
+        KW_ASSERT(
+            *m_render_pass.m_texture != nullptr,
+            "BRDF LUT is not loaded!"
+        );
+
         RenderPassContext* context = m_render_pass.begin();
         if (context != nullptr) {
             Camera& camera = m_render_pass.m_camera_manager.get_camera();
 
-            LightUniformBuffer light_uniform{};
+            ReflectionProbeUniformBuffer light_uniform{};
             light_uniform.view_projection = camera.get_view_projection_matrix();
             light_uniform.inverse_view_projection = camera.get_inverse_view_projection_matrix();
             light_uniform.view_position = float4(camera.get_translation(), 0.f);
             light_uniform.texel_size = float4(1.f / context->get_attachment_width(), 1.f / context->get_attachment_height(), 0.f, 0.f);
 
-            m_transient_uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&light_uniform, sizeof(light_uniform));
+            UniformBuffer* transient_uniform_buffer = context->get_render().acquire_transient_uniform_buffer(&light_uniform, sizeof(light_uniform));
 
-            Vector<LightPrimitive*> primitives = m_render_pass.m_scene.query_lights(m_render_pass.m_camera_manager.get_occlusion_camera().get_frustum());
+            Vector<ReflectionProbePrimitive*> primitives = m_render_pass.m_scene.query_reflection_probes(m_render_pass.m_camera_manager.get_occlusion_camera().get_frustum());
             
-            for (LightPrimitive* light_primitive : primitives) {
-                if (PointLightPrimitive* point_light_primitive = dynamic_cast<PointLightPrimitive*>(light_primitive)) {
-                    draw_point_light(context, point_light_primitive);
-                } else {
-                    KW_ASSERT(false, "Invalid light type.");
+            for (ReflectionProbePrimitive* reflection_probe_primitive : primitives) {
+                SharedPtr<Texture*> irradiance_map = reflection_probe_primitive->get_irradiance_map();
+                SharedPtr<Texture*> prefiltered_environment_map = reflection_probe_primitive->get_prefiltered_environment_map();
+                if (irradiance_map && prefiltered_environment_map ) {
+                    KW_ASSERT(*irradiance_map != nullptr, "Irradiance map is not loaded.");
+                    KW_ASSERT(*prefiltered_environment_map != nullptr, "Irradiance map is not loaded.");
+
+                    float falloff_radius = reflection_probe_primitive->get_falloff_radius();
+                    const aabbox& parallax_box = reflection_probe_primitive->get_parallax_box();
+                    float lod_count = (*prefiltered_environment_map)->get_mip_level_count();
+
+                    ReflectionProbePushConstants push_constants{};
+                    push_constants.position = float4(reflection_probe_primitive->get_global_translation(), 0.f);
+                    push_constants.aabbox_min = float4(parallax_box.center - parallax_box.extent, 0.f);
+                    push_constants.aabbox_max = float4(parallax_box.center + parallax_box.extent, 0.f);
+                    push_constants.radius_lod = float4(falloff_radius, lod_count, 0.f, 0.f);
+
+                    Camera& camera = m_render_pass.m_camera_manager.get_camera();
+
+                    float ico_sphere_radius = 1.08f;
+                    float z_near = camera.get_z_near() / std::cos(camera.get_fov() / 2.f);
+
+                    GraphicsPipeline* graphics_pipeline;
+                    if (square_distance(reflection_probe_primitive->get_global_translation(), camera.get_translation()) <= sqr(falloff_radius * ico_sphere_radius + z_near)) {
+                        graphics_pipeline = m_render_pass.m_graphics_pipelines[1];
+                    } else {
+                        graphics_pipeline = m_render_pass.m_graphics_pipelines[0];
+                    }
+
+                    Texture* uniform_textures[3] = {
+                        *irradiance_map,
+                        * prefiltered_environment_map,
+                        *m_render_pass.m_texture,
+                    };
+
+                    DrawCallDescriptor draw_call_descriptor{};
+                    draw_call_descriptor.graphics_pipeline = graphics_pipeline;
+                    draw_call_descriptor.vertex_buffers = &m_render_pass.m_vertex_buffer;
+                    draw_call_descriptor.vertex_buffer_count = 1;
+                    draw_call_descriptor.index_buffer = m_render_pass.m_index_buffer;
+                    draw_call_descriptor.index_count = 240;
+                    draw_call_descriptor.stencil_reference = 0xFF;
+                    draw_call_descriptor.uniform_textures = uniform_textures;
+                    draw_call_descriptor.uniform_texture_count = std::size(uniform_textures);
+                    draw_call_descriptor.uniform_buffers = &transient_uniform_buffer;
+                    draw_call_descriptor.uniform_buffer_count = 1;
+                    draw_call_descriptor.push_constants = &push_constants;
+                    draw_call_descriptor.push_constants_size = sizeof(ReflectionProbePushConstants);
+                    context->draw(draw_call_descriptor);
                 }
             }
         }
     }
 
     const char* get_name() const override {
-        return "Lighting Render Pass";
+        return "Reflection Probe Render Pass";
     }
 
 private:
-    void draw_point_light(RenderPassContext* context, PointLightPrimitive* point_light_primitive) {
-        float3 color = point_light_primitive->get_color();
-        float power = point_light_primitive->get_power();
-        float3 luminance = color * power;
-        float attenuation_radius = std::sqrt(power * 50.f);
-
-        const PointLightPrimitive::ShadowParams& shadow_params = point_light_primitive->get_shadow_params();
-
-        PointLightPushConstants push_constants{};
-        push_constants.position = float4(point_light_primitive->get_global_transform().translation, 0.f);
-        push_constants.luminance = float4(luminance, 0.f);
-        push_constants.radius_frustum = float4(attenuation_radius, 0.1f, 20.f, 0.f);
-        push_constants.shadow_params = float4(shadow_params.normal_bias, shadow_params.perspective_bias, shadow_params.pcss_radius, shadow_params.pcss_filter_factor);
-
-        Camera& camera = m_render_pass.m_camera_manager.get_camera();
-
-        float ico_sphere_radius = 1.08f;
-        float z_near = camera.get_z_near() / std::cos(camera.get_fov() / 2.f);
-
-        GraphicsPipeline* graphics_pipeline;
-        if (square_distance(point_light_primitive->get_global_transform().translation, camera.get_translation()) <= sqr(attenuation_radius * ico_sphere_radius + z_near)) {
-            graphics_pipeline = m_render_pass.m_graphics_pipelines[1];
-        } else {
-            graphics_pipeline = m_render_pass.m_graphics_pipelines[0];
-        }
-
-        Texture* uniform_textures[3] = {
-            m_render_pass.m_shadow_manager.get_depth_texture(point_light_primitive),
-            m_render_pass.m_shadow_manager.get_color_texture(point_light_primitive),
-            m_render_pass.m_pcf_rotation_texture,
-        };
-
-        DrawCallDescriptor draw_call_descriptor{};
-        draw_call_descriptor.graphics_pipeline = graphics_pipeline;
-        draw_call_descriptor.vertex_buffers = &m_render_pass.m_vertex_buffer;
-        draw_call_descriptor.vertex_buffer_count = 1;
-        draw_call_descriptor.index_buffer = m_render_pass.m_index_buffer;
-        draw_call_descriptor.index_count = 240;
-        draw_call_descriptor.stencil_reference = 0xFF;
-        draw_call_descriptor.uniform_textures = uniform_textures;
-        draw_call_descriptor.uniform_texture_count = std::size(uniform_textures);
-        draw_call_descriptor.uniform_buffers = &m_transient_uniform_buffer;
-        draw_call_descriptor.uniform_buffer_count = 1;
-        draw_call_descriptor.push_constants = &push_constants;
-        draw_call_descriptor.push_constants_size = sizeof(PointLightPushConstants);
-        context->draw(draw_call_descriptor);
-    }
-
-    LightingRenderPass& m_render_pass;
-    UniformBuffer* m_transient_uniform_buffer;
+    ReflectionProbeRenderPass& m_render_pass;
 };
 
-LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descriptor)
+ReflectionProbeRenderPass::ReflectionProbeRenderPass(const ReflectionProbeRenderPassDescriptor& descriptor)
     : m_render(*descriptor.render)
     , m_scene(*descriptor.scene)
     , m_camera_manager(*descriptor.camera_manager)
-    , m_shadow_manager(*descriptor.shadow_manager)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
-    , m_pcf_rotation_texture(nullptr)
     , m_vertex_buffer(nullptr)
     , m_index_buffer(nullptr)
     , m_graphics_pipelines{ nullptr, nullptr }
@@ -128,40 +132,9 @@ LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descr
     KW_ASSERT(descriptor.render != nullptr);
     KW_ASSERT(descriptor.scene != nullptr);
     KW_ASSERT(descriptor.camera_manager != nullptr);
-    KW_ASSERT(descriptor.shadow_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 
-    CreateTextureDescriptor create_texture_descriptor{};
-    create_texture_descriptor.name = "pcf_rotation_texture";
-    create_texture_descriptor.type = TextureType::TEXTURE_3D;
-    create_texture_descriptor.format = TextureFormat::RG32_FLOAT;
-    create_texture_descriptor.width = 32;
-    create_texture_descriptor.height = 32;
-    create_texture_descriptor.depth = 32;
-
-    m_pcf_rotation_texture = m_render.create_texture(create_texture_descriptor);
-
-    float2 data[32][32][32]{};
-    for (size_t i = 0; i < 32; i++) {
-        for (size_t j = 0; j < 32; j++) {
-            for (size_t k = 0; k < 32; k++) {
-                float angle = std::rand() * 2.f * PI / RAND_MAX;
-                data[i][j][k].x = std::cos(angle);
-                data[i][j][k].y = std::sin(angle);
-            }
-        }
-    }
-
-    UploadTextureDescriptor upload_texture_descriptor{};
-    upload_texture_descriptor.texture = m_pcf_rotation_texture;
-    upload_texture_descriptor.data = data;
-    upload_texture_descriptor.size = sizeof(data);
-    upload_texture_descriptor.width = 32;
-    upload_texture_descriptor.height = 32;
-    upload_texture_descriptor.depth = 32;
-
-    m_render.upload_texture(upload_texture_descriptor);
-
+    // TODO: Put this in some shared class with LightingRenderPass?
     static const float3 VERTEX_DATA[] = {
         float3( 0.000000f, -1.080000f,  0.000000f), float3( 0.781496f, -0.482997f,  0.567783f),
         float3(-0.298499f, -0.482997f,  0.918701f), float3(-0.965980f, -0.482993f,  0.000000f),
@@ -186,7 +159,7 @@ LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descr
         float3(-0.459348f,  0.918707f, -0.333732f), float3( 0.175452f,  0.918707f, -0.539995f),
     };
 
-    m_vertex_buffer = m_render.create_vertex_buffer("point_light", sizeof(VERTEX_DATA));
+    m_vertex_buffer = m_render.create_vertex_buffer("reflection_probe", sizeof(VERTEX_DATA));
     m_render.upload_vertex_buffer(m_vertex_buffer, VERTEX_DATA, sizeof(VERTEX_DATA));
 
     static const uint16_t INDEX_DATA[] = {
@@ -212,47 +185,44 @@ LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descr
         13, 0,  16, 12, 14, 2,  12, 13, 14, 13, 1,  14,
     };
 
-    m_index_buffer = m_render.create_index_buffer("point_light", sizeof(INDEX_DATA), IndexSize::UINT16);
+    m_index_buffer = m_render.create_index_buffer("reflection_probe", sizeof(INDEX_DATA), IndexSize::UINT16);
     m_render.upload_index_buffer(m_index_buffer, INDEX_DATA, sizeof(INDEX_DATA));
 }
 
-LightingRenderPass::~LightingRenderPass() {
+ReflectionProbeRenderPass::~ReflectionProbeRenderPass() {
     m_render.destroy_index_buffer(m_index_buffer);
     m_render.destroy_vertex_buffer(m_vertex_buffer);
-    m_render.destroy_texture(m_pcf_rotation_texture);
 }
 
-void LightingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
-    attachment_descriptors.push_back(AttachmentDescriptor{ "lighting_attachment", TextureFormat::RGBA16_FLOAT });
+void ReflectionProbeRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+    attachment_descriptors.push_back(AttachmentDescriptor{ "reflection_probe_attachment", TextureFormat::RGBA16_FLOAT });
 }
 
-void LightingRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+void ReflectionProbeRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
     // None.
 }
 
-void LightingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
+void ReflectionProbeRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
     static const char* const READ_COLOR_ATTACHMENT_NAMES[] = {
         "albedo_metalness_attachment",
         "normal_roughness_attachment",
         "depth_attachment",
     };
 
-    static const char* const WRITE_COLOR_ATTACHMENT_NAMES[] = {
-        "lighting_attachment",
-    };
+    static const char* WRITE_COLOR_ATTACHMENT_NAME = "reflection_probe_attachment";
 
     RenderPassDescriptor render_pass_descriptor{};
-    render_pass_descriptor.name = "lighting_render_pass";
+    render_pass_descriptor.name = "reflection_probe_render_pass";
     render_pass_descriptor.render_pass = this;
     render_pass_descriptor.read_attachment_names = READ_COLOR_ATTACHMENT_NAMES;
     render_pass_descriptor.read_attachment_name_count = std::size(READ_COLOR_ATTACHMENT_NAMES);
-    render_pass_descriptor.write_color_attachment_names = WRITE_COLOR_ATTACHMENT_NAMES;
-    render_pass_descriptor.write_color_attachment_name_count = std::size(WRITE_COLOR_ATTACHMENT_NAMES);
+    render_pass_descriptor.write_color_attachment_names = &WRITE_COLOR_ATTACHMENT_NAME;
+    render_pass_descriptor.write_color_attachment_name_count = 1;
     render_pass_descriptor.read_depth_stencil_attachment_name = "depth_attachment";
     render_pass_descriptors.push_back(render_pass_descriptor);
 }
 
-void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
+void ReflectionProbeRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     AttributeDescriptor vertex_attribute_descriptor{};
     vertex_attribute_descriptor.semantic = Semantic::POSITION;
     vertex_attribute_descriptor.format = TextureFormat::RGB32_FLOAT;
@@ -264,13 +234,13 @@ void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     vertex_binding_descriptor.stride = sizeof(float3);
     
     AttachmentBlendDescriptor attachment_blend_descriptor{};
-    attachment_blend_descriptor.attachment_name = "lighting_attachment";
+    attachment_blend_descriptor.attachment_name = "reflection_probe_attachment";
     attachment_blend_descriptor.source_color_blend_factor = BlendFactor::ONE;
     attachment_blend_descriptor.destination_color_blend_factor = BlendFactor::ONE;
     attachment_blend_descriptor.color_blend_op = BlendOp::ADD;
     attachment_blend_descriptor.source_alpha_blend_factor = BlendFactor::ONE;
     attachment_blend_descriptor.destination_alpha_blend_factor = BlendFactor::ONE;
-    attachment_blend_descriptor.alpha_blend_op = BlendOp::MAX;
+    attachment_blend_descriptor.alpha_blend_op = BlendOp::ADD;
 
     UniformAttachmentDescriptor uniform_attachment_descriptors[3]{};
     uniform_attachment_descriptors[0].variable_name = "albedo_metalness_uniform_attachment";
@@ -282,29 +252,25 @@ void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
 
     UniformTextureDescriptor uniform_texture_descriptors[3]{};
     uniform_texture_descriptors[0].texture_type = TextureType::TEXTURE_CUBE;
-    uniform_texture_descriptors[0].variable_name = "opaque_shadow_uniform_texture";
+    uniform_texture_descriptors[0].variable_name = "irradiance_uniform_texture";
     uniform_texture_descriptors[1].texture_type = TextureType::TEXTURE_CUBE;
-    uniform_texture_descriptors[1].variable_name = "translucent_shadow_uniform_texture";
-    uniform_texture_descriptors[2].texture_type = TextureType::TEXTURE_3D;
-    uniform_texture_descriptors[2].variable_name = "pcf_rotation_uniform_texture";
+    uniform_texture_descriptors[1].variable_name = "prefilter_uniform_texture";
+    uniform_texture_descriptors[2].texture_type = TextureType::TEXTURE_2D;
+    uniform_texture_descriptors[2].variable_name = "brdf_lookup_uniform_texture";
 
-    UniformSamplerDescriptor uniform_sampler_descriptors[2]{};
-    uniform_sampler_descriptors[0].variable_name = "sampler_uniform";
-    uniform_sampler_descriptors[0].max_lod = 15.f;
-    uniform_sampler_descriptors[1].variable_name = "shadow_sampler_uniform";
-    uniform_sampler_descriptors[1].compare_enable = true;
-    uniform_sampler_descriptors[1].compare_op = CompareOp::LESS;
-    uniform_sampler_descriptors[1].max_lod = 15.f;
+    UniformSamplerDescriptor uniform_sampler_descriptor{};
+    uniform_sampler_descriptor.variable_name = "sampler_uniform";
+    uniform_sampler_descriptor.max_lod = 15.f;
 
     UniformBufferDescriptor uniform_buffer_descriptor{};
-    uniform_buffer_descriptor.variable_name = "LightUniformBuffer";
-    uniform_buffer_descriptor.size = sizeof(LightUniformBuffer);
+    uniform_buffer_descriptor.variable_name = "ReflectionProbeUniformBuffer";
+    uniform_buffer_descriptor.size = sizeof(ReflectionProbeUniformBuffer);
 
     GraphicsPipelineDescriptor outside_graphics_pipeline_descriptor{};
-    outside_graphics_pipeline_descriptor.graphics_pipeline_name = "outside_point_light_graphics_pipeline";
-    outside_graphics_pipeline_descriptor.render_pass_name = "lighting_render_pass";
-    outside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/point_light_vertex.hlsl";
-    outside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/point_light_fragment.hlsl";
+    outside_graphics_pipeline_descriptor.graphics_pipeline_name = "outside_reflection_probe_graphics_pipeline";
+    outside_graphics_pipeline_descriptor.render_pass_name = "reflection_probe_render_pass";
+    outside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/reflection_probe_vertex.hlsl";
+    outside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/reflection_probe_fragment.hlsl";
     outside_graphics_pipeline_descriptor.vertex_binding_descriptors = &vertex_binding_descriptor;
     outside_graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     outside_graphics_pipeline_descriptor.cull_mode = CullMode::BACK;
@@ -319,20 +285,20 @@ void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     outside_graphics_pipeline_descriptor.uniform_attachment_descriptor_count = std::size(uniform_attachment_descriptors);
     outside_graphics_pipeline_descriptor.uniform_texture_descriptors = uniform_texture_descriptors;
     outside_graphics_pipeline_descriptor.uniform_texture_descriptor_count = std::size(uniform_texture_descriptors);
-    outside_graphics_pipeline_descriptor.uniform_sampler_descriptors = uniform_sampler_descriptors;
-    outside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = std::size(uniform_sampler_descriptors);
+    outside_graphics_pipeline_descriptor.uniform_sampler_descriptors = &uniform_sampler_descriptor;
+    outside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = 1;
     outside_graphics_pipeline_descriptor.uniform_buffer_descriptors = &uniform_buffer_descriptor;
     outside_graphics_pipeline_descriptor.uniform_buffer_descriptor_count = 1;
-    outside_graphics_pipeline_descriptor.push_constants_name = "point_light_push_constants";
-    outside_graphics_pipeline_descriptor.push_constants_size = sizeof(PointLightPushConstants);
+    outside_graphics_pipeline_descriptor.push_constants_name = "reflection_probe_push_constants";
+    outside_graphics_pipeline_descriptor.push_constants_size = sizeof(ReflectionProbePushConstants);
 
     m_graphics_pipelines[0] = frame_graph.create_graphics_pipeline(outside_graphics_pipeline_descriptor);
 
     GraphicsPipelineDescriptor inside_graphics_pipeline_descriptor{};
-    inside_graphics_pipeline_descriptor.graphics_pipeline_name = "inside_point_light_graphics_pipeline";
-    inside_graphics_pipeline_descriptor.render_pass_name = "lighting_render_pass";
-    inside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/point_light_vertex.hlsl";
-    inside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/point_light_fragment.hlsl";
+    inside_graphics_pipeline_descriptor.graphics_pipeline_name = "inside_reflection_probe_graphics_pipeline";
+    inside_graphics_pipeline_descriptor.render_pass_name = "reflection_probe_render_pass";
+    inside_graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/reflection_probe_vertex.hlsl";
+    inside_graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/reflection_probe_fragment.hlsl";
     inside_graphics_pipeline_descriptor.vertex_binding_descriptors = &vertex_binding_descriptor;
     inside_graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     inside_graphics_pipeline_descriptor.cull_mode = CullMode::FRONT;
@@ -347,22 +313,27 @@ void LightingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     inside_graphics_pipeline_descriptor.uniform_attachment_descriptor_count = std::size(uniform_attachment_descriptors);
     inside_graphics_pipeline_descriptor.uniform_texture_descriptors = uniform_texture_descriptors;
     inside_graphics_pipeline_descriptor.uniform_texture_descriptor_count = std::size(uniform_texture_descriptors);
-    inside_graphics_pipeline_descriptor.uniform_sampler_descriptors = uniform_sampler_descriptors;
-    inside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = std::size(uniform_sampler_descriptors);
+    inside_graphics_pipeline_descriptor.uniform_sampler_descriptors = &uniform_sampler_descriptor;
+    inside_graphics_pipeline_descriptor.uniform_sampler_descriptor_count = 1;
     inside_graphics_pipeline_descriptor.uniform_buffer_descriptors = &uniform_buffer_descriptor;
     inside_graphics_pipeline_descriptor.uniform_buffer_descriptor_count = 1;
-    inside_graphics_pipeline_descriptor.push_constants_name = "point_light_push_constants";
-    inside_graphics_pipeline_descriptor.push_constants_size = sizeof(PointLightPushConstants);
+    inside_graphics_pipeline_descriptor.push_constants_name = "reflection_probe_push_constants";
+    inside_graphics_pipeline_descriptor.push_constants_size = sizeof(ReflectionProbePushConstants);
 
     m_graphics_pipelines[1] = frame_graph.create_graphics_pipeline(inside_graphics_pipeline_descriptor);
 }
 
-void LightingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+void ReflectionProbeRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
     frame_graph.destroy_graphics_pipeline(m_graphics_pipelines[1]);
     frame_graph.destroy_graphics_pipeline(m_graphics_pipelines[0]);
 }
 
-Task* LightingRenderPass::create_task() {
+
+void ReflectionProbeRenderPass::set_brdf_lut(SharedPtr<Texture*> texture) {
+    m_texture = std::move(texture);
+}
+
+Task* ReflectionProbeRenderPass::create_task() {
     return m_transient_memory_resource.construct<Task>(*this);
 }
 

@@ -22,6 +22,7 @@
 
 namespace kw {
 
+class FrameGraphVulkan;
 class RenderVulkan;
 class TimelineSemaphore;
 
@@ -43,8 +44,11 @@ public:
         std::atomic_uint64_t last_frame_usage;
     };
 
-    GraphicsPipelineVulkan(MemoryResource& memory_resource);
+    GraphicsPipelineVulkan(FrameGraphVulkan& frame_graph_, MemoryResource& memory_resource);
     GraphicsPipelineVulkan(GraphicsPipelineVulkan&& other);
+
+    // Needed for graphics pipelines that are used in different frame graphs.
+    FrameGraphVulkan& frame_graph;
 
     VkShaderModule vertex_shader_module;
     VkShaderModule fragment_shader_module;
@@ -74,8 +78,8 @@ public:
     // descriptor. Actual number of descriptors written to descriptor set may be less because of shader optimizations.
     uint32_t uniform_attachment_count;
 
-    // The actual number of uniform attachment can be less.
-    Vector<uint32_t> uniform_attachment_indices;
+    // The actual number of uniform attachment can be less. Names rather than indices for cross frame graph accessibility.
+    Vector<const char*> uniform_attachment_names;
 
     // This is needed for draw call validation. The number of uniform textures specified in graphics pipeline
     // descriptor. Actual number of descriptors written to descriptor set may be less because of shader optimizations.
@@ -127,7 +131,7 @@ public:
     void destroy_graphics_pipeline(GraphicsPipeline* graphics_pipeline) override;
 
     Pair<Task*, Task*> create_tasks() override;
-    
+
     void recreate_swapchain() override;
 
     uint64_t get_frame_index() const override;
@@ -263,7 +267,7 @@ private:
         uint64_t transfer_semaphore_value;
 
     private:
-        bool allocate_descriptor_sets();
+        bool allocate_descriptor_sets(FrameGraphVulkan& frame_graph);
 
         FrameGraphVulkan& m_frame_graph;
         uint32_t m_render_pass_index;
@@ -283,8 +287,10 @@ private:
 
         RenderPassContextVulkan* begin(uint32_t context_index) override;
 
+        void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_mip_level,
+                  uint32_t destination_array_layer, uint32_t context_index) override;
+
         uint64_t blit(const char* source_attachment, HostTexture* destination_host_texture, uint32_t context_index) override;
-        void blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer, uint32_t context_index) override;
 
         // Sequential render pass executions.
         Map<uint32_t, RenderPassContextVulkan> contexts;
@@ -399,7 +405,7 @@ private:
     void destroy_dynamic_resources();
 
     RenderVulkan& m_render;
-    Window& m_window;
+    Window* m_window; // Optional.
 
     uint32_t m_descriptor_set_count_per_descriptor_pool;
     uint32_t m_uniform_texture_count_per_descriptor_pool;
@@ -410,6 +416,7 @@ private:
     VkColorSpaceKHR m_color_space;
     VkPresentModeKHR m_present_mode;
 
+    // These are equal to 0 when window is absent.
     uint32_t m_swapchain_width;
     uint32_t m_swapchain_height;
 
@@ -451,7 +458,8 @@ private:
     std::mutex m_graphics_pipeline_destroy_command_mutex;
 
     // `vkAcquireNextImageKHR` and `vkQueuePresentKHR` don't support timeline semaphores,
-    // so we're forced to deal with a bunch of binary semaphores.
+    // so we're forced to deal with a bunch of binary semaphores. The image acquired semaphore
+    // is used only when window is present.
     VkSemaphore m_image_acquired_binary_semaphores[SWAPCHAIN_IMAGE_COUNT];
     VkSemaphore m_render_finished_binary_semaphores[SWAPCHAIN_IMAGE_COUNT];
 

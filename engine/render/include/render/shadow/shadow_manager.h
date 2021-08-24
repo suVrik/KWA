@@ -4,6 +4,7 @@
 
 namespace kw {
 
+class CameraManager;
 class LightPrimitive;
 class MemoryResource;
 class Render;
@@ -26,9 +27,13 @@ struct ShadowMap {
 struct ShadowManagerDescriptor {
     Render* render;
     Scene* scene;
+    CameraManager* camera_manager;
 
     uint32_t shadow_map_count;
     uint32_t shadow_map_dimension;
+
+    // Don't allocate translucent shadow maps, useful for local environment map baking.
+    bool disable_translucent_shadows;
 
     MemoryResource* persistent_memory_resource;
     MemoryResource* transient_memory_resource;
@@ -56,6 +61,7 @@ private:
 
     Render& m_render;
     Scene& m_scene;
+    CameraManager& m_camera_manager;
 
     Vector<ShadowMap> m_shadow_maps;
     Texture* m_dummy_depth_texture;

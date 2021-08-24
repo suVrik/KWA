@@ -279,7 +279,7 @@ RenderVulkan::RenderVulkan(const RenderDescriptor& descriptor)
 }
 
 RenderVulkan::~RenderVulkan() {
-    VK_ERROR(vkDeviceWaitIdle(device), "Failed to wait idle.");
+    wait_idle();
 
     while (!m_submit_data.empty()) {
         SubmitData& submit_data = m_submit_data.front();
@@ -454,7 +454,8 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
             // Synchronously change both the staging memory pointers and buffer upload commands.
             //
 
-            std::lock_guard lock(m_buffer_upload_command_mutex);
+            // TODO RENDER: Investigate the deadlock.
+            std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
@@ -574,7 +575,8 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
             // Synchronously change both the staging memory pointers and buffer upload commands.
             //
 
-            std::lock_guard lock(m_buffer_upload_command_mutex);
+            // TODO RENDER: Investigate the deadlock.
+            std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
@@ -647,7 +649,6 @@ Texture* RenderVulkan::create_texture(const CreateTextureDescriptor& texture_des
         break;
     case TextureType::TEXTURE_CUBE:
         KW_ERROR(texture_descriptor.array_layer_count == 6, "Invalid texture \"%s\" array size.", texture_descriptor.name);
-        KW_ERROR(texture_descriptor.mip_level_count <= 1, "Invalid texture \"%s\" mip levels.", texture_descriptor.name);
         KW_ERROR(texture_descriptor.width == texture_descriptor.height, "Invalid texture \"%s\" size.", texture_descriptor.name);
         KW_ERROR(texture_descriptor.depth <= 1, "Invalid texture \"%s\" depth.", texture_descriptor.name);
         break;
@@ -885,7 +886,8 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
             // Synchronously change both the staging memory pointers and texture upload commands.
             //
 
-            std::lock_guard lock(m_texture_upload_command_mutex);
+            // TODO RENDER: Investigate the deadlock.
+            std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
@@ -1352,18 +1354,22 @@ void RenderVulkan::clear_texture(const ClearTextureDescriptor& clear_texture_des
     submit_info.signalSemaphoreCount = 0;
     submit_info.pSignalSemaphores = nullptr;
 
-    VK_ERROR(
-        vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE),
-        "Failed to submit clear texture command to device."
-    );
+    {
+        std::lock_guard lock(*graphics_queue_spinlock);
 
-    VK_ERROR(vkDeviceWaitIdle(device), "Failed to wait idle.");
+        VK_ERROR(
+            vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE),
+            "Failed to submit clear texture command to device."
+        );
+    }
+
+    wait_idle();
 
     vkFreeCommandBuffers(device, m_graphics_command_pool, 1, &command_buffer);
 
     if (texture_vulkan->get_available_mip_level_count() != texture_vulkan->get_mip_level_count()) {
         if (texture_vulkan->image_view != nullptr) {
-            // Must be safe to destroy image view right now after `vkDeviceWaitIdle`.
+            // Must be safe to destroy image view right now after `wait_idle`.
             vkDestroyImageView(device, texture_vulkan->image_view, &allocation_callbacks);
         }
 
@@ -1576,6 +1582,18 @@ Task* RenderVulkan::create_task() {
 
 RenderApi RenderVulkan::get_api() const {
     return RenderApi::VULKAN;
+}
+
+void RenderVulkan::wait_idle() {
+    if (graphics_queue_spinlock == transfer_queue_spinlock) {
+        std::lock_guard lock(*graphics_queue_spinlock);
+
+        VK_ERROR(vkDeviceWaitIdle(device), "Failed to wait idle.");
+    } else {
+        std::scoped_lock lock(*graphics_queue_spinlock, *transfer_queue_spinlock);
+
+        VK_ERROR(vkDeviceWaitIdle(device), "Failed to wait idle.");
+    }
 }
 
 void RenderVulkan::add_resource_dependency(SharedPtr<TimelineSemaphore> timeline_semaphore) {
@@ -2868,6 +2886,7 @@ uint64_t RenderVulkan::upload_textures(VkCommandBuffer transfer_command_buffer) 
         //
 
         if (texture_upload_command.base_mip_level + 1 == mip_level_count) {
+            // TODO RENDER: This is a tough restriction. Relax it?
             KW_ASSERT(
                 texture_upload_command.mip_level_count > 1 ||
                 (texture_upload_command.base_mip_level + 1 == mip_level_count &&

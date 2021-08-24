@@ -16,8 +16,8 @@ FullScreenQuadRenderPass::FullScreenQuadRenderPass(Render& render)
     render.upload_vertex_buffer(m_vertex_buffer, VERTEX_DATA, sizeof(VERTEX_DATA));
 
     static const uint16_t INDEX_DATA[] = {
-        3, 1, 0,
-        3, 2, 1,
+        0, 1, 3,
+        1, 2, 3,
     };
 
     m_index_buffer = render.create_index_buffer("full_screen_quad", sizeof(INDEX_DATA), IndexSize::UINT16);

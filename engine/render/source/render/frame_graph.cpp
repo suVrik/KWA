@@ -23,10 +23,10 @@ uint64_t RenderPass::blit(const char* source_attachment, HostTexture* destinatio
     return m_impl->blit(source_attachment, destination_host_texture, context_index);
 }
 
-void RenderPass::blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_layer, uint32_t context_index) {
+void RenderPass::blit(const char* source_attachment, Texture* destination_texture, uint32_t destination_mip_level, uint32_t destination_array_layer, uint32_t context_index) {
     KW_ASSERT(m_impl != nullptr, "Frame graph was not initialized yet.");
 
-    m_impl->blit(source_attachment, destination_texture, destination_layer, context_index);
+    m_impl->blit(source_attachment, destination_texture, destination_mip_level, destination_array_layer, context_index);
 }
 
 inline bool check_equal(float a, float b) {
@@ -60,7 +60,7 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
 
         bool create_found = false;
 
-        if (std::strcmp(attachment_name, frame_graph_descriptor.swapchain_attachment_name) == 0) {
+        if (frame_graph_descriptor.window != nullptr && std::strcmp(attachment_name, frame_graph_descriptor.swapchain_attachment_name) == 0) {
             create_found = true;
         }
 
@@ -109,7 +109,7 @@ static void validate_attachments(const FrameGraphDescriptor& frame_graph_descrip
 
         bool create_found = false;
 
-        if (std::strcmp(color_attachment_name, frame_graph_descriptor.swapchain_attachment_name) == 0) {
+        if (frame_graph_descriptor.window != nullptr && std::strcmp(color_attachment_name, frame_graph_descriptor.swapchain_attachment_name) == 0) {
             KW_ERROR(
                 validate_size(is_set, size_class, width, height, SizeClass::RELATIVE, 1.f, 1.f),
                 "Attachment \"%s\" size doesn't match (render pass \"%s\").", color_attachment_name, render_pass_descriptor.name
@@ -254,7 +254,7 @@ static void validate_depth_stencil_attachments(const FrameGraphDescriptor& frame
         );
 
         KW_ERROR(
-            std::strcmp(attachment_descriptor.name, frame_graph_descriptor.swapchain_attachment_name) != 0,
+            frame_graph_descriptor.window == nullptr || std::strcmp(attachment_descriptor.name, frame_graph_descriptor.swapchain_attachment_name) != 0,
             "Attachment name \"%s\" is already used.", attachment_descriptor.name
         );
 
@@ -282,6 +282,11 @@ static void validate_depth_stencil_attachments(const FrameGraphDescriptor& frame
         );
 
         if (attachment_descriptor.size_class == SizeClass::RELATIVE) {
+            KW_ERROR(
+                frame_graph_descriptor.window != nullptr,
+                "Relative size class is allowed only when window is present."
+            );
+
             KW_ERROR(
                 attachment_descriptor.width >= 0.f && attachment_descriptor.width <= 1.f,
                 "Invalid attachment \"%s\" width.", attachment_descriptor.name
@@ -325,7 +330,7 @@ static void validate_color_attachments(const FrameGraphDescriptor& frame_graph_d
         );
 
         KW_ERROR(
-            std::strcmp(attachment_descriptor.name, frame_graph_descriptor.swapchain_attachment_name) != 0,
+            frame_graph_descriptor.window == nullptr || std::strcmp(attachment_descriptor.name, frame_graph_descriptor.swapchain_attachment_name) != 0,
             "Attachment name \"%s\" is already used.", attachment_descriptor.name
         );
 
@@ -354,6 +359,11 @@ static void validate_color_attachments(const FrameGraphDescriptor& frame_graph_d
         );
 
         if (attachment_descriptor.size_class == SizeClass::RELATIVE) {
+            KW_ERROR(
+                frame_graph_descriptor.window != nullptr,
+                "Relative size class is allowed only when window is present."
+            );
+
             KW_ERROR(
                 attachment_descriptor.width >= 0.f && attachment_descriptor.width <= 1.f,
                 "Invalid attachment \"%s\" width.", attachment_descriptor.name
@@ -386,12 +396,11 @@ static void validate_color_attachments(const FrameGraphDescriptor& frame_graph_d
 
 FrameGraph* FrameGraph::create_instance(const FrameGraphDescriptor& frame_graph_descriptor) {
     KW_ERROR(frame_graph_descriptor.render != nullptr, "Invalid render.");
-    KW_ERROR(frame_graph_descriptor.window != nullptr, "Invalid window.");
     KW_ERROR(frame_graph_descriptor.descriptor_set_count_per_descriptor_pool > 0, "At least one frame_graph_descriptor set per frame_graph_descriptor pool is required.");
     KW_ERROR(frame_graph_descriptor.uniform_texture_count_per_descriptor_pool > 0, "At least one texture per frame_graph_descriptor pool is required.");
     KW_ERROR(frame_graph_descriptor.uniform_sampler_count_per_descriptor_pool > 0, "At least one sampler per frame_graph_descriptor pool is required.");
     KW_ERROR(frame_graph_descriptor.uniform_buffer_count_per_descriptor_pool > 0, "At least one uniform buffer per frame_graph_descriptor pool is required.");
-    KW_ERROR(frame_graph_descriptor.swapchain_attachment_name != nullptr, "Invalid swapchain name.");
+    KW_ERROR(frame_graph_descriptor.window == nullptr || frame_graph_descriptor.swapchain_attachment_name != nullptr, "Invalid swapchain name.");
 
     validate_color_attachments(frame_graph_descriptor);
 

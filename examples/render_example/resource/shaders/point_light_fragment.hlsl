@@ -1,12 +1,7 @@
 #define PI 3.14159265
 
-struct FS_INPUT {
-    float4 position : SV_POSITION;
-};
-
-Texture2D albedo_ao_uniform_attachment;
+Texture2D albedo_metalness_uniform_attachment;
 Texture2D normal_roughness_uniform_attachment;
-Texture2D emission_metalness_uniform_attachment;
 Texture2D depth_uniform_attachment;
 
 TextureCube opaque_shadow_uniform_texture;
@@ -19,29 +14,27 @@ SamplerComparisonState shadow_sampler_uniform;
 cbuffer LightUniformBuffer {
     float4x4 view_projection;
     float4x4 inverse_view_projection;
-    float4 view_position;
+    float3 view_position;
     float2 texel_size;
-    float2 specular_diffuse;
 };
 
-struct SphereLightPushConstants {
+struct PointLightPushConstants {
     float4 position;
     float4 luminance;
 
-    // x goes for light radius.
-    // y goes for attenuation radius.
-    // z goes for light's Z near.
-    // w goes for light's Z far.
+    // x goes for falloff radius.
+    // y goes for light's Z near.
+    // z goes for light's Z far.
     float4 radius_frustum;
 
     // x goes for normal bias.
     // y goes for perspective bias.
-    // z goes for pcss radius factor.
+    // z goes for pcss radius.
     // w goes for pcss filter factor.
     float4 shadow_params;
 };
 
-[[vk::push_constant]] SphereLightPushConstants sphere_light_push_constants;
+[[vk::push_constant]] PointLightPushConstants point_light_push_constants;
 
 static const float2 POISSON_DISK[16] = {
     float2(-0.94201624, -0.39906216),
@@ -62,11 +55,16 @@ static const float2 POISSON_DISK[16] = {
     float2( 0.14383161, -0.14100790)
 };
 
-float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal, float light_radius) {
-    float3 light_clip_vector = clip_position + clip_normal * sphere_light_push_constants.shadow_params.x - light_position;
+float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal) {
+    float z_near = point_light_push_constants.radius_frustum.y;
+    float z_far = point_light_push_constants.radius_frustum.z;
 
-    float z_near = sphere_light_push_constants.radius_frustum.z;
-    float z_far = sphere_light_push_constants.radius_frustum.w;
+    float normal_bias = point_light_push_constants.shadow_params.x;
+    float perspective_bias = point_light_push_constants.shadow_params.y;
+    float light_radius = point_light_push_constants.shadow_params.z;
+    float filter_factor = point_light_push_constants.shadow_params.w;
+
+    float3 light_clip_vector = clip_position + clip_normal * normal_bias - light_position;
 
     float3 abs_light_clip_vector = abs(light_clip_vector);
     float linear_depth = max(abs_light_clip_vector.x, max(abs_light_clip_vector.y, abs_light_clip_vector.z));
@@ -80,7 +78,7 @@ float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal, flo
     float2 rotation = pcf_rotation_uniform_texture.Sample(sampler_uniform, clip_position * 100.0).xy;
 
     float light_frustum_width = z_far * 2.0;
-    float light_radius_uv = light_radius * sphere_light_push_constants.shadow_params.z / light_frustum_width;
+    float light_radius_uv = light_radius / light_frustum_width;
     float search_radius = light_radius_uv * (linear_depth - z_near) / linear_depth;
 
     float sum = 0.0;
@@ -93,20 +91,20 @@ float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal, flo
         float3 uv = light_clip_vector + search_radius * (disk_basis_x * poisson_disk_x + disk_basis_y * poisson_disk_y);
 
         float non_linear_blocker_depth = opaque_shadow_uniform_texture.SampleLevel(sampler_uniform, uv, 0.0).r;
-        if (non_linear_blocker_depth < non_linear_depth - sphere_light_push_constants.shadow_params.y) {
+        if (non_linear_blocker_depth < non_linear_depth - perspective_bias) {
             sum += non_linear_blocker_depth;
             count++;
         }
     }
 
-    float3 translucent = translucent_shadow_uniform_texture.SampleLevel(sampler_uniform, light_clip_vector, 0.0);
+    float3 translucent = translucent_shadow_uniform_texture.SampleLevel(sampler_uniform, light_clip_vector, 0.0).xyz;
 
     if (count == 0) {
         return translucent;
     }
 
     float average_linear_blocker_depth = z_far * z_near / (z_far - sum / count * (z_far - z_near));
-    float filter_radius = search_radius * saturate((linear_depth - average_linear_blocker_depth) * sphere_light_push_constants.shadow_params.w);
+    float filter_radius = search_radius * saturate((linear_depth - average_linear_blocker_depth) * filter_factor);
 
     sum = 0;
 
@@ -116,17 +114,18 @@ float3 pcss(float3 light_position, float3 clip_position, float3 clip_normal, flo
 
         float3 uv = light_clip_vector + filter_radius * (disk_basis_x * poisson_disk_x + disk_basis_y * poisson_disk_y);
 
-        sum += opaque_shadow_uniform_texture.SampleCmpLevelZero(shadow_sampler_uniform, uv, non_linear_depth - sphere_light_push_constants.shadow_params.y).r;
+        sum += opaque_shadow_uniform_texture.SampleCmpLevelZero(shadow_sampler_uniform, uv, non_linear_depth - perspective_bias).r;
     }
 
     float opaque = sum / 16.0;
     return opaque * translucent;
 }
 
-float specular_d(float n_dot_h, float sqr_alpha) {
+float specular_d(float n_dot_h, float alpha) {
+    float sqr_alpha = alpha * alpha;
     float denominator = n_dot_h * n_dot_h * (sqr_alpha - 1.0) + 1.0;
-    float sqr_denominator = denominator * denominator;
-    return sqr_alpha / sqr_denominator;
+    denominator = PI * denominator * denominator;
+    return sqr_alpha / denominator;
 }
 
 float3 specular_f(float v_dot_h, float3 f0) {
@@ -143,14 +142,7 @@ float specular_g(float n_dot_l, float n_dot_v, float roughness) {
     return specular_g1(n_dot_l, k) * specular_g1(n_dot_v, k);
 }
 
-float integrate_sphere(float radius_over_distance, float normal_dot_light) {
-    float sqr_radius_over_distance = radius_over_distance * radius_over_distance;
-    float one_sqr_radius_over_distance = 1.0 + sqr_radius_over_distance;
-    float form_factor = sqr_radius_over_distance / sqrt(one_sqr_radius_over_distance * one_sqr_radius_over_distance);
-    return form_factor * max((form_factor * form_factor + normal_dot_light) / (form_factor + 1.0), 0.0);
-}
-
-float attenuation(float distance, float attenuation_radius) {
+float falloff(float distance, float attenuation_radius) {
     float factor = distance / attenuation_radius;
     float sqr_factor = factor * factor;
     float result = saturate(1.0 - sqr_factor * sqr_factor);
@@ -158,41 +150,32 @@ float attenuation(float distance, float attenuation_radius) {
     return sqr_result;
 }
 
-float4 main(FS_INPUT input) : SV_TARGET {
-    float2 texcoord = input.position.xy * texel_size.xy;
+float4 main(float4 position : SV_POSITION) : SV_TARGET {
+    float2 texcoord = position.xy * texel_size;
     float2 screen_position = texcoord.xy * float2(2.0, -2.0) - float2(1.0, -1.0);
 
-    float4 albedo_ao_sample = albedo_ao_uniform_attachment.Sample(sampler_uniform, texcoord);
+    float4 albedo_metalness_sample = albedo_metalness_uniform_attachment.Sample(sampler_uniform, texcoord);
     float4 normal_roughness_sample = normal_roughness_uniform_attachment.Sample(sampler_uniform, texcoord);
-    float4 emission_metalness_sample = emission_metalness_uniform_attachment.Sample(sampler_uniform, texcoord);
     float4 depth_sample = depth_uniform_attachment.Sample(sampler_uniform, texcoord);
 
-    float3 albedo = albedo_ao_sample.rgb;
-    float ambient_occlusion = albedo_ao_sample.a;
+    float3 albedo = albedo_metalness_sample.rgb;
+    float metalness = albedo_metalness_sample.a;
     float3 normal_direction = normal_roughness_sample.rgb;
-    float roughness = max(normal_roughness_sample.a, 0.075);
-    float3 emission = emission_metalness_sample.rgb;
-    float metalness = emission_metalness_sample.a;
+    float roughness = normal_roughness_sample.a;
     float depth = depth_sample.r;
 
     float4 clip_position = mul(inverse_view_projection, float4(screen_position.x, screen_position.y, depth, 1.0));
     clip_position /= clip_position.w;
 
-    float3 light_luminance = sphere_light_push_constants.luminance.xyz;
-    float2 light_radius = sphere_light_push_constants.radius_frustum.xy;
+    float3 light_position = point_light_push_constants.position.xyz;
+    float3 light_luminance = point_light_push_constants.luminance.xyz;
+    float falloff_radius = point_light_push_constants.radius_frustum.x;
 
-    float3 view_direction = normalize(view_position.xyz - clip_position.xyz);
-    float3 reflection_direction = normalize(reflect(-view_direction, normal_direction));
+    float3 view_direction = normalize(view_position - clip_position.xyz);
 
-    float3 light_center_vector = sphere_light_push_constants.position.xyz - clip_position.xyz;
-    float light_center_distance = length(light_center_vector);
-    float3 light_center_direction = light_center_vector / light_center_distance;
-
-    float3 light_center_to_reflection = dot(light_center_vector, reflection_direction) * reflection_direction - light_center_vector;
-
-    float3 light_direction = light_center_vector + light_center_to_reflection * saturate(light_radius.x / length(light_center_to_reflection));
+    float3 light_direction = light_position - clip_position.xyz;
     float light_distance = length(light_direction);
-    light_direction /= light_distance;
+    light_direction = light_direction / light_distance;
 
     float3 halfway_direction = normalize(view_direction + light_direction);
 
@@ -202,22 +185,18 @@ float4 main(FS_INPUT input) : SV_TARGET {
     float v_dot_h = saturate(dot(view_direction, halfway_direction));
 
     float alpha = roughness * roughness;
-    float sqr_alpha = alpha * alpha;
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metalness);
-    float energy_normalization = saturate(alpha + light_radius.x / (light_center_distance * 3.0));
 
-    float  d = specular_d(n_dot_h, sqr_alpha);
+    float  d = specular_d(n_dot_h, alpha);
     float3 f = specular_f(v_dot_h, f0);
     float  g = specular_g(n_dot_l, n_dot_v, roughness);
 
-    float3 specular = max(d * f * g * energy_normalization / (4.0 * n_dot_l * n_dot_v) * specular_diffuse.x, 0.0);
+    float3 specular = d * f * g / (4.0 * n_dot_l * n_dot_v + 1e-5);
+    float3 diffuse = (1.0 - f) * (1.0 - metalness) * (albedo / PI);
 
-    float radius_over_distance = light_radius.x / light_center_distance;
-    float normal_dot_light_center = dot(normal_direction, light_center_direction);
+    float attenuation = falloff(light_distance, falloff_radius) / (light_distance * light_distance + 1.0);
 
-    float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo * ambient_occlusion * integrate_sphere(radius_over_distance, normal_dot_light_center) * specular_diffuse.y;
-
-    float3 shadow_sample = pcss(sphere_light_push_constants.position.xyz, clip_position.xyz, normal_direction, sphere_light_push_constants.radius_frustum.x);
+    float3 shadow_sample = pcss(light_position, clip_position.xyz, normal_direction);
     
-    return float4((specular + diffuse) * attenuation(light_center_distance, light_radius.y) * light_luminance * shadow_sample, 1.0);
+    return float4((specular + diffuse) * n_dot_l * attenuation * light_luminance * shadow_sample, 1.0);
 }

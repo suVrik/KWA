@@ -1,6 +1,6 @@
 #include "render/render_passes/debug_draw_render_pass.h"
+#include "render/camera/camera_manager.h"
 #include "render/debug/debug_draw_manager.h"
-#include "render/scene/scene.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
@@ -54,7 +54,7 @@ public:
             VertexBuffer* vertex_buffer = context->get_render().acquire_transient_vertex_buffer(vertices.data(), vertices.size() * sizeof(DebugDrawVertex));
             IndexBuffer* index_buffer = context->get_render().acquire_transient_index_buffer(indices.data(), indices.size() * sizeof(uint32_t), IndexSize::UINT32);
 
-            float4x4 debug_draw_push_constants = m_render_pass.m_scene.get_camera().get_view_projection_matrix();
+            float4x4 debug_draw_push_constants = m_render_pass.m_camera_manager.get_camera().get_view_projection_matrix();
 
             DrawCallDescriptor draw_call_descriptor{};
             draw_call_descriptor.graphics_pipeline = m_render_pass.m_graphics_pipeline;
@@ -79,12 +79,12 @@ private:
 
 DebugDrawRenderPass::DebugDrawRenderPass(const DebugDrawRenderPassDescriptor& descriptor)
     : m_debug_draw_manager(*descriptor.debug_draw_manager)
-    , m_scene(*descriptor.scene)
+    , m_camera_manager(*descriptor.camera_manager)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
     , m_graphics_pipeline(nullptr)
 {
     KW_ASSERT(descriptor.debug_draw_manager != nullptr);
-    KW_ASSERT(descriptor.scene != nullptr);
+    KW_ASSERT(descriptor.camera_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 

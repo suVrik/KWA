@@ -93,6 +93,16 @@ public:
         // Tasks that load textures are expected to run before begin task, so this shouldn't block anyone.
         std::lock_guard lock_guard(m_manager.m_textures_mutex);
 
+        // Destroy textures that only referenced from `TextureManager`.
+        for (auto it = m_manager.m_textures.begin(); it != m_manager.m_textures.end(); ) {
+            if (it->second.use_count() == 1) {
+                m_manager.m_render.destroy_texture(*it->second);
+                it = m_manager.m_textures.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         if (!m_manager.m_pending_textures.empty() || !m_manager.m_loading_textures.empty()) {
             size_t total_textures = m_manager.m_pending_textures.size() + m_manager.m_loading_textures.size();
 
@@ -138,19 +148,6 @@ public:
             }
 
             m_manager.m_pending_textures.clear();
-        }
-
-        //
-        // Destroy textures that only referenced from `TextureManager`.
-        //
-
-        for (auto it = m_manager.m_textures.begin(); it != m_manager.m_textures.end(); ) {
-            if (it->second.use_count() == 1) {
-                m_manager.m_render.destroy_texture(*it->second);
-                it = m_manager.m_textures.erase(it);
-            } else {
-                ++it;
-            }
         }
     }
 

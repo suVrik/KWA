@@ -14,6 +14,7 @@
 #include <core/debug/cpu_profiler.h>
 #include <core/math/aabbox.h>
 #include <core/math/float4x4.h>
+#include <core/math/frustum.h>
 #include <core/memory/memory_resource.h>
 
 #include <algorithm>
@@ -253,7 +254,8 @@ public:
                 }
             }
 
-            m_render_pass.blit("proxy_color_attachment", shadow_map.color_texture, m_face_index, m_shadow_map_index * 6 + m_face_index);
+            KW_ASSERT(shadow_map.color_texture != nullptr, "Translucent shadows must be enabled.");
+            m_render_pass.blit("proxy_color_attachment", shadow_map.color_texture, 0, m_face_index, m_shadow_map_index * 6 + m_face_index);
 
             shadow_map.color_primitive_count[m_face_index] = primitives.size();
         }

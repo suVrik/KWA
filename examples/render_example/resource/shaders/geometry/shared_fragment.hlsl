@@ -7,9 +7,9 @@ struct FS_INPUT {
 };
 
 struct FS_OUTPUT {
-    float4 albedo_ao_target          : SV_TARGET0;
-    float4 normal_roughness_target   : SV_TARGET1;
-    float4 emission_metalness_target : SV_TARGET2;
+    float4 albedo_metalness_target : SV_TARGET0;
+    float4 normal_roughness_target : SV_TARGET1;
+    float4 emission_ao_target      : SV_TARGET2;
 };
 
 Texture2D albedo_alpha_uniform_attachment;
@@ -37,8 +37,8 @@ FS_OUTPUT main(FS_INPUT input) {
     normal = normalize(mul(normal, tangent_space));
 
     FS_OUTPUT output;
-    output.albedo_ao_target = float4(albedo_alpha_sample.xyz, ao_roughness_metalness_sample.x);
+    output.albedo_metalness_target = float4(albedo_alpha_sample.xyz, ao_roughness_metalness_sample.z);
     output.normal_roughness_target = float4(normal, ao_roughness_metalness_sample.y);
-    output.emission_metalness_target = float4(emission_sample.xyz, ao_roughness_metalness_sample.z);
+    output.emission_ao_target = float4(emission_sample.xyz, ao_roughness_metalness_sample.x);
     return output;
 }

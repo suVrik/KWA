@@ -151,6 +151,9 @@ ParticleSystemPlayer::ParticleSystemPlayer(const ParticleSystemPlayerDescriptor&
 void ParticleSystemPlayer::add(ParticleSystemPrimitive& primitive) {
     std::lock_guard lock(m_primitives_mutex);
 
+    KW_ASSERT(primitive.m_particle_system_player == nullptr);
+    primitive.m_particle_system_player = this;
+
     for (ParticleSystemPrimitive*& particle_system_primitive : m_primitives) {
         if (particle_system_primitive == nullptr) {
             particle_system_primitive = &primitive;
@@ -163,6 +166,9 @@ void ParticleSystemPlayer::add(ParticleSystemPrimitive& primitive) {
 
 void ParticleSystemPlayer::remove(ParticleSystemPrimitive& primitive) {
     std::lock_guard lock(m_primitives_mutex);
+
+    KW_ASSERT(primitive.m_particle_system_player == this);
+    primitive.m_particle_system_player = nullptr;
 
     auto it = std::find(m_primitives.begin(), m_primitives.end(), &primitive);
     KW_ASSERT(it != m_primitives.end());

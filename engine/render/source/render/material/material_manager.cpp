@@ -194,7 +194,6 @@ private:
         graphics_pipeline_descriptor.vertex_binding_descriptor_count = m_graphics_pipeline_context.is_skinned ? 2 : 1;
         graphics_pipeline_descriptor.instance_binding_descriptors = m_is_shadow ? &shadow_instance_binding_descriptor : &instance_binding_descriptor;
         graphics_pipeline_descriptor.instance_binding_descriptor_count = m_graphics_pipeline_context.is_skinned ? 0 : 1;
-        graphics_pipeline_descriptor.front_face = m_is_shadow ? FrontFace::CLOCKWISE : FrontFace::COUNTER_CLOCKWISE;
         graphics_pipeline_descriptor.depth_bias_constant_factor = m_is_shadow ? 2.f : 0.f;
         graphics_pipeline_descriptor.depth_bias_slope_factor = m_is_shadow ? 1.5f : 0.f;
         graphics_pipeline_descriptor.is_depth_test_enabled = true;
@@ -303,7 +302,6 @@ private:
         graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
         graphics_pipeline_descriptor.instance_binding_descriptors = &instance_binding_descriptor;
         graphics_pipeline_descriptor.instance_binding_descriptor_count = 1;
-        graphics_pipeline_descriptor.front_face = m_is_shadow ? FrontFace::CLOCKWISE : FrontFace::COUNTER_CLOCKWISE;
         graphics_pipeline_descriptor.is_depth_test_enabled = !m_is_shadow;
         graphics_pipeline_descriptor.depth_compare_op = CompareOp::LESS;
         graphics_pipeline_descriptor.attachment_blend_descriptors = &attachment_blend_descriptor;
