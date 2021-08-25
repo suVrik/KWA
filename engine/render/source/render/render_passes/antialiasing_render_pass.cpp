@@ -1,13 +1,18 @@
-#include "render/render_passes/tonemapping_render_pass.h"
+#include "render/render_passes/antialiasing_render_pass.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
+#include <core/math/float4.h>
 
 namespace kw {
 
-class TonemappingRenderPass::Task : public kw::Task {
+struct FxaaPushConstants {
+    float4 texel_size;
+};
+
+class AntialiasingRenderPass::Task : public kw::Task {
 public:
-    Task(TonemappingRenderPass& render_pass)
+    Task(AntialiasingRenderPass& render_pass)
         : m_render_pass(render_pass)
     {
     }
@@ -15,25 +20,30 @@ public:
     void run() override {
         RenderPassContext* context = m_render_pass.begin();
         if (context != nullptr) {
+            FxaaPushConstants push_constants{};
+            push_constants.texel_size = float4(1.f / context->get_attachment_width(), 1.f / context->get_attachment_height(), 0.f, 0.f);
+
             DrawCallDescriptor draw_call_descriptor{};
             draw_call_descriptor.graphics_pipeline = m_render_pass.m_graphics_pipeline;
             draw_call_descriptor.vertex_buffers = &m_render_pass.m_vertex_buffer;
             draw_call_descriptor.vertex_buffer_count = 1;
             draw_call_descriptor.index_buffer = m_render_pass.m_index_buffer;
             draw_call_descriptor.index_count = 6;
+            draw_call_descriptor.push_constants = &push_constants;
+            draw_call_descriptor.push_constants_size = sizeof(FxaaPushConstants);
             context->draw(draw_call_descriptor);
         }
     }
 
     const char* get_name() const override {
-        return "Tonemapping Render Pass";
+        return "Antialiasing Render Pass";
     }
 
 private:
-    TonemappingRenderPass& m_render_pass;
+    AntialiasingRenderPass& m_render_pass;
 };
 
-TonemappingRenderPass::TonemappingRenderPass(const TonemappingRenderPassDescriptor& descriptor)
+AntialiasingRenderPass::AntialiasingRenderPass(const AntialiasingRenderPassDescriptor& descriptor)
     : FullScreenQuadRenderPass(*descriptor.render)
     , m_transient_memory_resource(*descriptor.transient_memory_resource)
 {
@@ -41,20 +51,20 @@ TonemappingRenderPass::TonemappingRenderPass(const TonemappingRenderPassDescript
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
 }
 
-void TonemappingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
-    attachment_descriptors.push_back(AttachmentDescriptor{ "tonemapping_attachment", TextureFormat::RGBA8_UNORM, LoadOp::DONT_CARE });
-}
-
-void TonemappingRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+void AntialiasingRenderPass::get_color_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
     // None.
 }
 
-void TonemappingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
-    static const char* const READ_COLOR_ATTACHMENT_NAME = "lighting_attachment";
-    static const char* const WRITE_COLOR_ATTACHMENT_NAME = "tonemapping_attachment";
+void AntialiasingRenderPass::get_depth_stencil_attachment_descriptors(Vector<AttachmentDescriptor>& attachment_descriptors) {
+    // None.
+}
+
+void AntialiasingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) {
+    static const char* const READ_COLOR_ATTACHMENT_NAME = "tonemapping_attachment";
+    static const char* const WRITE_COLOR_ATTACHMENT_NAME = "swapchain_attachment";
 
     RenderPassDescriptor render_pass_descriptor{};
-    render_pass_descriptor.name = "tonemapping_render_pass";
+    render_pass_descriptor.name = "antialiasing_render_pass";
     render_pass_descriptor.render_pass = this;
     render_pass_descriptor.read_attachment_names = &READ_COLOR_ATTACHMENT_NAME;
     render_pass_descriptor.read_attachment_name_count = 1;
@@ -63,7 +73,7 @@ void TonemappingRenderPass::get_render_pass_descriptors(Vector<RenderPassDescrip
     render_pass_descriptors.push_back(render_pass_descriptor);
 }
 
-void TonemappingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
+void AntialiasingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     AttributeDescriptor attribute_descriptors[2]{};
     attribute_descriptors[0].semantic = Semantic::POSITION;
     attribute_descriptors[0].format = TextureFormat::RG32_FLOAT;
@@ -78,33 +88,38 @@ void TonemappingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     binding_descriptor.stride = sizeof(Vertex);
 
     UniformAttachmentDescriptor uniform_attachment_descriptor{};
-    uniform_attachment_descriptor.variable_name = "lighting_uniform_attachment";
-    uniform_attachment_descriptor.attachment_name = "lighting_attachment";
+    uniform_attachment_descriptor.variable_name = "tonemapping_uniform_attachment";
+    uniform_attachment_descriptor.attachment_name = "tonemapping_attachment";
 
     UniformSamplerDescriptor uniform_sampler_descriptor{};
     uniform_sampler_descriptor.variable_name = "sampler_uniform";
+    uniform_sampler_descriptor.address_mode_u = AddressMode::CLAMP;
+    uniform_sampler_descriptor.address_mode_v = AddressMode::CLAMP;
+    uniform_sampler_descriptor.address_mode_w = AddressMode::CLAMP;
     uniform_sampler_descriptor.max_lod = 15.f;
 
     GraphicsPipelineDescriptor graphics_pipeline_descriptor{};
-    graphics_pipeline_descriptor.graphics_pipeline_name = "tonemapping_graphics_pipeline";
-    graphics_pipeline_descriptor.render_pass_name = "tonemapping_render_pass";
+    graphics_pipeline_descriptor.graphics_pipeline_name = "antialiasing_graphics_pipeline";
+    graphics_pipeline_descriptor.render_pass_name = "antialiasing_render_pass";
     graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/full_screen_quad_vertex.hlsl";
-    graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/tonemapping_fragment.hlsl";
+    graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/fxaa_fragment.hlsl";
     graphics_pipeline_descriptor.vertex_binding_descriptors = &binding_descriptor;
     graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     graphics_pipeline_descriptor.uniform_attachment_descriptors = &uniform_attachment_descriptor;
     graphics_pipeline_descriptor.uniform_attachment_descriptor_count = 1;
     graphics_pipeline_descriptor.uniform_sampler_descriptors = &uniform_sampler_descriptor;
     graphics_pipeline_descriptor.uniform_sampler_descriptor_count = 1;
+    graphics_pipeline_descriptor.push_constants_name = "fxaa_push_constants";
+    graphics_pipeline_descriptor.push_constants_size = sizeof(FxaaPushConstants);
 
     m_graphics_pipeline = frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
 }
 
-void TonemappingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
+void AntialiasingRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
     frame_graph.destroy_graphics_pipeline(m_graphics_pipeline);
 }
 
-Task* TonemappingRenderPass::create_task() {
+Task* AntialiasingRenderPass::create_task() {
     return m_transient_memory_resource.construct<Task>(*this);
 }
 

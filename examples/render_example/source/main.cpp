@@ -32,6 +32,7 @@
 #include <render/reflection_probe/reflection_probe_manager.h>
 #include <render/reflection_probe/reflection_probe_primitive.h>
 #include <render/render.h>
+#include <render/render_passes/antialiasing_render_pass.h>
 #include <render/render_passes/bloom_render_pass.h>
 #include <render/render_passes/debug_draw_render_pass.h>
 #include <render/render_passes/emission_render_pass.h>
@@ -247,6 +248,12 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     tonemapping_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
     TonemappingRenderPass tonemapping_render_pass(tonemapping_render_pass_descriptor);
+    
+    AntialiasingRenderPassDescriptor antialiasing_render_pass_descriptor{};
+    antialiasing_render_pass_descriptor.render = render.get();
+    antialiasing_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    AntialiasingRenderPass antialiasing_render_pass(antialiasing_render_pass_descriptor);
 
     DebugDrawRenderPassDescriptor debug_draw_render_pass_descriptor{};
     debug_draw_render_pass_descriptor.debug_draw_manager = &debug_draw_manager;
@@ -272,6 +279,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     bloom_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     tonemapping_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
+    antialiasing_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     debug_draw_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     imgui_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
 
@@ -285,6 +293,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     bloom_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     tonemapping_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
+    antialiasing_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     debug_draw_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     imgui_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
 
@@ -298,6 +307,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     bloom_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     tonemapping_render_pass.get_render_pass_descriptors(render_pass_descriptors);
+    antialiasing_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     debug_draw_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     imgui_render_pass.get_render_pass_descriptors(render_pass_descriptors);
 
@@ -329,6 +339,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_render_pass.create_graphics_pipelines(*frame_graph);
     bloom_render_pass.create_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.create_graphics_pipelines(*frame_graph);
+    antialiasing_render_pass.create_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.create_graphics_pipelines(*frame_graph);
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
 
@@ -926,6 +937,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         Task* particle_system_render_pass_task = particle_system_render_pass.create_task();
         Vector<Task*> bloom_render_pass_tasks = bloom_render_pass.create_tasks();
         Task* tonemapping_render_pass_task = tonemapping_render_pass.create_task();
+        Task* antialiasing_render_pass_task = antialiasing_render_pass.create_task();
         Task* debug_draw_render_pass_task = debug_draw_render_pass.create_task();
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
         Task* flush_task = render->create_task();
@@ -955,12 +967,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         emission_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         particle_system_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, particle_system_player_end });
         tonemapping_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+        antialiasing_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         debug_draw_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         imgui_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
         flush_task->add_input_dependencies(transient_memory_resource, {
             opaque_shadow_render_pass_task_end, transcluent_shadow_render_pass_task_end, geometry_render_pass_task,
             lighting_render_pass_task, reflection_probe_render_pass_task, emission_render_pass_task, particle_system_render_pass_task,
-            tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task
+            tonemapping_render_pass_task, antialiasing_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task
         });
         present_frame_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, flush_task });
 
@@ -999,6 +1012,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, emission_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, tonemapping_render_pass_task);
+        task_scheduler.enqueue_task(transient_memory_resource, antialiasing_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, debug_draw_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, imgui_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, flush_task);
@@ -1013,6 +1027,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     
     imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
+    antialiasing_render_pass.destroy_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.destroy_graphics_pipelines(*frame_graph);
     bloom_render_pass.destroy_graphics_pipelines(*frame_graph);
     particle_system_render_pass.destroy_graphics_pipelines(*frame_graph);
