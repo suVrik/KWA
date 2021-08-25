@@ -26,7 +26,7 @@ public:
     }
 
     const char* get_name() const override {
-        return "HDR Render Pass";
+        return "Tonemapping Render Pass";
     }
 
 private:
@@ -88,7 +88,7 @@ void TonemappingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
     GraphicsPipelineDescriptor graphics_pipeline_descriptor{};
     graphics_pipeline_descriptor.graphics_pipeline_name = "tonemapping_graphics_pipeline";
     graphics_pipeline_descriptor.render_pass_name = "tonemapping_render_pass";
-    graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/tonemapping_vertex.hlsl";
+    graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/full_screen_quad_vertex.hlsl";
     graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/tonemapping_fragment.hlsl";
     graphics_pipeline_descriptor.vertex_binding_descriptors = &binding_descriptor;
     graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;

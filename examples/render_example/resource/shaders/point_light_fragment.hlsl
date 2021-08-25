@@ -161,7 +161,7 @@ float4 main(float4 position : SV_POSITION) : SV_TARGET {
     float3 albedo = albedo_metalness_sample.rgb;
     float metalness = albedo_metalness_sample.a;
     float3 normal_direction = normal_roughness_sample.rgb;
-    float roughness = normal_roughness_sample.a;
+    float roughness = max(normal_roughness_sample.a, 0.075);
     float depth = depth_sample.r;
 
     float4 clip_position = mul(inverse_view_projection, float4(screen_position.x, screen_position.y, depth, 1.0));

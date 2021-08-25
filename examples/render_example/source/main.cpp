@@ -32,6 +32,7 @@
 #include <render/reflection_probe/reflection_probe_manager.h>
 #include <render/reflection_probe/reflection_probe_primitive.h>
 #include <render/render.h>
+#include <render/render_passes/bloom_render_pass.h>
 #include <render/render_passes/debug_draw_render_pass.h>
 #include <render/render_passes/emission_render_pass.h>
 #include <render/render_passes/geometry_render_pass.h>
@@ -231,6 +232,16 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     ParticleSystemRenderPass particle_system_render_pass(particle_system_render_pass_descriptor);
 
+    BloomRenderPassDescriptor bloom_render_pass_descriptor{};
+    bloom_render_pass_descriptor.render = render.get();
+    bloom_render_pass_descriptor.mip_count = 4;
+    bloom_render_pass_descriptor.blur_radius = 1.f;
+    bloom_render_pass_descriptor.transparency = 0.1f;
+    bloom_render_pass_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    bloom_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    BloomRenderPass bloom_render_pass(bloom_render_pass_descriptor);
+    
     TonemappingRenderPassDescriptor tonemapping_render_pass_descriptor{};
     tonemapping_render_pass_descriptor.render = render.get();
     tonemapping_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
@@ -259,6 +270,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     reflection_probe_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     emission_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     particle_system_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
+    bloom_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     tonemapping_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     debug_draw_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
     imgui_render_pass.get_color_attachment_descriptors(color_attachment_descriptors);
@@ -271,6 +283,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     reflection_probe_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     emission_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     particle_system_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
+    bloom_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     tonemapping_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     debug_draw_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
     imgui_render_pass.get_depth_stencil_attachment_descriptors(depth_stencil_attachment_descriptors);
@@ -283,6 +296,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     reflection_probe_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     emission_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     particle_system_render_pass.get_render_pass_descriptors(render_pass_descriptors);
+    bloom_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     tonemapping_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     debug_draw_render_pass.get_render_pass_descriptors(render_pass_descriptors);
     imgui_render_pass.get_render_pass_descriptors(render_pass_descriptors);
@@ -313,6 +327,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     reflection_probe_render_pass.create_graphics_pipelines(*frame_graph);
     emission_render_pass.create_graphics_pipelines(*frame_graph);
     particle_system_render_pass.create_graphics_pipelines(*frame_graph);
+    bloom_render_pass.create_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.create_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.create_graphics_pipelines(*frame_graph);
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
@@ -909,6 +924,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         Task* reflection_probe_render_pass_task = reflection_probe_render_pass.create_task();
         Task* emission_render_pass_task = emission_render_pass.create_task();
         Task* particle_system_render_pass_task = particle_system_render_pass.create_task();
+        Vector<Task*> bloom_render_pass_tasks = bloom_render_pass.create_tasks();
         Task* tonemapping_render_pass_task = tonemapping_render_pass.create_task();
         Task* debug_draw_render_pass_task = debug_draw_render_pass.create_task();
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
@@ -947,6 +963,12 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             tonemapping_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task
         });
         present_frame_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, flush_task });
+
+        for (Task* bloom_render_pass_task : bloom_render_pass_tasks) {
+            bloom_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
+            flush_task->add_input_dependencies(transient_memory_resource, { bloom_render_pass_task });
+            task_scheduler.enqueue_task(transient_memory_resource, bloom_render_pass_task);
+        }
 
         task_scheduler.enqueue_task(transient_memory_resource, reflection_probe_manager_begin);
         task_scheduler.enqueue_task(transient_memory_resource, reflection_probe_manager_end);
@@ -992,6 +1014,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
     tonemapping_render_pass.destroy_graphics_pipelines(*frame_graph);
+    bloom_render_pass.destroy_graphics_pipelines(*frame_graph);
     particle_system_render_pass.destroy_graphics_pipelines(*frame_graph);
     emission_render_pass.destroy_graphics_pipelines(*frame_graph);
     reflection_probe_render_pass.destroy_graphics_pipelines(*frame_graph);
