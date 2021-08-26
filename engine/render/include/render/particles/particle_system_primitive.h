@@ -36,6 +36,8 @@ public:
     float get_particle_system_time() const;
     void set_particle_system_time(float value);
 
+    UniquePtr<Primitive> clone(MemoryResource& memory_resource) const override;
+
 protected:
     void global_transform_updated() override;
     void particle_system_loaded() override;

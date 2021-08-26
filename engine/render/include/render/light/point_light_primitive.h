@@ -24,6 +24,8 @@ public:
     const ShadowParams& get_shadow_params() const;
     void set_shadow_params(const ShadowParams& value);
 
+    UniquePtr<Primitive> clone(MemoryResource& memory_resource) const override;
+
 private:
     bool m_is_shadow_enabled;
     ShadowParams m_shadow_params;

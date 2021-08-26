@@ -129,6 +129,10 @@ void ParticleSystemPrimitive::set_particle_system_time(float value) {
     m_particle_system_time = value;
 }
 
+UniquePtr<Primitive> ParticleSystemPrimitive::clone(MemoryResource& memory_resource) const {
+    return static_pointer_cast<Primitive>(allocate_unique<ParticleSystemPrimitive>(memory_resource, *this));
+}
+
 void ParticleSystemPrimitive::global_transform_updated() {
     if (m_particle_system && m_particle_system->is_loaded()) {
         m_bounds = m_particle_system->get_max_bounds() * get_global_transform();

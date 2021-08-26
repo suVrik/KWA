@@ -42,4 +42,8 @@ void PointLightPrimitive::set_shadow_params(const ShadowParams& value) {
     }
 }
 
+UniquePtr<Primitive> PointLightPrimitive::clone(MemoryResource& memory_resource) const {
+    return static_pointer_cast<Primitive>(allocate_unique<PointLightPrimitive>(memory_resource, *this));
+}
+
 } // namespace kw

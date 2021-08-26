@@ -40,6 +40,8 @@ public:
     float get_animation_speed() const;
     void set_animation_speed(float value);
 
+    UniquePtr<Primitive> clone(MemoryResource& memory_resource) const override;
+
 protected:
     void geometry_loaded() override;
 

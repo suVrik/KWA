@@ -178,6 +178,10 @@ Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResourc
     return Vector<float4x4>(memory_resource);
 }
 
+UniquePtr<Primitive> GeometryPrimitive::clone(MemoryResource& memory_resource) const {
+    return static_pointer_cast<Primitive>(allocate_unique<GeometryPrimitive>(memory_resource, *this));
+}
+
 void GeometryPrimitive::global_transform_updated() {
     if (m_geometry && m_geometry->is_loaded()) {
         m_bounds = m_geometry->get_bounds() * get_global_transform();

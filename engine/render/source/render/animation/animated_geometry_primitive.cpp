@@ -140,6 +140,10 @@ void AnimatedGeometryPrimitive::set_animation_speed(float value) {
     m_animation_speed = value;
 }
 
+UniquePtr<Primitive> AnimatedGeometryPrimitive::clone(MemoryResource& memory_resource) const {
+    return static_pointer_cast<Primitive>(allocate_unique<AnimatedGeometryPrimitive>(memory_resource, *this));
+}
+
 void AnimatedGeometryPrimitive::geometry_loaded() {
     KW_ASSERT(get_geometry() && get_geometry()->is_loaded(), "Geometry must be loaded.");
 

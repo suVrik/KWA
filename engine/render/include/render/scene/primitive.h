@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/containers/unique_ptr.h>
 #include <core/math/transform.h>
 
 namespace kw {
@@ -40,6 +41,9 @@ public:
 
     const float3& get_global_scale() const;
     void set_global_scale(const float3& scale);
+
+    // Virtual copy constructor basically.
+    virtual UniquePtr<Primitive> clone(MemoryResource& memory_resource) const = 0;
 
 protected:
     // Acceleration structure primitives must update their bounds, container primitives must propagate global transform.

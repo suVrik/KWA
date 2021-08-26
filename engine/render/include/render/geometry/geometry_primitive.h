@@ -36,6 +36,8 @@ public:
     // Returns default bind pose if this geometry doesn't have a custom pose (i.e. not an `AnimatedGeometryPrimitive`).
     virtual Vector<float4x4> get_model_space_joint_matrices(MemoryResource& memory_resource);
 
+    UniquePtr<Primitive> clone(MemoryResource& memory_resource) const override;
+
 protected:
     void global_transform_updated() override;
     void geometry_loaded() override;

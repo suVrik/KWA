@@ -33,6 +33,8 @@ public:
     const aabbox& get_parallax_box() const;
     void set_parallax_box(const aabbox& value);
 
+    UniquePtr<Primitive> clone(MemoryResource& memory_resource) const override;
+
 protected:
     void global_transform_updated() override;
 

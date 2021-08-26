@@ -52,6 +52,10 @@ void ReflectionProbePrimitive::set_parallax_box(const aabbox& value) {
     m_parallax_box = value;
 }
 
+UniquePtr<Primitive> ReflectionProbePrimitive::clone(MemoryResource& memory_resource) const {
+    return static_pointer_cast<Primitive>(allocate_unique<ReflectionProbePrimitive>(memory_resource, *this));
+}
+
 void ReflectionProbePrimitive::global_transform_updated() {
     m_bounds = aabbox(get_global_translation(), float3(m_falloff_radius));
 
