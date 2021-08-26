@@ -13498,10 +13498,10 @@
 {
   type: "PointLightPrimitive",
   is_shadow_enabled: true,
-  color: [ 0.6, 1, 1 ],
-  power: 3,
+  color: [ 1, 0.1, 0 ],
+  power: 30,
   local_transform: {
-    translation: [ 5, 3.5, -20 ],
+    translation: [ 5, 2, -20 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
@@ -13555,14 +13555,11 @@
   }
 },
 {
-  type: "AnimatedGeometryPrimitive",
-  animation: "resource/animations/robot_orange/idle.kwg",
-  geometry: "resource/geometry/robot_orange.kwg",
-  material: "resource/materials/robot_orange.kwm",
-  shadow_material: "resource/materials/skinned_shadow.kwm",
+  type: "ContainerPrimitive",
+  container_prototype: "resource/containers/fire.kwm",
   local_transform: {
-    translation: [ 6.5, 1.05, -22 ],
-    rotation: [ 0, -0.382683456, 0, 0.923879504 ],
+    translation: [ 5, 1, -10 ],
+    rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
 },
@@ -13570,7 +13567,34 @@
   type: "ContainerPrimitive",
   container_prototype: "resource/containers/fire.kwm",
   local_transform: {
-    translation: [ 5, 1, -12 ],
+    translation: [ 6, 1, -12 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ContainerPrimitive",
+  container_prototype: "resource/containers/fire.kwm",
+  local_transform: {
+    translation: [ 4, 1, -12 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ContainerPrimitive",
+  container_prototype: "resource/containers/fire.kwm",
+  local_transform: {
+    translation: [ 5, 1, -14 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ContainerPrimitive",
+  container_prototype: "resource/containers/fire.kwm",
+  local_transform: {
+    translation: [ 4, 1, -16 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
@@ -13645,7 +13669,7 @@
     extent: [ 2.5, 1.85, 13 ]
   },
   local_transform: {
-    translation: [ 5, 3.5, -12 ],
+    translation: [ 5, 3.5, -14 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }

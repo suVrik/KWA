@@ -29,8 +29,8 @@
       max: [ 0.09, 0.09, 0.09 ]
     },
     VelocityParticleSystemGenerator: {
-      min: [ -0.4, 1, -0.15 ],
-      max: [ 0.4, 2, 0.15 ]
+      min: [ -0.4, 0.75, 0.3 ],
+      max: [ 0.4, 1.25, 0.5 ]
     },
     CylinderPositionParticleSystemGenerator: {
       origin: [ 0, 0, 0 ]
