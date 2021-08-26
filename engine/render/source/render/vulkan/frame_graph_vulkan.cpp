@@ -4542,6 +4542,10 @@ void FrameGraphVulkan::RenderPassContextVulkan::draw(const DrawCallDescriptor& d
 
     //
     // Compute descriptor set's CRC.
+    // 
+    // TODO: Turns out CRC is not that good?
+    //   * CRC collisions with destroyed image view => validation error;
+    //   * Create image view, destroy image view, create image view (with the same address) => usage of destroyed image view.
     //
 
     uint64_t crc = 0;

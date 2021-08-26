@@ -204,6 +204,9 @@ void BloomRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) {
 
     UniformSamplerDescriptor uniform_sampler_descriptor{};
     uniform_sampler_descriptor.variable_name = "sampler_uniform";
+    uniform_sampler_descriptor.address_mode_u = AddressMode::CLAMP;
+    uniform_sampler_descriptor.address_mode_v = AddressMode::CLAMP;
+    uniform_sampler_descriptor.address_mode_w = AddressMode::CLAMP;
     uniform_sampler_descriptor.max_lod = 15.f;
 
     GraphicsPipelineDescriptor graphics_pipeline_descriptor{};

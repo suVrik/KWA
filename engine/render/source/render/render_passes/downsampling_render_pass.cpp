@@ -118,7 +118,11 @@ void DownsamplingRenderPass::create_graphics_pipelines(FrameGraph& frame_graph) 
     graphics_pipeline_descriptor.graphics_pipeline_name = m_graphics_pipeline_name.c_str();
     graphics_pipeline_descriptor.render_pass_name = m_render_pass_name.c_str();
     graphics_pipeline_descriptor.vertex_shader_filename = "resource/shaders/full_screen_quad_vertex.hlsl";
-    graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/downsampling_fragment.hlsl";
+    if (m_output_attachment_scale == 0.5f) {
+        graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/downsampling_2_fragment.hlsl";
+    } else {
+        graphics_pipeline_descriptor.fragment_shader_filename = "resource/shaders/downsampling_fragment.hlsl";
+    }
     graphics_pipeline_descriptor.vertex_binding_descriptors = &binding_descriptor;
     graphics_pipeline_descriptor.vertex_binding_descriptor_count = 1;
     graphics_pipeline_descriptor.uniform_attachment_descriptors = &uniform_attachment_descriptor;

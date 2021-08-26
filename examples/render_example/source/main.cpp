@@ -237,7 +237,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     bloom_render_pass_descriptor.render = render.get();
     bloom_render_pass_descriptor.mip_count = 4;
     bloom_render_pass_descriptor.blur_radius = 1.f;
-    bloom_render_pass_descriptor.transparency = 0.1f;
+    bloom_render_pass_descriptor.transparency = 0.05f;
     bloom_render_pass_descriptor.persistent_memory_resource = &persistent_memory_resource;
     bloom_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
 
@@ -539,8 +539,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     bool draw_light[std::size(point_light_primitives)]{};
 
-    float camera_yaw = radians(0.f);
-    float camera_pitch = radians(5.f);
+    float camera_yaw = radians(180.f);
+    float camera_pitch = radians(10.f);
     float3 camera_position(5.f, 3.5f, 7.f);
     float mouse_sensitivity = 0.0025f;
     float camera_speed = 12.f;

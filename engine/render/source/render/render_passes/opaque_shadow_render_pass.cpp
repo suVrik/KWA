@@ -20,6 +20,7 @@
 
 namespace kw {
 
+// TODO: Share across `ReflectionProbeManager`, `OpaqueShadowRenderPass` and `TranslucentShadowRenderPass`.
 struct CubemapVectors {
     float3 direction;
     float3 up;

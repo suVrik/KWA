@@ -448,19 +448,20 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
         // Buffer memory is accessible on host, just memcpy to it.
         std::memcpy(static_cast<uint8_t*>(device_memory_mapping) + vertex_buffer_vulkan->device_data_offset, data, size);
     } else {
-        uint64_t size_left = static_cast<uint64_t>(size);
-        while (size_left > 0) {
+        uint64_t offset = 0;
+        while (offset < size) {
             //
             // Synchronously change both the staging memory pointers and buffer upload commands.
             //
 
-            // TODO RENDER: Investigate the deadlock.
+            // TODO: Investigate the deadlock.
             std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
             //
 
+            uint64_t size_left = size - offset;
             auto [allocation_size, allocation_offset] = allocate_from_staging_memory(std::min(1024ull, size_left), size_left, 1);
             KW_ASSERT(allocation_size >= std::min(1024ull, size_left) && allocation_size <= size_left);
             KW_ASSERT(allocation_offset < m_staging_buffer_size);
@@ -475,7 +476,7 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
             buffer_upload_command.buffer = vertex_buffer_vulkan;
             buffer_upload_command.staging_buffer_offset = allocation_offset;
             buffer_upload_command.staging_buffer_size = allocation_size;
-            buffer_upload_command.device_buffer_offset = vertex_buffer_vulkan->get_available_size();
+            buffer_upload_command.device_buffer_offset = vertex_buffer_vulkan->get_available_size() + offset;
             m_buffer_upload_commands.push_back(buffer_upload_command);
 
             //
@@ -490,7 +491,7 @@ void RenderVulkan::upload_vertex_buffer(VertexBuffer* vertex_buffer, const void*
             //
 
             data = static_cast<const uint8_t*>(data) + allocation_size;
-            size_left -= allocation_size;
+            offset += allocation_size;
         }
     }
 
@@ -569,19 +570,20 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
         // Buffer memory is accessible on host, just memcpy to it.
         std::memcpy(static_cast<uint8_t*>(device_memory_mapping) + index_buffer_vulkan->device_data_offset, data, size);
     } else {
-        uint64_t size_left = static_cast<uint64_t>(size);
-        while (size_left > 0) {
+        uint64_t offset = 0;
+        while (offset < size) {
             //
             // Synchronously change both the staging memory pointers and buffer upload commands.
             //
 
-            // TODO RENDER: Investigate the deadlock.
+            // TODO: Investigate the deadlock.
             std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
             // Find staging memory range to store the buffer data and upload the buffer data to this range.
             //
 
+            uint64_t size_left = size - offset;
             auto [allocation_size, allocation_offset] = allocate_from_staging_memory(std::min(1024ull, size_left), size_left, 1);
             KW_ASSERT(allocation_size >= std::min(1024ull, size_left) && allocation_size <= size_left);
             KW_ASSERT(allocation_offset < m_staging_buffer_size);
@@ -596,7 +598,7 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
             buffer_upload_command.buffer = index_buffer_vulkan;
             buffer_upload_command.staging_buffer_offset = allocation_offset;
             buffer_upload_command.staging_buffer_size = allocation_size;
-            buffer_upload_command.device_buffer_offset = index_buffer_vulkan->get_available_size();
+            buffer_upload_command.device_buffer_offset = index_buffer_vulkan->get_available_size() + offset;
             m_buffer_upload_commands.push_back(buffer_upload_command);
 
             //
@@ -611,7 +613,7 @@ void RenderVulkan::upload_index_buffer(IndexBuffer* index_buffer, const void* da
             //
 
             data = static_cast<const uint8_t*>(data) + allocation_size;
-            size_left -= allocation_size;
+            offset += allocation_size;
         }
     }
 
@@ -886,7 +888,7 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
             // Synchronously change both the staging memory pointers and texture upload commands.
             //
 
-            // TODO RENDER: Investigate the deadlock.
+            // TODO: Investigate the deadlock.
             std::scoped_lock lock(m_buffer_upload_command_mutex, m_texture_upload_command_mutex);
 
             //
@@ -1248,7 +1250,7 @@ void RenderVulkan::upload_texture(const UploadTextureDescriptor& upload_texture_
     }
 }
 
-// TODO RENDER: Make it run in flush rather right now synchronously.
+// TODO: Make it run in flush rather right now synchronously.
 void RenderVulkan::clear_texture(const ClearTextureDescriptor& clear_texture_descriptor) {
     VkCommandBufferAllocateInfo command_buffer_allocate_info{};
     command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1969,6 +1971,7 @@ VkDevice RenderVulkan::create_device(const RenderDescriptor& descriptor) {
     physical_device_features.independentBlend = VK_TRUE;
     physical_device_features.samplerAnisotropy = VK_TRUE;
     physical_device_features.textureCompressionBC = VK_TRUE;
+    physical_device_features.shaderImageGatherExtended = VK_TRUE;
 
     VkDeviceCreateInfo device_create_info{};
     device_create_info.sType = VkStructureType::VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -2886,7 +2889,7 @@ uint64_t RenderVulkan::upload_textures(VkCommandBuffer transfer_command_buffer) 
         //
 
         if (texture_upload_command.base_mip_level + 1 == mip_level_count) {
-            // TODO RENDER: This is a tough restriction. Relax it?
+            // TODO: This is a tough restriction. Relax it?
             KW_ASSERT(
                 texture_upload_command.mip_level_count > 1 ||
                 (texture_upload_command.base_mip_level + 1 == mip_level_count &&

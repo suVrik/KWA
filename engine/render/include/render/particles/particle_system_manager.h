@@ -44,9 +44,6 @@ public:
     // you need to place your task after the second task.
     Pair<Task*, Task*> create_tasks();
 
-    // TODO: Make it private.
-    ParticleSystemNotifier m_particle_system_notifier;
-
 private:
     class BeginTask;
     class WorkerTask;
@@ -61,6 +58,8 @@ private:
     UnorderedMap<String, SharedPtr<ParticleSystem>> m_particle_systems;
     Vector<Pair<const String&, SharedPtr<ParticleSystem>>> m_pending_particle_systems;
     mutable std::shared_mutex m_particle_systems_mutex;
+
+    ParticleSystemNotifier m_particle_system_notifier;
 };
 
 } // namespace kw

@@ -12,22 +12,23 @@ struct FS_OUTPUT {
     float4 emission_ao_target      : SV_TARGET2;
 };
 
-Texture2D albedo_alpha_uniform_attachment;
-Texture2D normal_uniform_attachment;
-Texture2D ao_roughness_metalness_uniform_attachment;
-Texture2D emission_uniform_attachment;
+Texture2D albedo_alpha_uniform_texture;
+Texture2D normal_uniform_texture;
+Texture2D ao_roughness_metalness_uniform_texture;
+Texture2D emission_uniform_texture;
 
 SamplerState sampler_uniform;
+SamplerState emission_sampler_uniform;
 
 FS_OUTPUT main(FS_INPUT input) {
-    float4 albedo_alpha_sample = albedo_alpha_uniform_attachment.Sample(sampler_uniform, input.texcoord);
+    float4 albedo_alpha_sample = albedo_alpha_uniform_texture.Sample(sampler_uniform, input.texcoord);
     if (albedo_alpha_sample.w <= 0.5) {
         discard;
     }
 
-    float4 normal_sample = normal_uniform_attachment.Sample(sampler_uniform, input.texcoord);
-    float4 ao_roughness_metalness_sample = ao_roughness_metalness_uniform_attachment.Sample(sampler_uniform, input.texcoord);
-    float4 emission_sample = emission_uniform_attachment.Sample(sampler_uniform, input.texcoord);
+    float4 normal_sample = normal_uniform_texture.Sample(sampler_uniform, input.texcoord);
+    float4 ao_roughness_metalness_sample = ao_roughness_metalness_uniform_texture.Sample(sampler_uniform, input.texcoord);
+    float4 emission_sample = emission_uniform_texture.Sample(emission_sampler_uniform, input.texcoord);
 
     float3x3 tangent_space = float3x3(input.tangent, input.binormal, input.normal);
 

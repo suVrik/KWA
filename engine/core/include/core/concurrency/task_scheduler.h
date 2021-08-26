@@ -20,11 +20,8 @@ public:
     // Start running the given task when all its dependencies have completed.
     void enqueue_task(MemoryResource& transient_memory_resource, Task* task);
 
-    // Help worker threads scheduling tasks. Return when there's no tasks left and all worker threads have completed.
+    // Help worker threads running tasks. Return when there's no tasks left and all worker threads have completed.
     void join();
-
-    // Only the number of worker threads is returned. Main thread may join task scheduling too.
-    size_t get_thread_count() const;
 
 private:
     void worker_thread(size_t thread_index);

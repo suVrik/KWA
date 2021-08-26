@@ -153,8 +153,8 @@ SharedPtr<ParticleSystem> ParticleSystemManager::load(const char* relative_path)
 const String& ParticleSystemManager::get_relative_path(const SharedPtr<ParticleSystem>& particle_system) const {
     std::shared_lock shared_lock(m_particle_systems_mutex);
 
-    for (auto& [relative_path, stored_texture] : m_particle_systems) {
-        if (particle_system == stored_texture) {
+    for (auto& [relative_path, stored_particle_system] : m_particle_systems) {
+        if (particle_system == stored_particle_system) {
             return relative_path;
         }
     }

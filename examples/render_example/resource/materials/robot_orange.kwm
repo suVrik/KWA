@@ -2,10 +2,10 @@
   vertex_shader: "resource/shaders/geometry/skinned_vertex.hlsl",
   fragment_shader: "resource/shaders/geometry/shared_fragment.hlsl",
   textures: {
-    albedo_alpha_uniform_attachment: "resource/textures/robot_orange_aa.kwt",
-    normal_uniform_attachment: "resource/textures/robot_orange_n.kwt",
-    ao_roughness_metalness_uniform_attachment: "resource/textures/robot_orange_arm.kwt",
-    emission_uniform_attachment: "resource/textures/robot_orange_e.kwt"
+    albedo_alpha_uniform_texture: "resource/textures/robot_orange_aa.kwt",
+    normal_uniform_texture: "resource/textures/robot_orange_n.kwt",
+    ao_roughness_metalness_uniform_texture: "resource/textures/robot_orange_arm.kwt",
+    emission_uniform_texture: "resource/textures/robot_orange_e.kwt"
   },
   is_shadow: false,
   is_skinned: true,

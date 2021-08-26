@@ -162,6 +162,7 @@ LightingRenderPass::LightingRenderPass(const LightingRenderPassDescriptor& descr
 
     m_render.upload_texture(upload_texture_descriptor);
 
+    // TODO: Put this in some shared class with LightingRenderPass?
     static const float3 VERTEX_DATA[] = {
         float3( 0.000000f, -1.080000f,  0.000000f), float3( 0.781496f, -0.482997f,  0.567783f),
         float3(-0.298499f, -0.482997f,  0.918701f), float3(-0.965980f, -0.482993f,  0.000000f),
