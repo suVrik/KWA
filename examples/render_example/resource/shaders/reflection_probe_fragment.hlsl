@@ -108,5 +108,5 @@ float4 main(float4 position : SV_POSITION) : SV_TARGET {
     float falloff_radius = reflection_probe_push_constants.radius_lod.x;
     float weight = falloff(distance, falloff_radius);
 
-    return float4(diffuse + specular, weight);
+    return float4(diffuse + specular, 1.0) * weight;
 }

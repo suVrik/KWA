@@ -133,15 +133,15 @@ void Scene::child_removed(Primitive& primitive) {
 }
 
 void Scene::add_container_primitive(ContainerPrimitive& container_primitive) {
-    const Vector<Primitive*>& children = container_primitive.get_children();
-    for (Primitive* primitive : children) {
+    const Vector<UniquePtr<Primitive>>& children = container_primitive.get_children();
+    for (const UniquePtr<Primitive>& primitive : children) {
         child_added(*primitive);
     }
 }
 
 void Scene::remove_container_primitive(ContainerPrimitive& container_primitive) {
-    const Vector<Primitive*>& children = container_primitive.get_children();
-    for (Primitive* primitive : children) {
+    const Vector<UniquePtr<Primitive>>& children = container_primitive.get_children();
+    for (const UniquePtr<Primitive>& primitive : children) {
         child_removed(*primitive);
     }
 }

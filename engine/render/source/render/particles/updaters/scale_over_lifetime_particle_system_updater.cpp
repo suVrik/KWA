@@ -4,6 +4,7 @@
 
 #include <core/error.h>
 #include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 namespace kw {
 
@@ -28,14 +29,7 @@ ParticleSystemUpdater* ScaleOverLifetimeParticleSystemUpdater::create_from_markd
     inputs.reserve(outputs_node.get_size());
 
     for (const UniquePtr<MarkdownNode>& it : outputs_node) {
-        ArrayNode& output_node = it->as<ArrayNode>();
-        KW_ERROR(output_node.get_size() == 3, "Invalid outputs.");
-        
-        float3 output(static_cast<float>(output_node[0].as<NumberNode>().get_value()),
-                      static_cast<float>(output_node[1].as<NumberNode>().get_value()),
-                      static_cast<float>(output_node[2].as<NumberNode>().get_value()));
-
-        outputs.push_back(output);
+        outputs.push_back(MarkdownUtils::float3_from_markdown(*it));
     }
 
     return memory_resource.construct<ScaleOverLifetimeParticleSystemUpdater>(std::move(inputs), std::move(outputs));

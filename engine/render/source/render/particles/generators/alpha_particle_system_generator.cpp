@@ -8,9 +8,10 @@
 namespace kw {
 
 ParticleSystemGenerator* AlphaParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    float min = static_cast<float>(node["min"].as<NumberNode>().get_value());
-    float max = static_cast<float>(node["max"].as<NumberNode>().get_value());
-    return memory_resource.construct<AlphaParticleSystemGenerator>(min, max);
+    return memory_resource.construct<AlphaParticleSystemGenerator>(
+        static_cast<float>(node["min"].as<NumberNode>().get_value()),
+        static_cast<float>(node["max"].as<NumberNode>().get_value())
+    );
 }
 
 AlphaParticleSystemGenerator::AlphaParticleSystemGenerator(float min_alpha, float max_alpha)

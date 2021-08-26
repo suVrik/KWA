@@ -6,11 +6,14 @@
 
 namespace kw {
 
+struct PrimitiveReflectionDescriptor;
 class ReflectionProbeManager;
 class Texture;
 
 class ReflectionProbePrimitive : public AccelerationStructurePrimitive {
 public:
+    static UniquePtr<Primitive> create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor);
+
     explicit ReflectionProbePrimitive(SharedPtr<Texture*> irradiance_map = nullptr,
                                       SharedPtr<Texture*> prefiltered_environment_map = nullptr,
                                       float falloff_radius = 1.f,

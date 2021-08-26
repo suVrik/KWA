@@ -5,6 +5,7 @@
 #include <core/debug/assert.h>
 #include <core/error.h>
 #include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 #include <emmintrin.h>
 #include <immintrin.h>
@@ -12,17 +13,11 @@
 namespace kw {
 
 ParticleSystemGenerator* CylinderPositionParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    ArrayNode& origin_node = node["origin"].as<ArrayNode>();
-    KW_ERROR(origin_node.get_size() == 3, "Invalid origin.");
-
-    float3 origin(static_cast<float>(origin_node[0].as<NumberNode>().get_value()),
-                  static_cast<float>(origin_node[1].as<NumberNode>().get_value()),
-                  static_cast<float>(origin_node[2].as<NumberNode>().get_value()));
-
-    float radius = static_cast<float>(node["radius"].as<NumberNode>().get_value());
-    float height = static_cast<float>(node["height"].as<NumberNode>().get_value());
-
-    return memory_resource.construct<CylinderPositionParticleSystemGenerator>(origin, radius, height);
+    return memory_resource.construct<CylinderPositionParticleSystemGenerator>(
+        MarkdownUtils::float3_from_markdown(node["origin"]),
+        static_cast<float>(node["radius"].as<NumberNode>().get_value()),
+        static_cast<float>(node["height"].as<NumberNode>().get_value())
+    );
 }
 
 CylinderPositionParticleSystemGenerator::CylinderPositionParticleSystemGenerator(const float3& origin, float radius, float height)

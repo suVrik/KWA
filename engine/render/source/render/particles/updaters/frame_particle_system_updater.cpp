@@ -9,8 +9,9 @@
 namespace kw {
 
 ParticleSystemUpdater* FrameParticleSystemUpdater::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    float framerate = static_cast<float>(node["framerate"].as<NumberNode>().get_value());
-    return memory_resource.construct<FrameParticleSystemUpdater>(framerate);
+    return memory_resource.construct<FrameParticleSystemUpdater>(
+        static_cast<float>(node["framerate"].as<NumberNode>().get_value())
+    );
 }
 
 FrameParticleSystemUpdater::FrameParticleSystemUpdater(float framerate)

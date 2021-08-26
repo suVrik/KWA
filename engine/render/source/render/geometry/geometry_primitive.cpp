@@ -1,8 +1,13 @@
 #include "render/geometry/geometry_primitive.h"
 #include "render/geometry/geometry.h"
+#include "render/geometry/geometry_manager.h"
 #include "render/geometry/skeleton.h"
+#include "render/material/material_manager.h"
+#include "render/scene/primitive_reflection.h"
 
 #include <core/debug/assert.h>
+#include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 #include <atomic>
 
@@ -10,6 +15,28 @@ namespace kw {
 
 // Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
 extern std::atomic_uint64_t acceleration_structure_counter;
+
+UniquePtr<Primitive> GeometryPrimitive::create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor) {
+    KW_ASSERT(primitive_reflection_descriptor.primitive_node != nullptr);
+    KW_ASSERT(primitive_reflection_descriptor.geometry_manager != nullptr);
+    KW_ASSERT(primitive_reflection_descriptor.material_manager != nullptr);
+    KW_ASSERT(primitive_reflection_descriptor.persistent_memory_resource != nullptr);
+
+    ObjectNode& node = *primitive_reflection_descriptor.primitive_node;
+    StringNode& geometry_node = node["geometry"].as<StringNode>();
+    StringNode& material_node = node["material"].as<StringNode>();
+    StringNode& shadow_material_node = node["shadow_material"].as<StringNode>();
+
+    MemoryResource& memory_resource = *primitive_reflection_descriptor.persistent_memory_resource;
+    SharedPtr<Geometry> geometry = geometry_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.geometry_manager->load(geometry_node.get_value().c_str());
+    SharedPtr<Material> material = material_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.material_manager->load(material_node.get_value().c_str());
+    SharedPtr<Material> shadow_material = shadow_material_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.material_manager->load(shadow_material_node.get_value().c_str());
+    transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
+
+    return static_pointer_cast<Primitive>(allocate_unique<GeometryPrimitive>(
+        memory_resource, geometry, material, shadow_material, local_transform
+    ));
+}
 
 GeometryPrimitive::GeometryPrimitive(SharedPtr<Geometry> geometry, SharedPtr<Material> material, SharedPtr<Material> shadow_material, const transform& local_transform)
     : AccelerationStructurePrimitive(local_transform)

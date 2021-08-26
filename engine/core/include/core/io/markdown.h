@@ -100,7 +100,7 @@ public:
     MarkdownNode& operator[](const char* key) const;
 
     // Returns nullptr when key doesn't exist.
-    MarkdownNode* find(const char* key);
+    MarkdownNode* find(const char* key) const;
 
     size_t get_size() const;
 

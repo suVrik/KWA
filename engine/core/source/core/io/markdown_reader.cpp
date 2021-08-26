@@ -88,7 +88,7 @@ MarkdownReader::MarkdownReader(MemoryResource& memory_resource, const char* rela
     , m_root(nullptr)
 {
     KW_ERROR(
-        parse_recursive(&MarkdownReader::opt_spaces, &MarkdownReader::value),
+        parse(&MarkdownReader::opt_spaces, &MarkdownReader::value, &MarkdownReader::opt_space_separated_values),
         "Failed to parse markdown file \"%s\".", relative_path
     );
 

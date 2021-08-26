@@ -4,6 +4,7 @@
 #include <core/debug/assert.h>
 #include <core/error.h>
 #include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 #include <emmintrin.h>
 #include <immintrin.h>
@@ -11,14 +12,9 @@
 namespace kw {
 
 ParticleSystemUpdater* ScaleBySpeedParticleSystemUpdater::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    ArrayNode& speed_scale_node = node["speed_scale"].as<ArrayNode>();
-    KW_ERROR(speed_scale_node.get_size() == 3, "Invalid speed_scale.");
-
-    float3 speed_scale(static_cast<float>(speed_scale_node[0].as<NumberNode>().get_value()),
-                       static_cast<float>(speed_scale_node[1].as<NumberNode>().get_value()),
-                       static_cast<float>(speed_scale_node[2].as<NumberNode>().get_value()));
-
-    return memory_resource.construct<ScaleBySpeedParticleSystemUpdater>(speed_scale);
+    return memory_resource.construct<ScaleBySpeedParticleSystemUpdater>(
+        MarkdownUtils::float3_from_markdown(node["speed_scale"])
+    );
 }
 
 ScaleBySpeedParticleSystemUpdater::ScaleBySpeedParticleSystemUpdater(const float3& speed_scale)

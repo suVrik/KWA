@@ -1,4 +1,9 @@
 #include "render/light/point_light_primitive.h"
+#include "render/scene/primitive_reflection.h"
+
+#include <core/debug/assert.h>
+#include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 #include <atomic>
 
@@ -6,6 +11,23 @@ namespace kw {
 
 // Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
 extern std::atomic_uint64_t acceleration_structure_counter;
+
+UniquePtr<Primitive> PointLightPrimitive::create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor) {
+    KW_ASSERT(primitive_reflection_descriptor.primitive_node != nullptr);
+    KW_ASSERT(primitive_reflection_descriptor.persistent_memory_resource != nullptr);
+
+    ObjectNode& node = *primitive_reflection_descriptor.primitive_node;
+
+    MemoryResource& memory_resource = *primitive_reflection_descriptor.persistent_memory_resource;
+    bool is_shadow_enabled = node["is_shadow_enabled"].as<BooleanNode>().get_value();
+    float3 color = MarkdownUtils::float3_from_markdown(node["color"]);
+    float power = static_cast<float>(node["power"].as<NumberNode>().get_value());
+    transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
+
+    return static_pointer_cast<Primitive>(allocate_unique<PointLightPrimitive>(
+        memory_resource, is_shadow_enabled, color, power, local_transform
+    ));
+}
 
 PointLightPrimitive::PointLightPrimitive(bool is_shadow_enabled, float3 color, float power, const transform& local_transform)
     : LightPrimitive(color, power, local_transform)

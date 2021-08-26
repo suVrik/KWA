@@ -16,6 +16,7 @@
 #include <render/animation/animation_manager.h>
 #include <render/animation/animation_player.h>
 #include <render/camera/camera_manager.h>
+#include <render/container/container_manager.h>
 #include <render/container/container_primitive.h>
 #include <render/debug/debug_draw_manager.h>
 #include <render/debug/imgui_manager.h>
@@ -66,8 +67,6 @@
 #include <core/math/float4x4.h>
 #include <core/memory/malloc_memory_resource.h>
 #include <core/memory/scratch_memory_resource.h>
-
-#include <fstream>
 
 using namespace kw;
 
@@ -368,14 +367,14 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     material_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     MaterialManager material_manager(material_manager_descriptor);
-    
+
     AnimationManagerDescriptor animation_manager_descriptor{};
     animation_manager_descriptor.task_scheduler = &task_scheduler;
     animation_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
     animation_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     AnimationManager animation_manager(animation_manager_descriptor);
-    
+
     ParticleSystemManagerDescriptor particle_system_manager_descriptor{};
     particle_system_manager_descriptor.task_scheduler = &task_scheduler;
     particle_system_manager_descriptor.geometry_manager = &geometry_manager;
@@ -385,159 +384,25 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
 
+    ContainerManagerDescriptor container_manager_descriptor{};
+    container_manager_descriptor.task_scheduler = &task_scheduler;
+    container_manager_descriptor.texture_manager = &texture_manager;
+    container_manager_descriptor.geometry_manager = &geometry_manager;
+    container_manager_descriptor.material_manager = &material_manager;
+    container_manager_descriptor.animation_manager = &animation_manager;
+    container_manager_descriptor.particle_system_manager = &particle_system_manager;
+    container_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    container_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ContainerManager container_manager(container_manager_descriptor);
+
     SharedPtr<Texture*> brdf_lut = texture_manager.load("resource/textures/brdf_lut.kwt");
     reflection_probe_render_pass.set_brdf_lut(brdf_lut);
 
-    std::ifstream level_stream("resource/levels/level1.txt");
-    KW_ERROR(level_stream, "Failed to open level.");
-
-    uint32_t prototype_count;
-    uint32_t instance_count;
-    level_stream >> prototype_count >> instance_count;
-
-    UnorderedMap<String, Pair<String, String>> prototypes(persistent_memory_resource);
-    prototypes.reserve(prototype_count);
-
-    for (uint32_t i = 0; i < prototype_count; i++) {
-        String name(persistent_memory_resource);
-        String geometry(persistent_memory_resource);
-        String material(persistent_memory_resource);
-
-        level_stream >> name;
-        level_stream >> geometry;
-        level_stream >> material;
-
-        prototypes.emplace(std::move(name), Pair<String, String>{ geometry, material });
-    }
-
-    Vector<GeometryPrimitive> instances(persistent_memory_resource);
-    instances.reserve(instance_count);
-
-    ContainerPrimitive container(persistent_memory_resource);
-    container.set_local_transform(transform(float3(), quaternion::rotation(float3(0.f, 0.f, 1.f), PI), float3(1.f)));
-    scene.add_child(container);
-
-    for (uint32_t i = 0; i < instance_count; i++) {
-        String name(persistent_memory_resource);
-        level_stream >> name;
-
-        auto it = prototypes.find(name);
-        KW_ERROR(it != prototypes.end(), "Invalid prototype name.");
-
-        GeometryPrimitive& primitive = instances.emplace_back(GeometryPrimitive(
-            geometry_manager.load(it->second.first.c_str()),
-            material_manager.load(it->second.second.c_str()),
-            material_manager.load("resource/materials/solid_shadow.kwm")
-        ));
-
-        float4x4 primitive_transform;
-
-        level_stream >> primitive_transform[0][0] >> primitive_transform[0][1] >> primitive_transform[0][2] >> primitive_transform[0][3];
-        level_stream >> primitive_transform[1][0] >> primitive_transform[1][1] >> primitive_transform[1][2] >> primitive_transform[1][3];
-        level_stream >> primitive_transform[2][0] >> primitive_transform[2][1] >> primitive_transform[2][2] >> primitive_transform[2][3];
-        level_stream >> primitive_transform[3][0] >> primitive_transform[3][1] >> primitive_transform[3][2] >> primitive_transform[3][3];
-
-        float4x4 transform_matrix(1.f,  0.f, 0.f, 0.f,
-                                  0.f,  0.f, 1.f, 0.f,
-                                  0.f, -1.f, 0.f, 0.f,
-                                  0.f,  0.f, 0.f, 1.f);
-
-        primitive_transform = transform_matrix * primitive_transform * transform_matrix;
-
-        transform local_transform = transform(primitive_transform);
-        primitive.set_local_transform(local_transform);
-
-        container.add_child(primitive);
-    }
-
-    KW_ERROR(level_stream, "Failed to read level.");
-
-    ReflectionProbePrimitive reflection_probe_primitive(
-        nullptr, nullptr, 8.f, aabbox(float3(5.f, 3.f, 0.f), float3(7.5f, 2.f, 7.5f)), transform(float3(5.f, 2.5f, 0.f))
+    UniquePtr<ContainerPrimitive> container = allocate_unique<ContainerPrimitive>(
+        persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/level1.kwm")
     );
-    scene.add_child(reflection_probe_primitive);
-
-    ParticleSystemPrimitive fire_particle_system_primitive(
-        persistent_memory_resource,
-        particle_system_manager.load("resource/particles/fire.kwm"),
-        transform(float3(5.f, 0.f, 0.f))
-    );
-    scene.add_child(fire_particle_system_primitive);
-
-    ParticleSystemPrimitive smoke_particle_system_primitive(
-        persistent_memory_resource,
-        particle_system_manager.load("resource/particles/smoke.kwm"),
-        transform(float3(5.f, 0.f, 0.f))
-    );
-    scene.add_child(smoke_particle_system_primitive);
-
-    ParticleSystemPrimitive blow_ember_particle_system_primitive(
-        persistent_memory_resource,
-        particle_system_manager.load("resource/particles/blow_ember.kwm"),
-        transform(float3(5.f, 0.f, 0.f))
-    );
-    scene.add_child(blow_ember_particle_system_primitive);
-
-    AnimatedGeometryPrimitive robot_primitives[5]{
-        AnimatedGeometryPrimitive(
-            persistent_memory_resource,
-            animation_manager.load("resource/animations/robot_orange/idle_look_back.kwg"),
-            geometry_manager.load("resource/geometry/robot_orange.kwg"),
-            material_manager.load("resource/materials/robot_orange.kwm"),
-            material_manager.load("resource/materials/skinned_shadow.kwm"),
-            transform(float3(2.f, 0.05f, -3.f))
-        ),
-        AnimatedGeometryPrimitive(
-            persistent_memory_resource,
-            animation_manager.load("resource/animations/robot_blue/idle.kwg"),
-            geometry_manager.load("resource/geometry/robot_blue.kwg"),
-            material_manager.load("resource/materials/robot_blue.kwm"),
-            material_manager.load("resource/materials/skinned_shadow.kwm"),
-            transform(float3(5.f, 0.f, 0.f))
-        ),
-        AnimatedGeometryPrimitive(
-            persistent_memory_resource,
-            animation_manager.load("resource/animations/robot_orange/idle_look_side.kwg"),
-            geometry_manager.load("resource/geometry/robot_orange.kwg"),
-            material_manager.load("resource/materials/robot_orange.kwm"),
-            material_manager.load("resource/materials/skinned_shadow.kwm"),
-            transform(float3(8.f, 0.05f, -3.f))
-        ),
-        AnimatedGeometryPrimitive(
-            persistent_memory_resource,
-            animation_manager.load("resource/animations/robot_blue/idle.kwg"),
-            geometry_manager.load("resource/geometry/robot_blue.kwg"),
-            material_manager.load("resource/materials/robot_blue.kwm"),
-            material_manager.load("resource/materials/skinned_shadow.kwm"),
-            transform(float3(3.5f, 1.f, 18.f), quaternion::rotation(float3(0.f, 1.f, 0.f), PI / 4.f))
-        ),
-        AnimatedGeometryPrimitive(
-            persistent_memory_resource,
-            animation_manager.load("resource/animations/robot_orange/idle.kwg"),
-            geometry_manager.load("resource/geometry/robot_orange.kwg"),
-            material_manager.load("resource/materials/robot_orange.kwm"),
-            material_manager.load("resource/materials/skinned_shadow.kwm"),
-            transform(float3(6.5f, 1.05f, -22.f), quaternion::rotation(float3(0.f, 1.f, 0.f), -PI / 4.f))
-        )
-    };
-    scene.add_child(robot_primitives[0]);
-    scene.add_child(robot_primitives[1]);
-    scene.add_child(robot_primitives[2]);
-    scene.add_child(robot_primitives[3]);
-    scene.add_child(robot_primitives[4]);
-
-    PointLightPrimitive point_light_primitives[3]{
-        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(3.f, 4.f, 3.f))),
-        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(5.f, 3.5f, 20.f))),
-        PointLightPrimitive(true, float3(0.6f, 1.f, 1.f), 5.f, transform(float3(5.f, 3.5f, -20.f))),
-    };
-    scene.add_child(point_light_primitives[0]);
-    scene.add_child(point_light_primitives[1]);
-    scene.add_child(point_light_primitives[2]);
-
-    reflection_probe_manager.bake(*render, scene, std::move(brdf_lut));
-
-    bool draw_light[std::size(point_light_primitives)]{};
+    scene.add_child(std::move(container));
 
     float camera_yaw = radians(180.f);
     float camera_pitch = radians(10.f);
@@ -546,10 +411,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     float camera_speed = 12.f;
 
     bool draw_occlusion_camera = false;
-
-    bool auto_play = true;
-    float time_ = 0.f;
-    float old_time = 0.f;
 
     int cpu_profiler_offset = 0;
 
@@ -583,6 +444,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             camera_pitch += input.get_mouse_dy() * mouse_sensitivity;
         }
 
+        if (input.is_key_pressed(Scancode::RETURN)) {
+            reflection_probe_manager.bake(*render, scene, brdf_lut);
+        }
+
         quaternion camera_rotation = quaternion::rotation(float3(0.f, 1.f, 0.f), camera_yaw) * quaternion::rotation(float3(1.f, 0.f, 0.f), camera_pitch);
 
         float3 forward = float3(0.f, 0.f, -1.f) * camera_rotation;
@@ -611,117 +476,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         camera.set_aspect_ratio(static_cast<float>(window.get_width()) / window.get_height());
         camera.set_rotation(camera_rotation);
         camera.set_translation(camera_position);
-
-        if (imgui.Begin("Lights")) {
-            for (size_t i = 0; i < std::size(point_light_primitives); i++) {
-                char header_text[] = "light0";
-                header_text[5] = char('0' + i);
-
-                imgui.PushID(header_text);
-
-                if (imgui.CollapsingHeader(header_text)) {
-                    float3 light_position = point_light_primitives[i].get_global_translation();
-                    float3 light_color = point_light_primitives[i].get_color();
-                    float light_power = point_light_primitives[i].get_power();
-                    PointLightPrimitive::ShadowParams shadow_params = point_light_primitives[i].get_shadow_params();
-
-                    imgui.DragFloat3("Light Position", &light_position, 0.01f);
-                    imgui.ColorEdit3("Light Color", &light_color);
-                    imgui.DragFloat("Light Power", &light_power, 0.01f, 0.f, FLT_MAX);
-                    imgui.DragFloat("normal_bias", &shadow_params.normal_bias, 0.001, 0.f, FLT_MAX);
-                    imgui.DragFloat("perspective_bias", &shadow_params.perspective_bias, 0.00001, 0.f, FLT_MAX, "%.6f");
-                    imgui.DragFloat("pcss_radius", &shadow_params.pcss_radius, 0.1, 0.f, FLT_MAX);
-                    imgui.DragFloat("pcss_filter_factor", &shadow_params.pcss_filter_factor, 0.01, 0.f, FLT_MAX);
-                    imgui.Checkbox("Draw Light", &draw_light[i]);
-
-                    point_light_primitives[i].set_global_translation(light_position);
-                    point_light_primitives[i].set_color(light_color);
-                    point_light_primitives[i].set_power(light_power);
-                    point_light_primitives[i].set_shadow_params(shadow_params);
-
-                    if (draw_light[i]) {
-                        debug_draw_manager.icosahedron(light_position, 0.01f, float3(1.f, 0.f, 0.f));
-                        debug_draw_manager.icosahedron(light_position, shadow_params.pcss_radius * 0.1f, float3(1.f));
-                    }
-
-                    static quaternion SIDE_ROTATIONS[] = {
-                        quaternion::rotation(float3(0.f, 1.f, 0.f), 0.f),
-                        quaternion::rotation(float3(0.f, 1.f, 0.f), PI / 2),
-                        quaternion::rotation(float3(0.f, 1.f, 0.f), PI),
-                        quaternion::rotation(float3(0.f, 1.f, 0.f), -PI / 2),
-                        quaternion::rotation(float3(1.f, 0.f, 0.f), PI / 2),
-                        quaternion::rotation(float3(1.f, 0.f, 0.f), -PI / 2),
-                    };
-
-                    for (size_t j = 0; j < 6; j++) {
-                        String button_label("Side 0: Set Occlusion Camera", transient_memory_resource);
-                        button_label[5] = '0' + j;
-                        if (imgui.Button(button_label.c_str())) {
-                            transform transform;
-                            transform.translation = light_position;
-                            transform.rotation = SIDE_ROTATIONS[j];
-                            float fov = PI / 2;
-                            float aspect_ratio = 1.f;
-                            float z_near = 0.1f;
-                            float z_far = 20.f;
-
-                            bool use_occlusion_camera = camera_manager.is_occlusion_camera_used();
-
-                            camera_manager.toggle_occlusion_camera_used(true);
-                            Camera& occlusion_camera = camera_manager.get_occlusion_camera();
-                            camera_manager.toggle_occlusion_camera_used(use_occlusion_camera);
-
-                            occlusion_camera.set_transform(transform);
-                            occlusion_camera.set_fov(fov);
-                            occlusion_camera.set_aspect_ratio(aspect_ratio);
-                            occlusion_camera.set_z_near(z_near);
-                            occlusion_camera.set_z_far(z_far);
-                        }
-                    }
-                }
-
-                imgui.PopID();
-            }
-        }
-        imgui.End();
-
-        if (robot_primitives[1].get_geometry()) {
-            const Skeleton* skeleton = robot_primitives[1].get_geometry()->get_skeleton();
-            if (skeleton != nullptr) {
-                SkeletonPose& skeleton_pose = robot_primitives[1].get_skeleton_pose();
-                const Vector<float4x4>& joint_space_matrices = skeleton_pose.get_joint_space_matrices();
-                const Vector<float4x4>& model_space_matrices = skeleton_pose.get_model_space_matrices();
-                size_t joint_count = skeleton->get_joint_count();
-
-                if (imgui.Begin("Skinning")) {
-                    imgui.Checkbox("Play", &auto_play);
-                    imgui.DragFloat("Time", &time_, 0.01, 1.3f, 1.6f);
-
-                    for (size_t i = 0; i < joint_count; i++) {
-                        const String& name = skeleton->get_joint_name(i);
-
-                        imgui.PushID(name.c_str());
-
-                        if (imgui.CollapsingHeader(name.c_str())) {
-                            transform transform(joint_space_matrices[i]);
-
-                            bool changed_translation = imgui.DragFloat3("translation", &transform.translation, 0.01f);
-                            bool changed_rotation = imgui.DragFloat4("rotation", &transform.rotation, 0.01f);
-                            bool changed_scale = imgui.DragFloat3("scale", &transform.scale, 0.01f);
-
-                            if (changed_translation || changed_rotation || changed_scale) {
-                                transform.rotation = normalize(transform.rotation);
-                                skeleton_pose.set_joint_space_matrix(i, float4x4(transform));
-                                skeleton_pose.build_model_space_matrices(*skeleton);
-                            }
-                        }
-
-                        imgui.PopID();
-                    }
-                }
-                imgui.End();
-            }
-        }
 
         if (imgui.Begin("Camera")) {
             float2 rotation(camera_yaw, camera_pitch);
@@ -925,6 +679,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         MaterialManagerTasks material_manager_tasks = material_manager.create_tasks();
         auto [animation_manager_begin, animation_manager_end] = animation_manager.create_tasks();
         auto [particle_system_manager_begin, particle_system_manager_end] = particle_system_manager.create_tasks();
+        auto [container_manager_begin, container_manager_end] = container_manager.create_tasks();
         auto [acquire_frame_task, present_frame_task] = frame_graph->create_tasks();
         auto [reflection_probe_manager_begin, reflection_probe_manager_end] = reflection_probe_manager.create_tasks();
         Task* shadow_manager_task = shadow_manager.create_task();
@@ -948,14 +703,18 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         reflection_probe_manager_end->add_input_dependencies(transient_memory_resource, { reflection_probe_manager_begin, flush_task });
         animation_player_end->add_input_dependencies(transient_memory_resource, { animation_player_begin });
         particle_system_player_end->add_input_dependencies(transient_memory_resource, { particle_system_player_begin });
-        material_manager_tasks.begin->add_input_dependencies(transient_memory_resource, { particle_system_manager_end });
+        material_manager_tasks.begin->add_input_dependencies(transient_memory_resource, { particle_system_manager_end, container_manager_end });
         material_manager_tasks.material_end->add_input_dependencies(transient_memory_resource, { material_manager_tasks.begin });
         material_manager_tasks.graphics_pipeline_end->add_input_dependencies(transient_memory_resource, { material_manager_tasks.material_end });
-        texture_manager_begin->add_input_dependencies(transient_memory_resource, { material_manager_tasks.material_end });
+        texture_manager_begin->add_input_dependencies(transient_memory_resource, { material_manager_tasks.material_end, container_manager_end });
         texture_manager_end->add_input_dependencies(transient_memory_resource, { texture_manager_begin });
+        geometry_manager_begin->add_input_dependencies(transient_memory_resource, { container_manager_end });
         geometry_manager_end->add_input_dependencies(transient_memory_resource, { geometry_manager_begin });
+        animation_manager_begin->add_input_dependencies(transient_memory_resource, { container_manager_end });
         animation_manager_end->add_input_dependencies(transient_memory_resource, { animation_manager_begin });
+        particle_system_manager_begin->add_input_dependencies(transient_memory_resource, { container_manager_end });
         particle_system_manager_end->add_input_dependencies(transient_memory_resource, { particle_system_manager_begin });
+        container_manager_end->add_input_dependencies(transient_memory_resource, { container_manager_begin });
         acquire_frame_task->add_input_dependencies(transient_memory_resource, { animation_manager_end, material_manager_tasks.graphics_pipeline_end, texture_manager_end, geometry_manager_end });
         opaque_shadow_render_pass_task_begin->add_input_dependencies(transient_memory_resource, { acquire_frame_task, animation_player_end, shadow_manager_task });
         opaque_shadow_render_pass_task_end->add_input_dependencies(transient_memory_resource, { opaque_shadow_render_pass_task_begin });
@@ -993,6 +752,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, animation_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_manager_begin);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_manager_end);
+        task_scheduler.enqueue_task(transient_memory_resource, container_manager_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, container_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.begin);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.material_end);
         task_scheduler.enqueue_task(transient_memory_resource, material_manager_tasks.graphics_pipeline_end);

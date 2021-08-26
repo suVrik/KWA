@@ -5,27 +5,16 @@
 #include <core/debug/assert.h>
 #include <core/error.h>
 #include <core/io/markdown.h>
+#include <core/io/markdown_utils.h>
 
 namespace kw {
 
 ParticleSystemGenerator* ScaleParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    bool is_uniform = node["is_uniform"].as<BooleanNode>().get_value();
-
-    ArrayNode& min_node = node["min"].as<ArrayNode>();
-    KW_ERROR(min_node.get_size() == 3, "Invalid min.");
-
-    float3 min(static_cast<float>(min_node[0].as<NumberNode>().get_value()),
-               static_cast<float>(min_node[1].as<NumberNode>().get_value()),
-               static_cast<float>(min_node[2].as<NumberNode>().get_value()));
-
-    ArrayNode& max_node = node["max"].as<ArrayNode>();
-    KW_ERROR(max_node.get_size() == 3, "Invalid max.");
-
-    float3 max(static_cast<float>(max_node[0].as<NumberNode>().get_value()),
-               static_cast<float>(max_node[1].as<NumberNode>().get_value()),
-               static_cast<float>(max_node[2].as<NumberNode>().get_value()));
-
-    return memory_resource.construct<ScaleParticleSystemGenerator>(is_uniform, min, max);
+    return memory_resource.construct<ScaleParticleSystemGenerator>(
+        node["is_uniform"].as<BooleanNode>().get_value(),
+        MarkdownUtils::float3_from_markdown(node["min"]),
+        MarkdownUtils::float3_from_markdown(node["max"])
+    );
 }
 
 ScaleParticleSystemGenerator::ScaleParticleSystemGenerator(bool is_uniform, const float3& min_scale, const float3& max_scale)

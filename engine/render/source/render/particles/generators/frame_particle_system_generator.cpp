@@ -8,9 +8,10 @@
 namespace kw {
 
 ParticleSystemGenerator* FrameParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
-    float min = static_cast<float>(node["min"].as<NumberNode>().get_value());
-    float max = static_cast<float>(node["max"].as<NumberNode>().get_value());
-    return memory_resource.construct<FrameParticleSystemGenerator>(min, max);
+    return memory_resource.construct<FrameParticleSystemGenerator>(
+        static_cast<float>(node["min"].as<NumberNode>().get_value()),
+        static_cast<float>(node["max"].as<NumberNode>().get_value())
+    );
 }
 
 FrameParticleSystemGenerator::FrameParticleSystemGenerator(float min_frame, float max_frame)

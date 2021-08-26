@@ -67,7 +67,7 @@ MarkdownNode& ObjectNode::operator[](const char* key) const {
     return *it->second;
 }
 
-MarkdownNode* ObjectNode::find(const char* key) {
+MarkdownNode* ObjectNode::find(const char* key) const {
     auto it = m_elements.find(key);
     if (it != m_elements.end()) {
         return it->second.get();
