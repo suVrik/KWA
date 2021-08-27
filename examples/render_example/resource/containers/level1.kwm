@@ -13645,8 +13645,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/0.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/0.kwt",
   falloff_radius: 12,
   parallax_box: {
     center: [ 5, 3, 0 ],
@@ -13660,8 +13660,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/12.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/12.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, 20.5 ],
@@ -13675,8 +13675,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/21.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/21.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, 20.5 ],
@@ -13690,8 +13690,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/30.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/30.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, 20.5 ],
@@ -13705,8 +13705,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/-14.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/-14.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, -20.5 ],
@@ -13720,8 +13720,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/-21.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/-21.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, -20.5 ],
@@ -13735,8 +13735,8 @@
 },
 {
   type: "ReflectionProbePrimitive",
-  irradiance_map: "",
-  prefiltered_environment_map: "",
+  irradiance_map: "resource/textures/irradiance_maps/-30.kwt",
+  prefiltered_environment_map: "resource/textures/prefiltered_environment_maps/-30.kwt",
   falloff_radius: 7,
   parallax_box: {
     center: [ 5, 2.9, -20.5 ],

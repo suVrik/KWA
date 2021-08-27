@@ -78,7 +78,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     ConcurrencyUtils::set_current_thread_name("Main Thread");
 
     MallocMemoryResource& persistent_memory_resource = MallocMemoryResource::instance();
-    ScratchMemoryResource transient_memory_resource(persistent_memory_resource, 32 * 1024 * 1024);
+    ScratchMemoryResource transient_memory_resource(persistent_memory_resource, 16 * 1024 * 1024);
 
     EventLoop event_loop;
 
@@ -103,10 +103,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     render_descriptor.is_debug_names_enabled = true;
     render_descriptor.staging_buffer_size = 4 * 1024 * 1024;
     render_descriptor.transient_buffer_size = 4 * 1024 * 1024;
-    render_descriptor.buffer_allocation_size = 1024 * 1024;
-    render_descriptor.buffer_block_size = 4 * 1024;
-    render_descriptor.texture_allocation_size = 128 * 1024 * 1024;
-    render_descriptor.texture_block_size = 512 * 1024;
+    render_descriptor.buffer_allocation_size = 4 * 1024 * 1024;
+    render_descriptor.buffer_block_size = 16 * 1024;
+    render_descriptor.texture_allocation_size = 32 * 1024 * 1024;
+    render_descriptor.texture_block_size = 64 * 1024;
 
     UniquePtr<Render> render(Render::create_instance(render_descriptor), persistent_memory_resource);
     

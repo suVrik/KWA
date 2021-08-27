@@ -54,6 +54,22 @@ void Input::update() {
     std::copy(std::begin(m_current_key), std::end(m_current_key), std::begin(m_previous_key));
     std::copy(std::begin(m_next_key), std::end(m_next_key), std::begin(m_current_key));
 
+    m_current_key[static_cast<size_t>(Scancode::CTRL)] =
+        m_current_key[static_cast<size_t>(Scancode::LCTRL)] ||
+        m_current_key[static_cast<size_t>(Scancode::RCTRL)];
+    
+    m_current_key[static_cast<size_t>(Scancode::SHIFT)] =
+        m_current_key[static_cast<size_t>(Scancode::LSHIFT)] ||
+        m_current_key[static_cast<size_t>(Scancode::RSHIFT)];
+    
+    m_current_key[static_cast<size_t>(Scancode::ALT)] =
+        m_current_key[static_cast<size_t>(Scancode::LALT)] ||
+        m_current_key[static_cast<size_t>(Scancode::RALT)];
+    
+    m_current_key[static_cast<size_t>(Scancode::GUI)] =
+        m_current_key[static_cast<size_t>(Scancode::LGUI)] ||
+        m_current_key[static_cast<size_t>(Scancode::RGUI)];
+
     std::swap(m_current_text, m_next_text);
     m_next_text = "";
 

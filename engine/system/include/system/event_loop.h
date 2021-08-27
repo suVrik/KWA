@@ -271,7 +271,7 @@ enum class Scancode {
     GUI,
 };
 
-constexpr size_t SCANCODE_COUNT = 243;
+constexpr size_t SCANCODE_COUNT = 247;
 
 constexpr uint32_t BUTTON_LEFT   = 1;
 constexpr uint32_t BUTTON_MIDDLE = 2;
