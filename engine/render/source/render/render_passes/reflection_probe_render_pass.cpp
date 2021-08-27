@@ -2,6 +2,7 @@
 #include "render/camera/camera_manager.h"
 #include "render/reflection_probe/reflection_probe_primitive.h"
 #include "render/scene/scene.h"
+#include "render/texture/texture_manager.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>
@@ -34,16 +35,6 @@ public:
     }
 
     void run() override {
-        KW_ASSERT(
-            m_render_pass.m_texture != nullptr,
-            "BRDF LUT is not set!"
-        );
-        
-        KW_ASSERT(
-            *m_render_pass.m_texture != nullptr,
-            "BRDF LUT is not loaded!"
-        );
-
         RenderPassContext* context = m_render_pass.begin();
         if (context != nullptr) {
             Camera& camera = m_render_pass.m_camera_manager.get_camera();
@@ -130,6 +121,7 @@ ReflectionProbeRenderPass::ReflectionProbeRenderPass(const ReflectionProbeRender
     , m_graphics_pipelines{ nullptr, nullptr }
 {
     KW_ASSERT(descriptor.render != nullptr);
+    KW_ASSERT(descriptor.texture_manager != nullptr);
     KW_ASSERT(descriptor.scene != nullptr);
     KW_ASSERT(descriptor.camera_manager != nullptr);
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
@@ -187,6 +179,8 @@ ReflectionProbeRenderPass::ReflectionProbeRenderPass(const ReflectionProbeRender
 
     m_index_buffer = m_render.create_index_buffer("reflection_probe", sizeof(INDEX_DATA), IndexSize::UINT16);
     m_render.upload_index_buffer(m_index_buffer, INDEX_DATA, sizeof(INDEX_DATA));
+
+    m_texture = descriptor.texture_manager->load("resource/textures/brdf_lut.kwt");
 }
 
 ReflectionProbeRenderPass::~ReflectionProbeRenderPass() {
@@ -326,11 +320,6 @@ void ReflectionProbeRenderPass::create_graphics_pipelines(FrameGraph& frame_grap
 void ReflectionProbeRenderPass::destroy_graphics_pipelines(FrameGraph& frame_graph) {
     frame_graph.destroy_graphics_pipeline(m_graphics_pipelines[1]);
     frame_graph.destroy_graphics_pipeline(m_graphics_pipelines[0]);
-}
-
-
-void ReflectionProbeRenderPass::set_brdf_lut(SharedPtr<Texture*> texture) {
-    m_texture = std::move(texture);
 }
 
 Task* ReflectionProbeRenderPass::create_task() {

@@ -338,6 +338,7 @@ private:
 
 ReflectionProbeManager::ReflectionProbeManager(const ReflectionProbeManagerDescriptor& descriptor)
     : m_task_scheduler(*descriptor.task_scheduler)
+    , m_texture_manager(*descriptor.texture_manager)
     , m_cubemap_dimension(descriptor.cubemap_dimension)
     , m_irradiance_map_dimension(descriptor.irradiance_map_dimension)
     , m_prefiltered_environment_map_dimension(descriptor.prefiltered_environment_map_dimension)
@@ -355,6 +356,7 @@ ReflectionProbeManager::ReflectionProbeManager(const ReflectionProbeManagerDescr
     , m_textures(m_persistent_memory_resource)
 {
     KW_ASSERT(descriptor.task_scheduler != nullptr);
+    KW_ASSERT(descriptor.texture_manager != nullptr);
     KW_ASSERT(descriptor.cubemap_dimension != 0 && is_pow2(descriptor.cubemap_dimension));
     KW_ASSERT(descriptor.irradiance_map_dimension != 0 && is_pow2(descriptor.irradiance_map_dimension));
     KW_ASSERT(descriptor.prefiltered_environment_map_dimension != 0 && is_pow2(descriptor.prefiltered_environment_map_dimension));
@@ -398,7 +400,7 @@ void ReflectionProbeManager::remove(ReflectionProbePrimitive& primitive) {
     *it = nullptr;
 }
 
-void ReflectionProbeManager::bake(Render& render, Scene& scene, SharedPtr<Texture*> brdf_lut) {
+void ReflectionProbeManager::bake(Render& render, Scene& scene) {
     std::lock_guard lock(m_mutex);
 
     if (m_scene != nullptr) {
@@ -413,7 +415,7 @@ void ReflectionProbeManager::bake(Render& render, Scene& scene, SharedPtr<Textur
     m_scene = &scene;
 
     create_bake_contexts();
-    create_cubemap_frame_graph(std::move(brdf_lut));
+    create_cubemap_frame_graph();
     create_irradiance_map_frame_graph();
     create_prefiltered_environment_map_frame_graph();
 }
@@ -491,7 +493,7 @@ void ReflectionProbeManager::create_bake_contexts() {
     }
 }
 
-void ReflectionProbeManager::create_cubemap_frame_graph(SharedPtr<Texture*> brdf_lut) {
+void ReflectionProbeManager::create_cubemap_frame_graph() {
     UniquePtr<CubemapFrameGraphContext> context = allocate_unique<CubemapFrameGraphContext>(m_persistent_memory_resource);
 
     context->camera_manager = allocate_unique<CameraManager>(m_persistent_memory_resource);
@@ -540,6 +542,7 @@ void ReflectionProbeManager::create_cubemap_frame_graph(SharedPtr<Texture*> brdf
 
     ReflectionProbeRenderPassDescriptor reflection_probe_render_pass_descriptor{};
     reflection_probe_render_pass_descriptor.render = m_render;
+    reflection_probe_render_pass_descriptor.texture_manager = &m_texture_manager;
     reflection_probe_render_pass_descriptor.scene = m_scene;
     reflection_probe_render_pass_descriptor.camera_manager = context->camera_manager.get();
     reflection_probe_render_pass_descriptor.transient_memory_resource = &m_transient_memory_resource;
@@ -598,8 +601,6 @@ void ReflectionProbeManager::create_cubemap_frame_graph(SharedPtr<Texture*> brdf
     frame_graph_descriptor.render_pass_descriptor_count = render_pass_descriptors.size();
 
     context->frame_graph = UniquePtr<FrameGraph>(FrameGraph::create_instance(frame_graph_descriptor), m_persistent_memory_resource);
-
-    context->reflection_probe_render_pass->set_brdf_lut(std::move(brdf_lut));
 
     context->opaque_shadow_render_pass->create_graphics_pipelines(*context->frame_graph);
     context->geometry_render_pass->create_graphics_pipelines(*context->frame_graph);

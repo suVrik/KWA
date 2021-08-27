@@ -49,7 +49,7 @@ void CylinderPositionParticleSystemGenerator::generate(ParticleSystemPrimitive& 
 
     for (size_t i = begin_index; i < end_index; i++) {
         float height = m_height * random.rand_float();
-        float radius = std::sqrt(m_radius * random.rand_float());
+        float radius = m_radius * std::sqrt(random.rand_float());
         float angle  = 2.f * PI * random.rand_float();
 
         __m128 local_point_x_xmm = _mm_set_ps1(m_origin.x + radius * std::cos(angle));

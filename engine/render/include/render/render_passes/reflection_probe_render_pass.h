@@ -8,9 +8,11 @@ namespace kw {
 
 class CameraManager;
 class Scene;
+class TextureManager;
 
 struct ReflectionProbeRenderPassDescriptor {
     Render* render;
+    TextureManager* texture_manager;
     Scene* scene;
     CameraManager* camera_manager;
     MemoryResource* transient_memory_resource;
@@ -26,9 +28,6 @@ public:
     void get_render_pass_descriptors(Vector<RenderPassDescriptor>& render_pass_descriptors) override;
     void create_graphics_pipelines(FrameGraph& frame_graph) override;
     void destroy_graphics_pipelines(FrameGraph& frame_graph) override;
-
-    // Must be called at initialization time.
-    void set_brdf_lut(SharedPtr<Texture*> texture);
 
     // Must be placed between shadow render pass's task and present frame graph's task.
     Task* create_task();

@@ -1,16 +1,5 @@
 {
   type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 7.000000, 0.000001, 2.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
   geometry: "resource/geometry/floor_08.kwg",
   material: "resource/materials/environment_5.kwm",
   shadow_material: "resource/materials/solid_shadow.kwm",
@@ -149,39 +138,6 @@
   local_transform: {
     translation: [ 6.000000, 0.000001, -2.000000 ],
     rotation: [ -0.000000, 0.707107, 0.000000, 0.707107 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 1.000000, 0.000000, 2.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 7.000000, 0.000001, -4.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 1.000000, 0.000000, -4.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
     scale: [ 1.000000, 1.000000, 1.000000 ]
   }
 },
@@ -6248,28 +6204,6 @@
 },
 {
   type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 5.998972, 1.000000, 12.000099 ],
-    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 5.999133, 1.000000, 18.500099 ],
-    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
   geometry: "resource/geometry/floor_04.kwg",
   material: "resource/materials/environment_5.kwm",
   shadow_material: "resource/materials/solid_shadow.kwm",
@@ -7992,28 +7926,6 @@
   local_transform: {
     translation: [ 1.999344, 2.720000, 27.000198 ],
     rotation: [ -0.000000, 1.000000, 0.000000, -0.000012 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 5.999294, 1.000000, 25.000099 ],
-    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 5.999455, 1.000000, 31.500099 ],
-    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
     scale: [ 1.000000, 1.000000, 1.000000 ]
   }
 },
@@ -9757,28 +9669,6 @@
 },
 {
   type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 4.000000, 1.000000, -12.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 4.000000, 1.000000, -18.500000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
   geometry: "resource/geometry/floor_04.kwg",
   material: "resource/materials/environment_5.kwm",
   shadow_material: "resource/materials/solid_shadow.kwm",
@@ -11501,28 +11391,6 @@
   local_transform: {
     translation: [ 8.000000, 2.720001, -27.000000 ],
     rotation: [ -0.000000, 0.000000, -0.000000, -1.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 4.000000, 1.000000, -25.000000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
-    scale: [ 1.000000, 1.000000, 1.000000 ]
-  }
-},
-{
-  type: "GeometryPrimitive",
-  geometry: "resource/geometry/floor_09.kwg",
-  material: "resource/materials/environment_5.kwm",
-  shadow_material: "resource/materials/solid_shadow.kwm",
-  local_transform: {
-    translation: [ 4.000000, 1.000000, -31.500000 ],
-    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
     scale: [ 1.000000, 1.000000, 1.000000 ]
   }
 },
@@ -13474,6 +13342,50 @@
   }
 },
 {
+  type: "GeometryPrimitive",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/environment_5.kwm",
+  shadow_material: "resource/materials/solid_shadow.kwm",
+  local_transform: {
+    translation: [ 4.000000, 1.000000, -12.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "GeometryPrimitive",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/environment_5.kwm",
+  shadow_material: "resource/materials/solid_shadow.kwm",
+  local_transform: {
+    translation: [ 4.000000, 1.000000, -18.500000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "GeometryPrimitive",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/environment_5.kwm",
+  shadow_material: "resource/materials/solid_shadow.kwm",
+  local_transform: {
+    translation: [ 4.000000, 1.000000, -25.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "GeometryPrimitive",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/environment_5.kwm",
+  shadow_material: "resource/materials/solid_shadow.kwm",
+  local_transform: {
+    translation: [ 4.000000, 1.000000, -31.500000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
   type: "PointLightPrimitive",
   is_shadow_enabled: true,
   color: [ 0.6, 1, 1 ],
@@ -13501,7 +13413,7 @@
   color: [ 1, 0.1, 0 ],
   power: 30,
   local_transform: {
-    translation: [ 5, 2, -20 ],
+    translation: [ 5, 2, -15 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
@@ -13550,7 +13462,139 @@
   shadow_material: "resource/materials/skinned_shadow.kwm",
   local_transform: {
     translation: [ 3.5, 1, 18 ],
-    rotation: [ 0, 0.382683456, 0, 0.923879504 ],
+    rotation: [ 0, 0.975, 0, 0.223 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 7.000000, 0.000001, 2.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 1.000000, 0.000000, 2.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 7.000000, 0.000001, -4.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 1.000000, 0.000000, -4.000000 ],
+    rotation: [ -0.000000, 1.000000, 0.000000, 0.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 5.998972, 1.000000, 12.000099 ],
+    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 5.999133, 1.000000, 18.500099 ],
+    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 5.999294, 1.000000, 25.000099 ],
+    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "AnimatedGeometryPrimitive",
+  animation: "resource/animations/floor_09/spin.kwg",
+  geometry: "resource/geometry/floor_09.kwg",
+  material: "resource/materials/fan.kwm",
+  shadow_material: "resource/materials/fan_shadow.kwm",
+  local_transform: {
+    translation: [ 5.999455, 1.000000, 31.500099 ],
+    rotation: [ 0.000000, -0.000012, -0.000000, -1.000000 ],
+    scale: [ 1.000000, 1.000000, 1.000000 ]
+  }
+},
+{
+  type: "ParticleSystemPrimitive",
+  particle_system: "resource/particles/fog.kwm",
+  local_transform: {
+    translation: [ 5, 0, 0 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ParticleSystemPrimitive",
+  particle_system: "resource/particles/fog.kwm",
+  local_transform: {
+    translation: [ 5, 1, 14 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ParticleSystemPrimitive",
+  particle_system: "resource/particles/fog.kwm",
+  local_transform: {
+    translation: [ 5, 1, 20 ],
+    rotation: [ 0, 0, 0, 1 ],
+    scale: [ 1, 1, 1 ]
+  }
+},
+{
+  type: "ParticleSystemPrimitive",
+  particle_system: "resource/particles/fog.kwm",
+  local_transform: {
+    translation: [ 5, 1, 26 ],
+    rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
 },

@@ -107,6 +107,59 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     render_descriptor.texture_block_size = 1024 * 1024;
 
     UniquePtr<Render> render(Render::create_instance(render_descriptor), persistent_memory_resource);
+    
+    TextureManagerDescriptor texture_manager_descriptor{};
+    texture_manager_descriptor.render = render.get();
+    texture_manager_descriptor.task_scheduler = &task_scheduler;
+    texture_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    texture_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+    texture_manager_descriptor.transient_memory_allocation = 4 * 1024 * 1024;
+
+    TextureManager texture_manager(texture_manager_descriptor);
+
+    GeometryManagerDescriptor geometry_manager_descriptor{};
+    geometry_manager_descriptor.render = render.get();
+    geometry_manager_descriptor.task_scheduler = &task_scheduler;
+    geometry_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    geometry_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    GeometryManager geometry_manager(geometry_manager_descriptor);
+
+    MaterialManagerDescriptor material_manager_descriptor{};
+    material_manager_descriptor.task_scheduler = &task_scheduler;
+    material_manager_descriptor.texture_manager = &texture_manager;
+    material_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    material_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    MaterialManager material_manager(material_manager_descriptor);
+
+    AnimationManagerDescriptor animation_manager_descriptor{};
+    animation_manager_descriptor.task_scheduler = &task_scheduler;
+    animation_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    animation_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    AnimationManager animation_manager(animation_manager_descriptor);
+
+    ParticleSystemManagerDescriptor particle_system_manager_descriptor{};
+    particle_system_manager_descriptor.task_scheduler = &task_scheduler;
+    particle_system_manager_descriptor.geometry_manager = &geometry_manager;
+    particle_system_manager_descriptor.material_manager = &material_manager;
+    particle_system_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    particle_system_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
+
+    ContainerManagerDescriptor container_manager_descriptor{};
+    container_manager_descriptor.task_scheduler = &task_scheduler;
+    container_manager_descriptor.texture_manager = &texture_manager;
+    container_manager_descriptor.geometry_manager = &geometry_manager;
+    container_manager_descriptor.material_manager = &material_manager;
+    container_manager_descriptor.animation_manager = &animation_manager;
+    container_manager_descriptor.particle_system_manager = &particle_system_manager;
+    container_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    container_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    ContainerManager container_manager(container_manager_descriptor);
 
     AnimationPlayerDescriptor animation_player_descriptor{};
     animation_player_descriptor.timer = &timer;
@@ -126,6 +179,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     ReflectionProbeManagerDescriptor reflection_probe_manager_descriptor{};
     reflection_probe_manager_descriptor.task_scheduler = &task_scheduler;
+    reflection_probe_manager_descriptor.texture_manager = &texture_manager;
     reflection_probe_manager_descriptor.cubemap_dimension = 512;
     reflection_probe_manager_descriptor.irradiance_map_dimension = 64;
     reflection_probe_manager_descriptor.prefiltered_environment_map_dimension = 256;
@@ -213,6 +267,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     
     ReflectionProbeRenderPassDescriptor reflection_probe_render_pass_descriptor{};
     reflection_probe_render_pass_descriptor.render = render.get();
+    reflection_probe_render_pass_descriptor.texture_manager = &texture_manager;
     reflection_probe_render_pass_descriptor.scene = &scene;
     reflection_probe_render_pass_descriptor.camera_manager = &camera_manager;
     reflection_probe_render_pass_descriptor.transient_memory_resource = &transient_memory_resource;
@@ -317,7 +372,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     frame_graph_descriptor.is_vsync_enabled = true;
     frame_graph_descriptor.descriptor_set_count_per_descriptor_pool = 256;
     frame_graph_descriptor.uniform_texture_count_per_descriptor_pool = 4 * 256;
-    frame_graph_descriptor.uniform_sampler_count_per_descriptor_pool = 256;
+    frame_graph_descriptor.uniform_sampler_count_per_descriptor_pool = 2 * 256;
     frame_graph_descriptor.uniform_buffer_count_per_descriptor_pool = 256;
     frame_graph_descriptor.swapchain_attachment_name = "swapchain_attachment";
     frame_graph_descriptor.color_attachment_descriptors = color_attachment_descriptors.data();
@@ -342,67 +397,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     debug_draw_render_pass.create_graphics_pipelines(*frame_graph);
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
 
-    TextureManagerDescriptor texture_manager_descriptor{};
-    texture_manager_descriptor.render = render.get();
-    texture_manager_descriptor.task_scheduler = &task_scheduler;
-    texture_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    texture_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-    texture_manager_descriptor.transient_memory_allocation = 4 * 1024 * 1024;
-
-    TextureManager texture_manager(texture_manager_descriptor);
-
-    GeometryManagerDescriptor geometry_manager_descriptor{};
-    geometry_manager_descriptor.render = render.get();
-    geometry_manager_descriptor.task_scheduler = &task_scheduler;
-    geometry_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    geometry_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    GeometryManager geometry_manager(geometry_manager_descriptor);
-
-    MaterialManagerDescriptor material_manager_descriptor{};
-    material_manager_descriptor.frame_graph = frame_graph.get();
-    material_manager_descriptor.task_scheduler = &task_scheduler;
-    material_manager_descriptor.texture_manager = &texture_manager;
-    material_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    material_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    MaterialManager material_manager(material_manager_descriptor);
-
-    AnimationManagerDescriptor animation_manager_descriptor{};
-    animation_manager_descriptor.task_scheduler = &task_scheduler;
-    animation_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    animation_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    AnimationManager animation_manager(animation_manager_descriptor);
-
-    ParticleSystemManagerDescriptor particle_system_manager_descriptor{};
-    particle_system_manager_descriptor.task_scheduler = &task_scheduler;
-    particle_system_manager_descriptor.geometry_manager = &geometry_manager;
-    particle_system_manager_descriptor.material_manager = &material_manager;
-    particle_system_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    particle_system_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
-
-    ContainerManagerDescriptor container_manager_descriptor{};
-    container_manager_descriptor.task_scheduler = &task_scheduler;
-    container_manager_descriptor.texture_manager = &texture_manager;
-    container_manager_descriptor.geometry_manager = &geometry_manager;
-    container_manager_descriptor.material_manager = &material_manager;
-    container_manager_descriptor.animation_manager = &animation_manager;
-    container_manager_descriptor.particle_system_manager = &particle_system_manager;
-    container_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    container_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    ContainerManager container_manager(container_manager_descriptor);
-
-    SharedPtr<Texture*> brdf_lut = texture_manager.load("resource/textures/brdf_lut.kwt");
-    reflection_probe_render_pass.set_brdf_lut(brdf_lut);
-
-    UniquePtr<ContainerPrimitive> container = allocate_unique<ContainerPrimitive>(
+    scene.add_child(allocate_unique<ContainerPrimitive>(
         persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/level1.kwm")
-    );
-    scene.add_child(std::move(container));
+    ));
+
 
     float camera_yaw = radians(180.f);
     float camera_pitch = radians(10.f);
@@ -445,7 +443,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         }
 
         if (input.is_key_pressed(Scancode::RETURN)) {
-            reflection_probe_manager.bake(*render, scene, brdf_lut);
+            reflection_probe_manager.bake(*render, scene);
         }
 
         quaternion camera_rotation = quaternion::rotation(float3(0.f, 1.f, 0.f), camera_yaw) * quaternion::rotation(float3(1.f, 0.f, 0.f), camera_pitch);
@@ -784,8 +782,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         CpuProfiler::instance().update();
     }
 
-    reflection_probe_render_pass.set_brdf_lut(nullptr);
-    
     imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
     antialiasing_render_pass.destroy_graphics_pipelines(*frame_graph);

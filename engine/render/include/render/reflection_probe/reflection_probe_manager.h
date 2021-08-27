@@ -19,9 +19,11 @@ class Scene;
 class Task;
 class TaskScheduler;
 class Texture;
+class TextureManager;
 
 struct ReflectionProbeManagerDescriptor {
     TaskScheduler* task_scheduler;
+    TextureManager* texture_manager;
 
     uint32_t cubemap_dimension;
     uint32_t irradiance_map_dimension;
@@ -31,6 +33,8 @@ struct ReflectionProbeManagerDescriptor {
     MemoryResource* transient_memory_resource;
 };
 
+// TODO: I don't like this "manager". Perhaps some `ReflectionProbeBaker` that can be constructed after Scene and that
+//  just casually queries all reflection probes on the scene? The ugly Scene <-> ReflectionProbeManager is annoying.
 class ReflectionProbeManager {
 public:
     explicit ReflectionProbeManager(const ReflectionProbeManagerDescriptor& descriptor);
@@ -42,7 +46,7 @@ public:
     // Constructs specific frame graphs that start rendering reflection probes in parallel.
     // When both the irradiance map and pre-filtered environment maps are rendered, they're assigned to reflection probe.
     // If bake is already in progress, the function won't do anything.
-    void bake(Render& render, Scene& scene, SharedPtr<Texture*> brdf_lut);
+    void bake(Render& render, Scene& scene);
 
     // The first task assignes textures to reflection probes and must be placed before the lighting pass that uses them.
     // The first task also enqueues the worker tasks that render the cubemaps, irradiance maps and so on during baking.
@@ -67,13 +71,14 @@ private:
     };
 
     void create_bake_contexts();
-    void create_cubemap_frame_graph(SharedPtr<Texture*> brdf_lut);
+    void create_cubemap_frame_graph();
     void create_irradiance_map_frame_graph();
     void create_prefiltered_environment_map_frame_graph();
 
     void convert_relative_to_absolute(Vector<AttachmentDescriptor>& attachment_descriptors) const;
 
     TaskScheduler& m_task_scheduler;
+    TextureManager& m_texture_manager;
     MemoryResource& m_persistent_memory_resource;
     MemoryResource& m_transient_memory_resource;
 

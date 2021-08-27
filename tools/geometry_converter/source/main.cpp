@@ -237,7 +237,7 @@ static transform sample_animation(const std::map<float, transform>& animation, f
         }
     } else {
         if (!animation.empty()) {
-            result = animation.rend()->second;
+            result = animation.rbegin()->second;
         }
     }
 

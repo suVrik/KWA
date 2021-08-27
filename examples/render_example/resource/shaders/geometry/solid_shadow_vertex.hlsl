@@ -20,6 +20,7 @@ struct VS_INPUT {
 
 struct VS_OUTPUT {
     float4 position : SV_POSITION;
+    float2 texcoord : TEXCOORD;
 };
 
 struct ShadowPushConstants {
@@ -33,5 +34,6 @@ VS_OUTPUT main(VS_INPUT input) {
 
     VS_OUTPUT output;
     output.position = mul(shadow_push_constants.view_projection, mul(float4(input.position, 1.0), model));
+    output.texcoord = input.texcoord;
     return output;
 }

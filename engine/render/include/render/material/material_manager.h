@@ -18,7 +18,6 @@ class TaskScheduler;
 class TextureManager;
 
 struct MaterialManagerDescriptor {
-    FrameGraph* frame_graph;
     TaskScheduler* task_scheduler;
     TextureManager* texture_manager;
 
@@ -36,6 +35,12 @@ class MaterialManager {
 public:
     explicit MaterialManager(const MaterialManagerDescriptor& descriptor);
     ~MaterialManager();
+
+    // TODO: Currently graphics pipelines are created in frame graph, which is something I don't like anymore.
+    //   Material manager must be created before frame graph though, and this method must be called once frame graph
+    //   is created so material manager can create graphics pipelines. Once graphics pipelines can be created in render,
+    //   render pointer will be specified into material manager descriptor and this ugly method will be gone.
+    void set_frame_graph(FrameGraph& frame_graph);
 
     // Enqueue material loading if it's not yet loaded. Concurrent loads are allowed.
     SharedPtr<Material> load(const char* material_path);
@@ -83,7 +88,7 @@ private:
     SharedPtr<GraphicsPipeline*> load(const char* vertex_shader, const char* fragment_shader, const Vector<String>& textures,
                                       bool is_shadow, bool is_skinned, bool is_particle, Task* graphics_pipeline_end);
 
-    FrameGraph& m_frame_graph;
+    FrameGraph* m_frame_graph;
     TaskScheduler& m_task_scheduler;
     TextureManager& m_texture_manager;
 

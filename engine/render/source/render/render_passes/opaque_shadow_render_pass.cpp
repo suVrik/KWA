@@ -129,6 +129,14 @@ public:
                                 instance_buffer_count = 1;
                             }
 
+                            Vector<Texture*> uniform_textures(m_render_pass.m_transient_memory_resource);
+                            uniform_textures.reserve(material->get_textures().size());
+
+                            for (const SharedPtr<Texture*>& texture : material->get_textures()) {
+                                KW_ASSERT(texture && *texture != nullptr);
+                                uniform_textures.push_back(*texture);
+                            }
+
                             UniformBuffer* uniform_buffer = nullptr;
                             size_t uniform_buffer_count = 0;
 
@@ -161,6 +169,8 @@ public:
                             draw_call_descriptor.index_buffer = index_buffer;
                             draw_call_descriptor.index_count = index_count;
                             draw_call_descriptor.instance_count = to_it - from_it;
+                            draw_call_descriptor.uniform_textures = uniform_textures.data();
+                            draw_call_descriptor.uniform_texture_count = uniform_textures.size();
                             draw_call_descriptor.uniform_buffers = &uniform_buffer;
                             draw_call_descriptor.uniform_buffer_count = uniform_buffer_count;
                             draw_call_descriptor.push_constants = &push_constants;

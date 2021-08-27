@@ -212,7 +212,7 @@ private:
         graphics_pipeline_descriptor.push_constants_name = m_is_shadow ? "shadow_push_constants" : "geometry_push_constants";
         graphics_pipeline_descriptor.push_constants_size = m_is_shadow ? sizeof(Material::ShadowPushConstants) : sizeof(Material::GeometryPushConstants);
 
-        *m_graphics_pipeline_context.graphics_pipeline = m_manager.m_frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
+        *m_graphics_pipeline_context.graphics_pipeline = m_manager.m_frame_graph->create_graphics_pipeline(graphics_pipeline_descriptor);
     }
 
     void create_particle() {
@@ -313,7 +313,7 @@ private:
         graphics_pipeline_descriptor.push_constants_name = "particle_system_push_constants";
         graphics_pipeline_descriptor.push_constants_size = sizeof(Material::ParticlePushConstants);
 
-        *m_graphics_pipeline_context.graphics_pipeline = m_manager.m_frame_graph.create_graphics_pipeline(graphics_pipeline_descriptor);
+        *m_graphics_pipeline_context.graphics_pipeline = m_manager.m_frame_graph->create_graphics_pipeline(graphics_pipeline_descriptor);
     }
 
     MaterialManager& m_manager;
@@ -440,7 +440,7 @@ public:
 
         for (auto it = m_manager.m_graphics_pipelines.begin(); it != m_manager.m_graphics_pipelines.end(); ) {
             if (it->second.graphics_pipeline.use_count() == 1) {
-                m_manager.m_frame_graph.destroy_graphics_pipeline(*it->second.graphics_pipeline);
+                m_manager.m_frame_graph->destroy_graphics_pipeline(*it->second.graphics_pipeline);
                 it = m_manager.m_graphics_pipelines.erase(it);
             } else {
                 ++it;
@@ -459,7 +459,7 @@ private:
 };
 
 MaterialManager::MaterialManager(const MaterialManagerDescriptor& descriptor)
-    : m_frame_graph(*descriptor.frame_graph)
+    : m_frame_graph(nullptr)
     , m_task_scheduler(*descriptor.task_scheduler)
     , m_texture_manager(*descriptor.texture_manager)
     , m_persistent_memory_resource(*descriptor.persistent_memory_resource)
@@ -468,7 +468,6 @@ MaterialManager::MaterialManager(const MaterialManagerDescriptor& descriptor)
     , m_materials(*descriptor.persistent_memory_resource)
     , m_pending_materials(*descriptor.persistent_memory_resource)
 {
-    KW_ASSERT(descriptor.frame_graph != nullptr, "Invalid frame graph.");
     KW_ASSERT(descriptor.task_scheduler != nullptr, "Invalid task scheduler.");
     KW_ASSERT(descriptor.texture_manager != nullptr, "Invalid texture manager.");
     KW_ASSERT(descriptor.persistent_memory_resource != nullptr, "Invalid persistent memory resource.");
@@ -493,8 +492,14 @@ MaterialManager::~MaterialManager() {
             "Not all graphics pipelines are released."
         );
         
-        m_frame_graph.destroy_graphics_pipeline(*graphics_pipeline_context.graphics_pipeline);
+        m_frame_graph->destroy_graphics_pipeline(*graphics_pipeline_context.graphics_pipeline);
     }
+}
+
+void MaterialManager::set_frame_graph(FrameGraph& frame_graph) {
+    KW_ASSERT(m_frame_graph == nullptr, "Frame graph is already initialized.");
+
+    m_frame_graph = &frame_graph;
 }
 
 SharedPtr<Material> MaterialManager::load(const char* relative_path) {
