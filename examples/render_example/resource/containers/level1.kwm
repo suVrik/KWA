@@ -13575,7 +13575,7 @@
   type: "ParticleSystemPrimitive",
   particle_system: "resource/particles/fog.kwm",
   local_transform: {
-    translation: [ 5, 1, 14 ],
+    translation: [ 5, 1, 12 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
@@ -13584,7 +13584,7 @@
   type: "ParticleSystemPrimitive",
   particle_system: "resource/particles/fog.kwm",
   local_transform: {
-    translation: [ 5, 1, 20 ],
+    translation: [ 5, 1, 18 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
@@ -13593,7 +13593,7 @@
   type: "ParticleSystemPrimitive",
   particle_system: "resource/particles/fog.kwm",
   local_transform: {
-    translation: [ 5, 1, 26 ],
+    translation: [ 5, 1, 24 ],
     rotation: [ 0, 0, 0, 1 ],
     scale: [ 1, 1, 1 ]
   }
