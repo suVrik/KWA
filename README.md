@@ -4,7 +4,7 @@ This is a game engine I created in 4 months to improve my game engine programmin
 
 _TODO: Better image, updated video link._
 
-[![Video](https://img.youtube.com/vi/OT9EamhAOPA/0.jpg)](https://www.youtube.com/watch?v=OT9EamhAOPA)
+[![Video](https://i.imgur.com/sWgBvlF_d.webp?maxwidth=760&fidelity=grand)](https://www.youtube.com/watch?v=OT9EamhAOPA)
 
 _Video version of the text below_
 
