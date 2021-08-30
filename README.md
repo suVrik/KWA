@@ -2,9 +2,7 @@
 
 This is a game engine I created in 4 months to improve my game engine programming skills.
 
-_TODO: Better image, updated video link._
-
-[![Video](https://i.imgur.com/sWgBvlF_d.webp?maxwidth=760&fidelity=grand)](https://www.youtube.com/watch?v=OT9EamhAOPA)
+[![Video](https://i.imgur.com/sWgBvlF_d.webp?maxwidth=760&fidelity=grand)](https://www.youtube.com/watch?v=7YzHbVlsqNA)
 
 _Video version of the text below_
 
@@ -42,4 +40,8 @@ The engine supports many resource types: textures, models, animations, shaders, 
 
 ## Build
 
-_TODO: How to build it._
+Install SDL2 via vcpkg and generate the MSVC project like this:
+
+```
+cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ..
+```
