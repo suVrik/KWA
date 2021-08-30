@@ -40,8 +40,18 @@ The engine supports many resource types: textures, models, animations, shaders, 
 
 ## Build
 
-Install SDL2 via vcpkg and generate the MSVC project like this:
-
+1) Install vcpkg as described [here](https://vcpkg.io/en/getting-started.html);
+2) Download and install Vulkan from [here](https://vulkan.lunarg.com/);
+3) Install thirdparties like this:
 ```
+vcpkg install sdl2
+vcpkg install vulkan:x64-windows
+```
+4) Clone and generate the MSVC solution like this:
+```
+git clone https://github.com/suVrik/KURWA.git
+cd KURWA
+mkdir _build
+cd _build
 cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ..
 ```
