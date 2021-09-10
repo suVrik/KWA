@@ -5,7 +5,7 @@
     albedo_alpha_uniform_texture: "resource/textures/blockout_aa.kwt",
     normal_uniform_texture: "resource/textures/blockout_n.kwt",
     ao_roughness_metalness_uniform_texture: "resource/textures/blockout_arm.kwt",
-    emission_uniform_texture: "resource/textures/blockout_e.kwt"
+    emission_uniform_texture: "resource/textures/black.kwt"
   },
   is_shadow: false,
   is_skinned: false,

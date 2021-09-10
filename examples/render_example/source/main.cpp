@@ -102,7 +102,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     render_descriptor.is_validation_enabled = true;
     render_descriptor.is_debug_names_enabled = true;
     render_descriptor.staging_buffer_size = 4 * 1024 * 1024;
-    render_descriptor.transient_buffer_size = 4 * 1024 * 1024;
+    render_descriptor.transient_buffer_size = 16 * 1024 * 1024;
     render_descriptor.buffer_allocation_size = 4 * 1024 * 1024;
     render_descriptor.buffer_block_size = 16 * 1024;
     render_descriptor.texture_allocation_size = 32 * 1024 * 1024;
@@ -418,7 +418,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
 
     scene.add_child(allocate_unique<ContainerPrimitive>(
-        persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/level1.kwm")
+        persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/base.kwm")
     ));
 
     bool is_running = true;

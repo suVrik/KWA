@@ -1,0 +1,10 @@
+{
+  vertex_shader: "resource/shaders/geometry/solid_shadow_vertex.hlsl",
+  fragment_shader: "resource/shaders/geometry/shadow_fragment.hlsl",
+  textures: {
+    albedo_alpha_uniform_texture: "resource/textures/sponza/021_aa.kwt"
+  },
+  is_shadow: true,
+  is_skinned: false,
+  is_particle: false
+}

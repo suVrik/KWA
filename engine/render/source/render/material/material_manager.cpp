@@ -206,7 +206,7 @@ private:
         graphics_pipeline_descriptor.uniform_texture_descriptors = uniform_texture_descriptors.data();
         graphics_pipeline_descriptor.uniform_texture_descriptor_count = uniform_texture_descriptors.size();
         graphics_pipeline_descriptor.uniform_sampler_descriptors = uniform_sampler_descriptors;
-        graphics_pipeline_descriptor.uniform_sampler_descriptor_count = std::size(uniform_sampler_descriptors);
+        graphics_pipeline_descriptor.uniform_sampler_descriptor_count = m_is_shadow ? 1 : 2;
         graphics_pipeline_descriptor.uniform_buffer_descriptors = m_is_shadow ? &shadow_uniform_buffer_descriptor : &uniform_buffer_descriptor;
         graphics_pipeline_descriptor.uniform_buffer_descriptor_count = m_graphics_pipeline_context.is_skinned ? 1 : 0;
         graphics_pipeline_descriptor.push_constants_name = m_is_shadow ? "shadow_push_constants" : "geometry_push_constants";

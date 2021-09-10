@@ -1,0 +1,13 @@
+{
+  vertex_shader: "resource/shaders/geometry/solid_vertex.hlsl",
+  fragment_shader: "resource/shaders/geometry/shared_fragment.hlsl",
+  textures: {
+    albedo_alpha_uniform_texture: "resource/textures/sponza/000_aa.kwt",
+    normal_uniform_texture: "resource/textures/sponza/000_n.kwt",
+    ao_roughness_metalness_uniform_texture: "resource/textures/sponza/000_arm.kwt",
+    emission_uniform_texture: "resource/textures/black.kwt"
+  },
+  is_shadow: false,
+  is_skinned: false,
+  is_particle: false
+}

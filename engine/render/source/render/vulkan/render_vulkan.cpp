@@ -2237,7 +2237,7 @@ Pair<uint64_t, uint64_t> RenderVulkan::allocate_from_staging_memory(uint64_t min
                     return { size - alignment_offset, staging_data_end + alignment_offset };
                 }
             } else if (min < staging_data_begin) {
-                uint64_t size = std::min(staging_data_begin, max);
+                uint64_t size = std::min(staging_data_begin - 1, max);
                 if (m_staging_data_end.compare_exchange_weak(staging_data_end, size, std::memory_order_release, std::memory_order_relaxed)) {
                     // Allocate in the beginning with fragmentation.
                     return { size, 0 };
@@ -2251,7 +2251,7 @@ Pair<uint64_t, uint64_t> RenderVulkan::allocate_from_staging_memory(uint64_t min
             }
         } else {
             if (min + alignment_offset < staging_data_begin - staging_data_end) {
-                uint64_t size = std::min(staging_data_begin - staging_data_end, max + alignment_offset);
+                uint64_t size = std::min(staging_data_begin - staging_data_end - 1, max + alignment_offset);
                 if (m_staging_data_end.compare_exchange_weak(staging_data_end, staging_data_end + size, std::memory_order_release, std::memory_order_relaxed)) {
                     // Allocate in the middle without fragmentation.
                     return { size - alignment_offset, staging_data_end + alignment_offset };
