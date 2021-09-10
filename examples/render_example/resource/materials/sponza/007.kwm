@@ -5,7 +5,7 @@
     albedo_alpha_uniform_texture: "resource/textures/sponza/007_aa.kwt",
     normal_uniform_texture: "resource/textures/sponza/007_n.kwt",
     ao_roughness_metalness_uniform_texture: "resource/textures/sponza/007_arm.kwt",
-    emission_uniform_texture: "resource/textures/black.kwt"
+    emission_uniform_texture: "resource/textures/dummy_e.kwt"
   },
   is_shadow: false,
   is_skinned: false,
