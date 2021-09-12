@@ -49,8 +49,8 @@ vcpkg install vulkan:x64-windows
 ```
 4) Clone and generate the MSVC solution like this:
 ```
-git clone https://github.com/suVrik/KURWA.git
-cd KURWA
+git clone https://github.com/suVrik/KWA.git
+cd KWA
 mkdir _build
 cd _build
 cmake -G "Visual Studio 16 2019" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ..
