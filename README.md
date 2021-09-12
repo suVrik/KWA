@@ -1,4 +1,4 @@
-# KURWA
+# KWA
 
 This is a game engine I created in 4 months to improve my game engine programming skills.
 
