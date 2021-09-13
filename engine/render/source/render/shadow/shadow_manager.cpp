@@ -2,7 +2,7 @@
 #include "render/camera/camera_manager.h"
 #include "render/light/point_light_primitive.h"
 #include "render/render.h"
-#include "render/scene/scene.h"
+#include "render/scene/render_scene.h"
 
 #include <core/concurrency/task.h>
 #include <core/containers/string.h>

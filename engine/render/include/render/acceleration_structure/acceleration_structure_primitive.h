@@ -1,8 +1,7 @@
 #pragma once
 
-#include "render/scene/primitive.h"
-
 #include <core/math/aabbox.h>
+#include <core/scene/primitive.h>
 
 namespace kw {
 

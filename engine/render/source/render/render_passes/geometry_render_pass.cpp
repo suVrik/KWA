@@ -3,7 +3,7 @@
 #include "render/geometry/geometry.h"
 #include "render/geometry/geometry_primitive.h"
 #include "render/material/material.h"
-#include "render/scene/scene.h"
+#include "render/scene/render_scene.h"
 
 #include <core/concurrency/task.h>
 #include <core/debug/assert.h>

@@ -1,7 +1,6 @@
-#include "render/scene/primitive.h"
-#include "render/container/container_primitive.h"
-
-#include <core/debug/assert.h>
+#include "core/scene/primitive.h"
+#include "core/debug/assert.h"
+#include "core/prefab/prefab_primitive.h"
 
 namespace kw {
 
@@ -46,7 +45,7 @@ Primitive& Primitive::operator=(const Primitive& other) {
     return *this;
 }
 
-ContainerPrimitive* Primitive::get_parent() const {
+PrefabPrimitive* Primitive::get_parent() const {
     return m_parent;
 }
 
@@ -64,7 +63,7 @@ void Primitive::set_local_transform(const transform& transform) {
             m_global_transform = m_local_transform;
         }
 
-        // Render primitives must update their bounds, container primitives must propagate global transform.
+        // Render primitives must update their bounds, prefab primitives must propagate global transform.
         global_transform_updated();
     }
 }
@@ -107,7 +106,7 @@ void Primitive::set_global_transform(const transform& transform) {
             m_local_transform = m_global_transform;
         }
 
-        // Render primitives must update their bounds, container primitives must propagate global transform.
+        // Render primitives must update their bounds, prefab primitives must propagate global transform.
         global_transform_updated();
     }
 }

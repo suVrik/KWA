@@ -1,5 +1,4 @@
 #include "render/light/light_primitive.h"
-#include "render/container/container_primitive.h"
 
 #include <atomic>
 

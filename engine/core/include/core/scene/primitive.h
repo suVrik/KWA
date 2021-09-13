@@ -1,11 +1,11 @@
 #pragma once
 
-#include <core/containers/unique_ptr.h>
-#include <core/math/transform.h>
+#include "core/containers/unique_ptr.h"
+#include "core/math/transform.h"
 
 namespace kw {
 
-class ContainerPrimitive;
+class PrefabPrimitive;
 
 // Keep in mind that none of the primitives can be accessed from multiple threads at the same time.
 class Primitive {
@@ -15,8 +15,8 @@ public:
     virtual ~Primitive();
     Primitive& operator=(const Primitive& other);
 
-    // Parent is set from ContainerPrimitive's `add_child` method.
-    ContainerPrimitive* get_parent() const;
+    // Parent is set from PrefabPrimitive's `add_child` method.
+    PrefabPrimitive* get_parent() const;
 
     const transform& get_local_transform() const;
     void set_local_transform(const transform& transform);
@@ -46,17 +46,17 @@ public:
     virtual UniquePtr<Primitive> clone(MemoryResource& memory_resource) const = 0;
 
 protected:
-    // Acceleration structure primitives must update their bounds, container primitives must propagate global transform.
+    // Acceleration structure primitives must update their bounds, prefab primitives must propagate global transform.
     virtual void global_transform_updated();
     
 private:
-    ContainerPrimitive* m_parent;
+    PrefabPrimitive* m_parent;
 
     transform m_local_transform;
     transform m_global_transform;
 
     // Friendship is needed to access `m_parent`.
-    friend class ContainerPrimitive;
+    friend class PrefabPrimitive;
 };
 
 } // namespace kw

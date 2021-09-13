@@ -256,6 +256,11 @@ GeometryManager::~GeometryManager() {
 }
 
 SharedPtr<Geometry> GeometryManager::load(const char* relative_path) {
+    if (relative_path[0] == '\0') {
+        // Empty string is allowed.
+        return nullptr;
+    }
+
     {
         std::shared_lock shared_lock(m_geometry_mutex);
 

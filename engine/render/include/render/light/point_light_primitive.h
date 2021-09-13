@@ -4,7 +4,8 @@
 
 namespace kw {
 
-struct PrimitiveReflectionDescriptor;
+class ObjectNode;
+class PrimitiveReflection;
 
 class PointLightPrimitive : public LightPrimitive {
 public:
@@ -15,7 +16,7 @@ public:
         float pcss_filter_factor;
     };
 
-    static UniquePtr<Primitive> create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor);
+    static UniquePtr<Primitive> create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node);
 
     explicit PointLightPrimitive(bool is_shadow_enabled = false,
                                  float3 color = float3(1.f, 1.f, 1.f),

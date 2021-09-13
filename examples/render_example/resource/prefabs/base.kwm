@@ -13599,8 +13599,8 @@
   }
 },
 {
-  type: "ContainerPrimitive",
-  container_prototype: "resource/containers/fire.kwm",
+  type: "PrefabPrimitive",
+  prefab_prototype: "resource/containers/fire.kwm",
   local_transform: {
     translation: [ 5, 1, -10 ],
     rotation: [ 0, 0, 0, 1 ],
@@ -13608,8 +13608,8 @@
   }
 },
 {
-  type: "ContainerPrimitive",
-  container_prototype: "resource/containers/fire.kwm",
+  type: "PrefabPrimitive",
+  prefab_prototype: "resource/containers/fire.kwm",
   local_transform: {
     translation: [ 6, 1, -12 ],
     rotation: [ 0, 0, 0, 1 ],
@@ -13617,8 +13617,8 @@
   }
 },
 {
-  type: "ContainerPrimitive",
-  container_prototype: "resource/containers/fire.kwm",
+  type: "PrefabPrimitive",
+  prefab_prototype: "resource/containers/fire.kwm",
   local_transform: {
     translation: [ 4, 1, -12 ],
     rotation: [ 0, 0, 0, 1 ],
@@ -13626,8 +13626,8 @@
   }
 },
 {
-  type: "ContainerPrimitive",
-  container_prototype: "resource/containers/fire.kwm",
+  type: "PrefabPrimitive",
+  prefab_prototype: "resource/containers/fire.kwm",
   local_transform: {
     translation: [ 5, 1, -14 ],
     rotation: [ 0, 0, 0, 1 ],
@@ -13635,8 +13635,8 @@
   }
 },
 {
-  type: "ContainerPrimitive",
-  container_prototype: "resource/containers/fire.kwm",
+  type: "PrefabPrimitive",
+  prefab_prototype: "resource/containers/fire.kwm",
   local_transform: {
     translation: [ 4, 1, -16 ],
     rotation: [ 0, 0, 0, 1 ],

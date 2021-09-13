@@ -1,7 +1,7 @@
 #include "render/render_passes/reflection_probe_render_pass.h"
 #include "render/camera/camera_manager.h"
 #include "render/reflection_probe/reflection_probe_primitive.h"
-#include "render/scene/scene.h"
+#include "render/scene/render_scene.h"
 #include "render/texture/texture_manager.h"
 
 #include <core/concurrency/task.h>

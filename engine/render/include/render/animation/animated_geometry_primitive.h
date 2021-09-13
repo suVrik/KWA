@@ -7,11 +7,12 @@ namespace kw {
 
 class Animation;
 class AnimationPlayer;
-struct PrimitiveReflectionDescriptor;
+class ObjectNode;
+class PrimitiveReflection;
 
 class AnimatedGeometryPrimitive : public GeometryPrimitive {
 public:
-    static UniquePtr<Primitive> create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor);
+    static UniquePtr<Primitive> create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node);
 
     AnimatedGeometryPrimitive(MemoryResource& memory_resource,
                               SharedPtr<Animation> animation = nullptr,

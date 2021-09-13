@@ -1,7 +1,7 @@
 #include "render/render_passes/lighting_render_pass.h"
 #include "render/camera/camera_manager.h"
 #include "render/light/point_light_primitive.h"
-#include "render/scene/scene.h"
+#include "render/scene/render_scene.h"
 #include "render/shadow/shadow_manager.h"
 
 #include <core/concurrency/task.h>

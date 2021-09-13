@@ -15,7 +15,7 @@ class AttachmentDescriptor;
 class FrameGraph;
 class ReflectionProbePrimitive;
 class Render;
-class Scene;
+class RenderScene;
 class Task;
 class TaskScheduler;
 class Texture;
@@ -46,7 +46,7 @@ public:
     // Constructs specific frame graphs that start rendering reflection probes in parallel.
     // When both the irradiance map and pre-filtered environment maps are rendered, they're assigned to reflection probe.
     // If bake is already in progress, the function won't do anything.
-    void bake(Render& render, Scene& scene);
+    void bake(Render& render, RenderScene& scene);
 
     // The first task assignes textures to reflection probes and must be placed before the lighting pass that uses them.
     // The first task also enqueues the worker tasks that render the cubemaps, irradiance maps and so on during baking.
@@ -89,7 +89,7 @@ private:
     Vector<ReflectionProbePrimitive*> m_primitives;
 
     Render* m_render;
-    Scene* m_scene;
+    RenderScene* m_scene;
 
     UniquePtr<CubemapFrameGraphContext> m_cubemap_frame_graph_context;
     UnorderedMap<ReflectionProbePrimitive*, BakeContext> m_cubemap_bake_contexts;

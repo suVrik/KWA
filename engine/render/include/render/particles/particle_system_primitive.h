@@ -9,13 +9,14 @@
 
 namespace kw {
 
+class ObjectNode;
 class ParticleSystem;
 class ParticleSystemPlayer;
-struct PrimitiveReflectionDescriptor;
+class PrimitiveReflection;
 
 class ParticleSystemPrimitive : public AccelerationStructurePrimitive, public ParticleSystemListener {
 public:
-    static UniquePtr<Primitive> create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor);
+    static UniquePtr<Primitive> create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node);
 
     ParticleSystemPrimitive(MemoryResource& memory_resource,
                             SharedPtr<ParticleSystem> particle_system = nullptr,

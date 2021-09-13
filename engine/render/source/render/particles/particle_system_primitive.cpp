@@ -3,7 +3,7 @@
 #include "render/particles/particle_system_manager.h"
 #include "render/particles/particle_system_player.h"
 #include "render/particles/particle_system_stream_mask.h"
-#include "render/scene/primitive_reflection.h"
+#include "render/scene/render_primitive_reflection.h"
 
 #include <core/debug/assert.h>
 #include <core/io/markdown.h>
@@ -11,20 +11,16 @@
 
 namespace kw {
 
-UniquePtr<Primitive> ParticleSystemPrimitive::create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor) {
-    KW_ASSERT(primitive_reflection_descriptor.primitive_node != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.particle_system_manager != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.persistent_memory_resource != nullptr);
+UniquePtr<Primitive> ParticleSystemPrimitive::create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node) {
+    RenderPrimitiveReflection& render_reflection = dynamic_cast<RenderPrimitiveReflection&>(reflection);
 
-    ObjectNode& node = *primitive_reflection_descriptor.primitive_node;
     StringNode& particle_system_node = node["particle_system"].as<StringNode>();
     
-    MemoryResource& memory_resource = *primitive_reflection_descriptor.persistent_memory_resource;
-    SharedPtr<ParticleSystem> particle_system = particle_system_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.particle_system_manager->load(particle_system_node.get_value().c_str());
+    SharedPtr<ParticleSystem> particle_system = render_reflection.particle_system_manager.load(particle_system_node.get_value().c_str());
     transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
 
     return static_pointer_cast<Primitive>(allocate_unique<ParticleSystemPrimitive>(
-        memory_resource, memory_resource, particle_system, local_transform
+        reflection.memory_resource, reflection.memory_resource, particle_system, local_transform
     ));
 }
 

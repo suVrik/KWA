@@ -10,11 +10,12 @@ namespace kw {
 
 class Geometry;
 class Material;
-struct PrimitiveReflectionDescriptor;
+class ObjectNode;
+class PrimitiveReflection;
 
 class GeometryPrimitive : public AccelerationStructurePrimitive, public GeometryListener {
 public:
-    static UniquePtr<Primitive> create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor);
+    static UniquePtr<Primitive> create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node);
 
     explicit GeometryPrimitive(SharedPtr<Geometry> geometry = nullptr,
                                SharedPtr<Material> material = nullptr,

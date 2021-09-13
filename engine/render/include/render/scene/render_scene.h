@@ -1,9 +1,6 @@
 #pragma once
 
-#include "render/container/container_primitive.h"
-
-#include <core/containers/unique_ptr.h>
-#include <core/containers/vector.h>
+#include <core/scene/scene.h>
 
 namespace kw {
 
@@ -18,7 +15,7 @@ class ParticleSystemPrimitive;
 class ReflectionProbeManager;
 class ReflectionProbePrimitive;
 
-struct SceneDescriptor {
+struct RenderSceneDescriptor {
     AnimationPlayer* animation_player;
     ParticleSystemPlayer* particle_system_player;
     ReflectionProbeManager* reflection_probe_manager;
@@ -30,9 +27,9 @@ struct SceneDescriptor {
     MemoryResource* transient_memory_resource;
 };
 
-class Scene : public ContainerPrimitive {
+class RenderScene : public virtual Scene {
 public:
-    explicit Scene(const SceneDescriptor& scene_descriptor);
+    explicit RenderScene(const RenderSceneDescriptor& descriptor);
 
     Vector<GeometryPrimitive*> query_geometry(const aabbox& bounds) const;
     Vector<GeometryPrimitive*> query_geometry(const frustum& frustum) const;
@@ -48,12 +45,8 @@ public:
 
 protected:
     void child_added(Primitive& primitive) override;
-    void child_removed(Primitive& primitive) override;
 
 private:
-    void add_container_primitive(ContainerPrimitive& container_primitive);
-    void remove_container_primitive(ContainerPrimitive& container_primitive);
-
     AnimationPlayer& m_animation_player;
     ParticleSystemPlayer& m_particle_system_player;
     ReflectionProbeManager& m_reflection_probe_manager;
@@ -61,7 +54,6 @@ private:
     AccelerationStructure& m_light_acceleration_structure;
     AccelerationStructure& m_particle_system_acceleration_structure;
     AccelerationStructure& m_reflection_probe_acceleration_structure;
-    MemoryResource& m_transient_memory_resource;
 };
 
 } // namespace kw
