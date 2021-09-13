@@ -78,7 +78,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     ConcurrencyUtils::set_current_thread_name("Main Thread");
 
     MallocMemoryResource& persistent_memory_resource = MallocMemoryResource::instance();
-    ScratchMemoryResource transient_memory_resource(persistent_memory_resource, 16 * 1024 * 1024);
+    ScratchMemoryResource transient_memory_resource(persistent_memory_resource, 24 * 1024 * 1024);
 
     EventLoop event_loop;
 
@@ -243,7 +243,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     shadow_manager_descriptor.scene = &scene;
     shadow_manager_descriptor.camera_manager = &camera_manager;
     shadow_manager_descriptor.shadow_map_count = 3;
-    shadow_manager_descriptor.shadow_map_dimension = 512;
+    shadow_manager_descriptor.shadow_map_dimension = 1024;
     shadow_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
     shadow_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
@@ -418,7 +418,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     imgui_render_pass.create_graphics_pipelines(*frame_graph);
 
     scene.add_child(allocate_unique<ContainerPrimitive>(
-        persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/base.kwm")
+        persistent_memory_resource, persistent_memory_resource, container_manager.load("resource/containers/ik.kwm")
     ));
 
     bool is_running = true;
