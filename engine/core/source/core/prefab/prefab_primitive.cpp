@@ -49,9 +49,8 @@ PrefabPrimitive::PrefabPrimitive(const PrefabPrimitive& other)
 }
 
 PrefabPrimitive::~PrefabPrimitive() {
-    // Primitive removes itself from prefab in destructor.
     while (!m_children.empty()) {
-        m_children.front().reset();
+        remove_child(*m_children.front());
     }
 
     if (m_prefab_prototype) {

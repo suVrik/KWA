@@ -145,8 +145,8 @@ enum class CullMode : uint32_t {
 constexpr size_t CULL_MODE_COUNT = 3;
 
 enum class FrontFace : uint32_t {
-    CLOCKWISE,
     COUNTER_CLOCKWISE,
+    CLOCKWISE,
 };
 
 constexpr size_t FRONT_FACE_COUNT = 2;

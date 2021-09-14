@@ -96,13 +96,6 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     TaskScheduler task_scheduler(persistent_memory_resource, 3);
 
-    PrefabManagerDescriptor prefab_manager_descriptor{};
-    prefab_manager_descriptor.task_scheduler = &task_scheduler;
-    prefab_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    prefab_manager_descriptor.transient_memory_resource = &transient_memory_resource;
-
-    PrefabManager prefab_manager(prefab_manager_descriptor);
-
     RenderDescriptor render_descriptor{};
     render_descriptor.api = RenderApi::VULKAN;
     render_descriptor.persistent_memory_resource = &persistent_memory_resource;
@@ -141,6 +134,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     material_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
     material_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
+    // TODO: Material manager must be destroyed before frame graph. This won't be necessary when
+    //   graphics pipelines are created from Render rather than from FrameGraph.
+    UniquePtr<FrameGraph> frame_graph;
+
     MaterialManager material_manager(material_manager_descriptor);
 
     AnimationManagerDescriptor animation_manager_descriptor{};
@@ -158,6 +155,13 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     particle_system_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
+
+    PrefabManagerDescriptor prefab_manager_descriptor{};
+    prefab_manager_descriptor.task_scheduler = &task_scheduler;
+    prefab_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    prefab_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    PrefabManager prefab_manager(prefab_manager_descriptor);
 
     RenderPrimitiveReflectionDescriptor render_primitive_reflection_descriptor{};
     render_primitive_reflection_descriptor.texture_manager = &texture_manager;
@@ -405,7 +409,7 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     frame_graph_descriptor.render_pass_descriptors = render_pass_descriptors.data();
     frame_graph_descriptor.render_pass_descriptor_count = render_pass_descriptors.size();
 
-    UniquePtr<FrameGraph> frame_graph(FrameGraph::create_instance(frame_graph_descriptor), persistent_memory_resource);
+    frame_graph = UniquePtr<FrameGraph>(FrameGraph::create_instance(frame_graph_descriptor), persistent_memory_resource);
 
     // TODO: Once Render can create graphics pipelines, these ugly call will be gone.
     material_manager.set_frame_graph(*frame_graph);

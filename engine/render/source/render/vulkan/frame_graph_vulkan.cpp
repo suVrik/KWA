@@ -60,8 +60,8 @@ static const VkCullModeFlags CULL_MODE_MAPPING[] = {
 static_assert(std::size(CULL_MODE_MAPPING) == CULL_MODE_COUNT);
 
 static const VkFrontFace FRONT_FACE_MAPPING[] = {
-    VK_FRONT_FACE_CLOCKWISE,         // CLOCKWISE
     VK_FRONT_FACE_COUNTER_CLOCKWISE, // COUNTER_CLOCKWISE
+    VK_FRONT_FACE_CLOCKWISE,         // CLOCKWISE
 };
 
 static_assert(std::size(FRONT_FACE_MAPPING) == FRONT_FACE_COUNT);

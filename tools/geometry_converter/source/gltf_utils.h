@@ -328,5 +328,13 @@ static float4x4 get_node_transform(const tinygltf::Node& node) {
         }
     }
 
+    // Convert right handed to left handed coordinate system.
+    local_transform[0][2] *= -1.f;
+    local_transform[1][2] *= -1.f;
+    local_transform[3][2] *= -1.f;
+    local_transform[2][0] *= -1.f;
+    local_transform[2][1] *= -1.f;
+    local_transform[2][3] *= -1.f;
+
     return local_transform;
 }
