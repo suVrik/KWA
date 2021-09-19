@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/containers/map.h"
+#include "core/containers/pair.h"
 #include "core/containers/string.h"
 #include "core/containers/unique_ptr.h"
 #include "core/containers/vector.h"
@@ -44,12 +44,12 @@ public:
     {
     }
         
-    double get_value() const {
+    float get_value() const {
         return m_value;
     }
 
 private:
-    double m_value;
+    float m_value;
 };
 
 class StringNode : public MarkdownNode {
@@ -84,17 +84,9 @@ private:
 
 class ObjectNode : public MarkdownNode {
 public:
-    struct TransparentLess {
-        using is_transparent = void;
+    using iterator = Vector<Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>>::const_iterator;
 
-        bool operator()(const String& lhs, const String& rhs) const;
-        bool operator()(const char* lhs, const String& rhs) const;
-        bool operator()(const String& lhs, const char* rhs) const;
-    };
-
-    using iterator = Map<String, UniquePtr<MarkdownNode>, TransparentLess>::const_iterator;
-
-    explicit ObjectNode(Map<String, UniquePtr<MarkdownNode>, TransparentLess>&& elements);
+    explicit ObjectNode(Vector<Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>>&& elements);
 
     // Throws when key doesn't exist.
     MarkdownNode& operator[](const char* key) const;
@@ -108,7 +100,7 @@ public:
     iterator end() const;
 
 private:
-    Map<String, UniquePtr<MarkdownNode>, TransparentLess> m_elements;
+    Vector<Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>> m_elements;
 };
 
 class ArrayNode : public MarkdownNode {

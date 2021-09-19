@@ -39,25 +39,16 @@ template const BooleanNode& MarkdownNode::as<BooleanNode>() const;
 template const ObjectNode& MarkdownNode::as<ObjectNode>() const;
 template const ArrayNode& MarkdownNode::as<ArrayNode>() const;
 
-bool ObjectNode::TransparentLess::operator()(const String& lhs, const String& rhs) const {
-    return lhs < rhs;
-}
-
-bool ObjectNode::TransparentLess::operator()(const char* lhs, const String& rhs) const {
-    return lhs < rhs;
-}
-
-bool ObjectNode::TransparentLess::operator()(const String& lhs, const char* rhs) const {
-    return lhs < rhs;
-}
-
-ObjectNode::ObjectNode(Map<String, UniquePtr<MarkdownNode>, TransparentLess>&& elements)
+ObjectNode::ObjectNode(Vector<Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>>&& elements)
     : m_elements(std::move(elements))
 {
 }
 
 MarkdownNode& ObjectNode::operator[](const char* key) const {
-    auto it = m_elements.find(key);
+    auto it = std::find_if(m_elements.begin(), m_elements.end(), [key](const Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>& element) {
+        StringNode* string_node = element.first->is<StringNode>();
+        return string_node != nullptr && string_node->get_value() == key;
+    });
 
     KW_ERROR(
         it != m_elements.end(),
@@ -68,7 +59,11 @@ MarkdownNode& ObjectNode::operator[](const char* key) const {
 }
 
 MarkdownNode* ObjectNode::find(const char* key) const {
-    auto it = m_elements.find(key);
+    auto it = std::find_if(m_elements.begin(), m_elements.end(), [key](const Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>& element) {
+        StringNode* string_node = element.first->is<StringNode>();
+        return string_node != nullptr && string_node->get_value() == key;
+    });
+
     if (it != m_elements.end()) {
         return it->second.get();
     } else {

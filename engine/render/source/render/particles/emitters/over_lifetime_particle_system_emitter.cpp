@@ -8,8 +8,8 @@ namespace kw {
 
 ParticleSystemEmitter* OverLifetimeParticleSystemEmitter::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
     return memory_resource.construct<OverLifetimeParticleSystemEmitter>(
-        static_cast<float>(node["from"].as<NumberNode>().get_value()),
-        static_cast<float>(node["to"].as<NumberNode>().get_value())
+        node["from"].as<NumberNode>().get_value(),
+        node["to"].as<NumberNode>().get_value()
     );
 }
 

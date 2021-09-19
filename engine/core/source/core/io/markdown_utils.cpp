@@ -6,8 +6,8 @@ float2 float2_from_markdown(MarkdownNode& node) {
     ArrayNode& array_node = node.as<ArrayNode>();
 
     return float2(
-        static_cast<float>(array_node[0].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[1].as<NumberNode>().get_value())
+        array_node[0].as<NumberNode>().get_value(),
+        array_node[1].as<NumberNode>().get_value()
     );
 }
 
@@ -15,9 +15,9 @@ float3 float3_from_markdown(MarkdownNode& node) {
     ArrayNode& array_node = node.as<ArrayNode>();
 
     return float3(
-        static_cast<float>(array_node[0].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[1].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[2].as<NumberNode>().get_value())
+        array_node[0].as<NumberNode>().get_value(),
+        array_node[1].as<NumberNode>().get_value(),
+        array_node[2].as<NumberNode>().get_value()
     );
 }
 
@@ -25,10 +25,10 @@ float4 float4_from_markdown(MarkdownNode& node) {
     ArrayNode& array_node = node.as<ArrayNode>();
 
     return float4(
-        static_cast<float>(array_node[0].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[1].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[2].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[3].as<NumberNode>().get_value())
+        array_node[0].as<NumberNode>().get_value(),
+        array_node[1].as<NumberNode>().get_value(),
+        array_node[2].as<NumberNode>().get_value(),
+        array_node[3].as<NumberNode>().get_value()
     );
 }
 
@@ -36,10 +36,10 @@ quaternion quaternion_from_markdown(MarkdownNode& node) {
     ArrayNode& array_node = node.as<ArrayNode>();
 
     return quaternion(
-        static_cast<float>(array_node[0].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[1].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[2].as<NumberNode>().get_value()),
-        static_cast<float>(array_node[3].as<NumberNode>().get_value())
+        array_node[0].as<NumberNode>().get_value(),
+        array_node[1].as<NumberNode>().get_value(),
+        array_node[2].as<NumberNode>().get_value(),
+        array_node[3].as<NumberNode>().get_value()
     );
 }
 

@@ -62,10 +62,6 @@ private:
     bool opt_string_chars();
     bool string();
     bool boolean();
-    bool key_char();
-    bool opt_key_chars();
-    bool key_start_char();
-    bool key();
     bool object();
     bool array();
     bool value();

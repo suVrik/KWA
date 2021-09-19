@@ -1,13 +1,13 @@
 {
-  vertex_shader: "resource/shaders/geometry/solid_vertex.hlsl",
-  fragment_shader: "resource/shaders/geometry/shared_fragment.hlsl",
-  textures: {
-    albedo_alpha_uniform_texture: "resource/textures/base/environment_4_aa.kwt",
-    normal_uniform_texture: "resource/textures/base/environment_4_n.kwt",
-    ao_roughness_metalness_uniform_texture: "resource/textures/base/environment_4_arm.kwt",
-    emission_uniform_texture: "resource/textures/base/environment_4_e.kwt"
+  "vertex_shader": "resource/shaders/geometry/solid_vertex.hlsl",
+  "fragment_shader": "resource/shaders/geometry/shared_fragment.hlsl",
+  "textures": {
+    "albedo_alpha_uniform_texture": "resource/textures/base/environment_4_aa.kwt",
+    "normal_uniform_texture": "resource/textures/base/environment_4_n.kwt",
+    "ao_roughness_metalness_uniform_texture": "resource/textures/base/environment_4_arm.kwt",
+    "emission_uniform_texture": "resource/textures/base/environment_4_e.kwt"
   },
-  is_shadow: false,
-  is_skinned: false,
-  is_particle: false
+  "is_shadow": false,
+  "is_skinned": false,
+  "is_particle": false
 }

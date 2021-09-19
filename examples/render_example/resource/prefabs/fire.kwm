@@ -1,27 +1,27 @@
 {
-  type: "ParticleSystemPrimitive",
-  particle_system: "resource/particles/fire.kwm",
-  local_transform: {
-    translation: [ 0, 0, 0 ],
-    rotation: [ 0, 0, 0, 1 ],
-    scale: [ 1, 1, 1 ]
+  "type": "ParticleSystemPrimitive",
+  "particle_system": "resource/particles/fire.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
   }
 },
 {
-  type: "ParticleSystemPrimitive",
-  particle_system: "resource/particles/smoke.kwm",
-  local_transform: {
-    translation: [ 0, 0, 0 ],
-    rotation: [ 0, 0, 0, 1 ],
-    scale: [ 1, 1, 1 ]
+  "type": "ParticleSystemPrimitive",
+  "particle_system": "resource/particles/smoke.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
   }
 },
 {
-  type: "ParticleSystemPrimitive",
-  particle_system: "resource/particles/blow_ember.kwm",
-  local_transform: {
-    translation: [ 0, 0, 0 ],
-    rotation: [ 0, 0, 0, 1 ],
-    scale: [ 1, 1, 1 ]
+  "type": "ParticleSystemPrimitive",
+  "particle_system": "resource/particles/blow_ember.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
   }
 }

@@ -9,8 +9,8 @@ namespace kw {
 
 ParticleSystemGenerator* LifetimeParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
     return memory_resource.construct<LifetimeParticleSystemGenerator>(
-        static_cast<float>(node["min"].as<NumberNode>().get_value()),
-        static_cast<float>(node["max"].as<NumberNode>().get_value())
+        node["min"].as<NumberNode>().get_value(),
+        node["max"].as<NumberNode>().get_value()
     );
 }
 

@@ -41,17 +41,9 @@ namespace kw {
 // 
 // <bool>             ::= "true" | "false"
 // 
-// <key-char>         ::= <letter> | "_" | <digit>
-// 
-// <opt-key-chars>    ::= <key-char> <opt-key-chars> | ""
-// 
-// <key-start-char>   ::= <letter> | "_"
-// 
-// <key>              ::= <key-start-char> <opt-key-chars>
-// 
 // <value>            ::= <number> | <string> | <bool> | <object> | <array>
 // 
-// <key-value>        ::= <key> <opt-spaces> ":" <opt-spaces> <value>
+// <key-value>        ::= <value> <opt-spaces> ":" <opt-spaces> <value>
 // 
 // <opt-key-values>   ::= <key-value> <spaces> <opt-key-values> | <key-value> | ""
 // 
@@ -201,22 +193,6 @@ bool MarkdownReader::boolean() {
     return parse("true") || parse("false");
 }
 
-bool MarkdownReader::key_char() {
-    return parse(&MarkdownReader::letter) || parse('_') || parse(&MarkdownReader::digit);
-}
-
-bool MarkdownReader::opt_key_chars() {
-    return parse_recursive(&MarkdownReader::key_char);
-}
-
-bool MarkdownReader::key_start_char() {
-    return parse(&MarkdownReader::letter) || parse('_');
-}
-
-bool MarkdownReader::key() {
-    return token<StringToken>(&MarkdownReader::key_start_char, &MarkdownReader::opt_key_chars);
-}
-
 bool MarkdownReader::value() {
     return token<NumberToken>(&MarkdownReader::number)   ||
            token<StringToken>(&MarkdownReader::string)   ||
@@ -226,7 +202,7 @@ bool MarkdownReader::value() {
 }
 
 bool MarkdownReader::key_value() {
-    return parse(&MarkdownReader::key, &MarkdownReader::opt_spaces, ':', &MarkdownReader::opt_spaces, &MarkdownReader::value);
+    return parse(&MarkdownReader::value, &MarkdownReader::opt_spaces, ':', &MarkdownReader::opt_spaces, &MarkdownReader::value);
 }
 
 bool MarkdownReader::opt_space_separated_key_values() {
@@ -257,13 +233,13 @@ UniquePtr<MarkdownNode> MarkdownReader::build_node_from_token(Token* token) {
     KW_ASSERT(token != nullptr, "Invalid token.");
 
     if (NumberToken* number_token = dynamic_cast<NumberToken*>(token)) {
-        return static_pointer_cast<MarkdownNode>(allocate_unique<NumberNode>(m_memory_resource, number_token->value));
+        return static_pointer_cast<MarkdownNode>(allocate_unique<NumberNode>(m_memory_resource, static_cast<float>(number_token->value)));
     } else if (StringToken* string_token = dynamic_cast<StringToken*>(token)) {
         return static_pointer_cast<MarkdownNode>(allocate_unique<StringNode>(m_memory_resource, String(string_token->value, m_memory_resource)));
     } else if (BooleanToken* boolean_token = dynamic_cast<BooleanToken*>(token)) {
         return static_pointer_cast<MarkdownNode>(allocate_unique<BooleanNode>(m_memory_resource, boolean_token->value));
     } else if (dynamic_cast<ObjectToken*>(token) != nullptr) {
-        Map<String, UniquePtr<MarkdownNode>, ObjectNode::TransparentLess> elements(m_memory_resource);
+        Vector<Pair<UniquePtr<MarkdownNode>, UniquePtr<MarkdownNode>>> elements(m_memory_resource);
 
         Token* value_token = token->last.get();
         while (value_token != nullptr) {
@@ -271,11 +247,7 @@ UniquePtr<MarkdownNode> MarkdownReader::build_node_from_token(Token* token) {
             Token* key_token = value_token->previous.get();
             KW_ASSERT(key_token != nullptr, "Invalid object key token.");
 
-            StringToken* string_key_token = dynamic_cast<StringToken*>(key_token);
-            KW_ASSERT(string_key_token != nullptr, "Invalid object key token.");
-
-            auto [_, success] = elements.emplace(String(string_key_token->value, m_memory_resource), build_node_from_token(value_token));
-            KW_ASSERT(success, "Object key already exists.");
+            elements.emplace_back(build_node_from_token(key_token), build_node_from_token(value_token));
 
             value_token = key_token->previous.get();
         }

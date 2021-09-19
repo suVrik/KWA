@@ -15,8 +15,8 @@ namespace kw {
 ParticleSystemGenerator* CylinderPositionParticleSystemGenerator::create_from_markdown(MemoryResource& memory_resource, ObjectNode& node) {
     return memory_resource.construct<CylinderPositionParticleSystemGenerator>(
         MarkdownUtils::float3_from_markdown(node["origin"]),
-        static_cast<float>(node["radius"].as<NumberNode>().get_value()),
-        static_cast<float>(node["height"].as<NumberNode>().get_value())
+        node["radius"].as<NumberNode>().get_value(),
+        node["height"].as<NumberNode>().get_value()
     );
 }
 
