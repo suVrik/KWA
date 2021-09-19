@@ -109,4 +109,21 @@ constexpr uint32_t count_bits_set(uint32_t value) {
 uint32_t log2(uint32_t value);
 uint64_t log2(uint64_t value);
 
+inline float normalize_angle(float angle) {
+    angle = std::fmodf(angle, 2 * PI);
+    if (angle < 0) {
+        angle += 2 * PI;
+    }
+    return angle;
+}
+
+// Both `from` and `to` are expected to be normalized.
+inline float shortest_angle(float from, float to) {
+    float result = std::fmodf(to - from + 2 * PI, 2 * PI);
+    if (result > PI) {
+        result = result - 2 * PI;
+    }
+    return result;
+}
+
 } // namespace kw

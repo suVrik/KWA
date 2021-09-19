@@ -169,16 +169,14 @@ inline quaternion slerp(const quaternion& from, quaternion to, float factor) {
         cos_a = -cos_a;
         to = -to;
     }
-    
-    if (cos_a > 0.995f) {
+
+    if (cos_a > 1.f - EPSILON) {
         return normalize(quaternion(lerp(float4(from), float4(to), factor)));
     }
 
-    factor = factor * 0.5f;
-
     float a = std::acos(cos_a);
     float b = 1.f / std::sin(a);
-    float c = std::sin((1 - factor) * a) * b;
+    float c = std::sin((1.f - factor) * a) * b;
     float d = std::sin(factor * a) * b;
 
     return normalize(quaternion(
