@@ -14,19 +14,21 @@ UniquePtr<Primitive> PrefabPrimitive::create_from_markdown(PrimitiveReflection& 
     SharedPtr<PrefabPrototype> prefab_prototype = prefab_prototype_node.get_value().empty() ? nullptr : reflection.prefab_manager.load(prefab_prototype_node.get_value().c_str());
     transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
 
+    // Don't subscribe to prefab prototypes inside of other prefab prototypes.
     return static_pointer_cast<Primitive>(allocate_unique<PrefabPrimitive>(
-        reflection.memory_resource, reflection.memory_resource, prefab_prototype, local_transform
+        reflection.memory_resource, reflection.memory_resource, prefab_prototype, local_transform, true
     ));
 }
 
 PrefabPrimitive::PrefabPrimitive(MemoryResource& persistent_memory_resource,
                                  SharedPtr<PrefabPrototype> prefab_prototype,
-                                 const transform& local_transform)
+                                 const transform& local_transform,
+                                 bool is_inside_prefab_prototype)
     : Primitive(local_transform)
     , m_children(persistent_memory_resource)
     , m_prefab_prototype(std::move(prefab_prototype))
 {
-    if (m_prefab_prototype) {
+    if (m_prefab_prototype && !is_inside_prefab_prototype) {
         // If prefab primitive is already loaded, `prefab_prototype_loaded` will be called immediately.
         m_prefab_prototype->subscribe(*this);
     }
@@ -60,23 +62,25 @@ PrefabPrimitive::~PrefabPrimitive() {
 }
 
 PrefabPrimitive& PrefabPrimitive::operator=(const PrefabPrimitive& other) {
-    Primitive::operator=(other);
+    if (&other != this) {
+        Primitive::operator=(other);
 
-    KW_ASSERT(
-        other.m_children.empty(),
-        "Copying non-empty prefabs is not allowed."
-    );
+        KW_ASSERT(
+            other.m_children.empty(),
+            "Copying non-empty prefabs is not allowed."
+        );
 
-    if (m_prefab_prototype) {
-        // No effect if `prefab_prototype_loaded` for this primitive was already called.
-        m_prefab_prototype->unsubscribe(*this);
-    }
+        if (m_prefab_prototype) {
+            // No effect if `prefab_prototype_loaded` for this primitive was already called.
+            m_prefab_prototype->unsubscribe(*this);
+        }
 
-    m_prefab_prototype = other.m_prefab_prototype;
+        m_prefab_prototype = other.m_prefab_prototype;
 
-    if (m_prefab_prototype) {
-        // If prefab primitive is already loaded, `prefab_prototype_loaded` will be called immediately.
-        m_prefab_prototype->subscribe(*this);
+        if (m_prefab_prototype) {
+            // If prefab primitive is already loaded, `prefab_prototype_loaded` will be called immediately.
+            m_prefab_prototype->subscribe(*this);
+        }
     }
 
     return *this;

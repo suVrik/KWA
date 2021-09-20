@@ -15,9 +15,13 @@ class PrefabPrimitive : public Primitive, public PrefabPrototypeListener {
 public:
     static UniquePtr<Primitive> create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node);
 
+    // The last flag doesn't subscribe this particular prefab primitive to prefab prototype.
+    // This way prefab prototype resource is stored, but doesn't fill this prefab with its primitives.
+    // Other prefabs cloned from this prefab will be filled though.
     explicit PrefabPrimitive(MemoryResource& persistent_memory_resource,
                              SharedPtr<PrefabPrototype> prefab_prototype = nullptr,
-                             const transform& local_transform = transform());
+                             const transform& local_transform = transform(),
+                             bool is_inside_prefab_prototype = false);
     PrefabPrimitive(const PrefabPrimitive& other);
     ~PrefabPrimitive() override;
     PrefabPrimitive& operator=(const PrefabPrimitive& other);
