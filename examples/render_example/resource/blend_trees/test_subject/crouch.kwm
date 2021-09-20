@@ -1,0 +1,36 @@
+{
+  "type": "BlendTreeLerpNode",
+  "attribute": "is_idle",
+  "children": {
+    0: {
+      "type": "BlendTreeLerpNode",
+      "attribute": "angle",
+      "children": {
+        0: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/crouch_right.kwg"
+        },
+        90: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/crouch_forward.kwg"
+        },
+        180: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/crouch_left.kwg"
+        },
+        270: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/crouch_backward.kwg"
+        },
+        360: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/crouch_right.kwg"
+        }
+      }
+    },
+    1: {
+      "type": "BlendTreeAnimationNode",
+      "animation": "resource/animations/test_subject/crouch_idle.kwg"
+    }
+  }
+}

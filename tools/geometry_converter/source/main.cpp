@@ -31,7 +31,7 @@ struct SkinnedVertex {
 struct Skeleton {
     std::vector<uint32_t> parent_joint_indices;
     std::vector<float4x4> inverse_bind_matrices;
-    std::vector<float4x4> bind_matrices;
+    std::vector<transform> bind_transforms;
     std::vector<std::string> joint_names;
 };
 
@@ -178,7 +178,7 @@ static bool save_result_geometry(const char* path) {
 
     writer.write_le<uint32_t>(result_geometry.skeleton.parent_joint_indices.data(), result_geometry.skeleton.parent_joint_indices.size());
     writer.write_le<float4x4>(result_geometry.skeleton.inverse_bind_matrices.data(), result_geometry.skeleton.inverse_bind_matrices.size());
-    writer.write_le<float4x4>(result_geometry.skeleton.bind_matrices.data(), result_geometry.skeleton.bind_matrices.size());
+    writer.write_le<transform>(result_geometry.skeleton.bind_transforms.data(), result_geometry.skeleton.bind_transforms.size());
 
     for (const std::string& name : result_geometry.skeleton.joint_names) {
         writer.write_le<uint32_t>(name.size());
@@ -309,6 +309,9 @@ static bool load_animations(const tinygltf::Animation& animation) {
 
             for (size_t i = 0; i < (*input_data).size(); i++) {
                 node_animations[channel.target_node][(*input_data)[i]].translation = (*output_data)[i];
+
+                // Convert right handed to left handed coordinate system.
+                node_animations[channel.target_node][(*input_data)[i]].translation.z *= -1.f;
             }
         } else if (channel.target_path == "rotation") {
             std::optional<std::vector<quaternion>> output_data = load_gltf_accessor<quaternion, true>(sampler.output);
@@ -324,6 +327,10 @@ static bool load_animations(const tinygltf::Animation& animation) {
 
             for (size_t i = 0; i < (*input_data).size(); i++) {
                 node_animations[channel.target_node][(*input_data)[i]].rotation = normalize((*output_data)[i]);
+
+                // Convert right handed to left handed coordinate system.
+                node_animations[channel.target_node][(*input_data)[i]].rotation.x *= -1.f;
+                node_animations[channel.target_node][(*input_data)[i]].rotation.y *= -1.f;
             }
         } else if (channel.target_path == "scale") {
             std::optional<std::vector<float3>> output_data = load_gltf_accessor<float3, true>(sampler.output);
@@ -358,15 +365,15 @@ static bool assign_joint_parents(int node_index, uint32_t parent_index, const fl
     const tinygltf::Node& node = model.nodes[node_index];
     
     float4x4 local_transform = get_node_transform(node);
-    float4x4 transform = local_transform * parent_transform;
+    float4x4 transform_ = local_transform * parent_transform;
 
     auto it1 = node_index_to_joint_index.find(node_index);
     if (it1 != node_index_to_joint_index.end()) {
         parent_index = static_cast<uint32_t>(it1->second);
 
-        result_geometry.skeleton.bind_matrices[it1->second] = transform;
+        result_geometry.skeleton.bind_transforms[it1->second] = transform(transform_);
 
-        transform = float4x4();
+        transform_ = float4x4();
     }
 
     for (int child_index : node.children) {
@@ -380,7 +387,7 @@ static bool assign_joint_parents(int node_index, uint32_t parent_index, const fl
             result_geometry.skeleton.parent_joint_indices[it2->second] = parent_index;
         }
 
-        if (!assign_joint_parents(child_index, parent_index, transform)) {
+        if (!assign_joint_parents(child_index, parent_index, transform_)) {
             return false;
         }
     }
@@ -422,6 +429,9 @@ static bool load_primitive(const tinygltf::Primitive& primitive, const float4x4&
 
             for (size_t i = 0; i < *vertex_count; i++) {
                 result_geometry.vertices[vertex_offset + i].position = (*data)[i];
+
+                // Convert right handed to left handed coordinate system.
+                result_geometry.vertices[vertex_offset + i].position.z *= -1.f;
             }
         } else if (attribute == "NORMAL") {
             if ((attribute_mask & Attributes::NORMAL) == Attributes::NORMAL) {
@@ -449,6 +459,9 @@ static bool load_primitive(const tinygltf::Primitive& primitive, const float4x4&
 
             for (size_t i = 0; i < *vertex_count; i++) {
                 result_geometry.vertices[vertex_offset + i].normal = (*data)[i];
+
+                // Convert right handed to left handed coordinate system.
+                result_geometry.vertices[vertex_offset + i].normal.z *= -1.f;
             }
         } else if (attribute == "TANGENT") {
             if ((attribute_mask & Attributes::TANGENT) == Attributes::TANGENT) {
@@ -476,6 +489,9 @@ static bool load_primitive(const tinygltf::Primitive& primitive, const float4x4&
 
             for (size_t i = 0; i < *vertex_count; i++) {
                 result_geometry.vertices[vertex_offset + i].tangent = (*data)[i];
+
+                // Convert right handed to left handed coordinate system.
+                result_geometry.vertices[vertex_offset + i].tangent.z *= -1.f;
             }
         } else if (attribute == "TEXCOORD_0") {
             if ((attribute_mask & Attributes::TEXCOORD_0) == Attributes::TEXCOORD_0) {
@@ -701,7 +717,7 @@ static bool load_node(int node_index, const float4x4& parent_transform) {
 
         result_geometry.skeleton.parent_joint_indices.resize(joint_offset + skin.joints.size());
         result_geometry.skeleton.inverse_bind_matrices.resize(joint_offset + skin.joints.size());
-        result_geometry.skeleton.bind_matrices.resize(joint_offset + skin.joints.size());
+        result_geometry.skeleton.bind_transforms.resize(joint_offset + skin.joints.size());
         result_geometry.skeleton.joint_names.resize(joint_offset + skin.joints.size());
 
         for (size_t i = 0; i < skin.joints.size(); i++) {
@@ -717,6 +733,15 @@ static bool load_node(int node_index, const float4x4& parent_transform) {
             result_geometry.skeleton.joint_names[joint_offset + i] = joint_node.name;
             result_geometry.skeleton.inverse_bind_matrices[joint_offset + i] = (*data)[i];
             result_geometry.skeleton.parent_joint_indices[joint_offset + i] = UINT32_MAX;
+
+            // Convert right handed to left handed coordinate system.
+            float4x4& inverse_bind_matrix = result_geometry.skeleton.inverse_bind_matrices[joint_offset + i];
+            inverse_bind_matrix[0][2] *= -1.f;
+            inverse_bind_matrix[1][2] *= -1.f;
+            inverse_bind_matrix[3][2] *= -1.f;
+            inverse_bind_matrix[2][0] *= -1.f;
+            inverse_bind_matrix[2][1] *= -1.f;
+            inverse_bind_matrix[2][3] *= -1.f;
         }
 
         node_index_to_joint_index.reserve(skin.joints.size());

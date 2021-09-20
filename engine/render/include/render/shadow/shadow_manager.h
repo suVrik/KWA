@@ -8,7 +8,7 @@ class CameraManager;
 class LightPrimitive;
 class MemoryResource;
 class Render;
-class Scene;
+class RenderScene;
 class Task;
 class Texture;
 
@@ -26,7 +26,7 @@ struct ShadowMap {
 
 struct ShadowManagerDescriptor {
     Render* render;
-    Scene* scene;
+    RenderScene* scene;
     CameraManager* camera_manager;
 
     uint32_t shadow_map_count;
@@ -60,7 +60,7 @@ private:
     class Task;
 
     Render& m_render;
-    Scene& m_scene;
+    RenderScene& m_scene;
     CameraManager& m_camera_manager;
 
     Vector<ShadowMap> m_shadow_maps;

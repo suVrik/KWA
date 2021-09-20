@@ -1,8 +1,8 @@
 {
-  vertex_shader: "resource/shaders/geometry/solid_shadow_vertex.hlsl",
-  fragment_shader: "",
-  textures: {},
-  is_shadow: true,
-  is_skinned: false,
-  is_particle: false
+  "vertex_shader": "resource/shaders/geometry/solid_shadow_vertex.hlsl",
+  "fragment_shader": "",
+  "textures": {},
+  "is_shadow": true,
+  "is_skinned": false,
+  "is_particle": false
 }

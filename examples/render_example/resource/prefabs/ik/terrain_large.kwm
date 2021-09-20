@@ -1,0 +1,22 @@
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/ik/terrain_large.kwg",
+  "material": "resource/materials/ik/box_orange.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "HeightFieldRigidActorPrimitive",
+  "height_field": "resource/height_fields/ik/terrain_large.tsv",
+  "collision_category": 1,
+  "collision_mask": 3,
+  "local_transform": {
+    "translation": [ -20, -3, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 0.3125, 3, 0.3125 ]
+  }
+}

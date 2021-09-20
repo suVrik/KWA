@@ -1,0 +1,21 @@
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/ik/box.kwg",
+  "material": "resource/materials/ik/box_orange.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "BoxRigidActorPrimitive",
+  "collision_category": 1,
+  "collision_mask": 3,
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+}

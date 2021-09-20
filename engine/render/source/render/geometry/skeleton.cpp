@@ -10,25 +10,25 @@ namespace kw {
 Skeleton::Skeleton()
     : m_parent_joints(MallocMemoryResource::instance())
     , m_inverse_bind_matrices(MallocMemoryResource::instance())
-    , m_bind_matrices(MallocMemoryResource::instance())
+    , m_bind_transforms(MallocMemoryResource::instance())
     , m_joint_mapping(MallocMemoryResource::instance())
 {
 }
 
 Skeleton::Skeleton(Vector<uint32_t>&& parent_joints, Vector<float4x4>&& inverse_bind_matrices,
-                   Vector<float4x4>&& bind_matrices, UnorderedMap<String, uint32_t>&& joint_mapping)
+                   Vector<transform>&& bind_transforms, UnorderedMap<String, uint32_t>&& joint_mapping)
     : m_parent_joints(std::move(parent_joints))
     , m_inverse_bind_matrices(std::move(inverse_bind_matrices))
-    , m_bind_matrices(std::move(bind_matrices))
+    , m_bind_transforms(std::move(bind_transforms))
     , m_joint_mapping(std::move(joint_mapping))
 {
     KW_ASSERT(m_parent_joints.size() == m_inverse_bind_matrices.size(), "Mismatching skeleton data.");
-    KW_ASSERT(m_parent_joints.size() == m_bind_matrices.size(), "Mismatching skeleton data.");
+    KW_ASSERT(m_parent_joints.size() == m_bind_transforms.size(), "Mismatching skeleton data.");
     KW_ASSERT(m_parent_joints.size() == m_joint_mapping.size(), "Mismatching skeleton data.");
 }
 
 size_t Skeleton::get_joint_count() const {
-    return m_bind_matrices.size();
+    return m_bind_transforms.size();
 }
 
 uint32_t Skeleton::get_parent_joint(uint32_t joint_index) const {
@@ -43,10 +43,10 @@ const float4x4& Skeleton::get_inverse_bind_matrix(uint32_t joint_index) const {
     return m_inverse_bind_matrices[joint_index];
 }
 
-const float4x4& Skeleton::get_bind_matrix(uint32_t joint_index) const {
+const transform& Skeleton::get_bind_transform(uint32_t joint_index) const {
     KW_ASSERT(joint_index < get_joint_count(), "Invalid joint index.");
 
-    return m_bind_matrices[joint_index];
+    return m_bind_transforms[joint_index];
 }
 
 const String& Skeleton::get_joint_name(uint32_t joint_index) const {

@@ -1,0 +1,136 @@
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.35, 1.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.65, 1 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.95, 0.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 1.25, 0 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 1.55, -0.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 1.85, -1 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_orange.kwm",
+  "local_transform": {
+    "translation": [ 0, 2.15, -1.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 0.05, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, -0.7, 1.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, -0.4, 1 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, -0.1, 0.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.2, 0 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.5, -0.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, 0.8, -1 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1, 0.25 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/prefabs/ik/box_gray.kwm",
+  "local_transform": {
+    "translation": [ 0, 1, -1.5 ],
+    "rotation": [ 0, 1, 0, 0 ],
+    "scale": [ 2, 1.1, 0.25 ]
+  }
+},
+{
+  "type": "BoxRigidActorPrimitive",
+  "collision_category": 2,
+  "collision_mask": 3,
+  "local_transform": {
+    "translation": [ 0, 0.26, 0.05 ],
+    "rotation": [ -0.492424, 0, 0, 0.870356 ],
+    "scale": [ 2, 2.1, 1 ]
+  }
+}

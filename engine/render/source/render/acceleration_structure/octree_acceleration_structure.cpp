@@ -1,8 +1,8 @@
 #include "render/acceleration_structure/octree_acceleration_structure.h"
 #include "render/acceleration_structure/acceleration_structure_primitive.h"
-#include "render/scene/primitive.h"
 
 #include <core/debug/assert.h>
+#include <core/scene/primitive.h>
 
 namespace kw {
 

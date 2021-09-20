@@ -1,4 +1,5 @@
 #include "render/geometry/geometry_notifier.h"
+#include "render/geometry/geometry.h"
 #include "render/geometry/geometry_listener.h"
 
 namespace kw {
@@ -12,6 +13,11 @@ GeometryNotifier::GeometryNotifier(MemoryResource& memory_resource)
 void GeometryNotifier::subscribe(Geometry& geometry, GeometryListener& geometry_listener) {
     std::lock_guard lock(m_mutex);
 
+    if (geometry.is_loaded()) {
+        geometry_listener.geometry_loaded();
+        return;
+    }
+
     auto it = m_listeners.find(&geometry);
     if (it != m_listeners.end()) {
         it->second.push_back(&geometry_listener);
@@ -22,6 +28,10 @@ void GeometryNotifier::subscribe(Geometry& geometry, GeometryListener& geometry_
 
 void GeometryNotifier::unsubscribe(Geometry& geometry, GeometryListener& geometry_listener) {
     std::lock_guard lock(m_mutex);
+
+    if (geometry.is_loaded()) {
+        return;
+    }
 
     auto it1 = m_listeners.find(&geometry);
     if (it1 != m_listeners.end()) {

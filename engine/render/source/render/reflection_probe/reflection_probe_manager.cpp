@@ -400,7 +400,7 @@ void ReflectionProbeManager::remove(ReflectionProbePrimitive& primitive) {
     *it = nullptr;
 }
 
-void ReflectionProbeManager::bake(Render& render, Scene& scene) {
+void ReflectionProbeManager::bake(Render& render, RenderScene& scene) {
     std::lock_guard lock(m_mutex);
 
     if (m_scene != nullptr) {

@@ -3,7 +3,7 @@
 #include "render/geometry/geometry_manager.h"
 #include "render/geometry/skeleton.h"
 #include "render/material/material_manager.h"
-#include "render/scene/primitive_reflection.h"
+#include "render/scene/render_primitive_reflection.h"
 
 #include <core/debug/assert.h>
 #include <core/io/markdown.h>
@@ -16,25 +16,20 @@ namespace kw {
 // Declared in `render/acceleration_structure/acceleration_structure_primitive.cpp`.
 extern std::atomic_uint64_t acceleration_structure_counter;
 
-UniquePtr<Primitive> GeometryPrimitive::create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor) {
-    KW_ASSERT(primitive_reflection_descriptor.primitive_node != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.geometry_manager != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.material_manager != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.persistent_memory_resource != nullptr);
+UniquePtr<Primitive> GeometryPrimitive::create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node) {
+    RenderPrimitiveReflection& render_reflection = dynamic_cast<RenderPrimitiveReflection&>(reflection);
 
-    ObjectNode& node = *primitive_reflection_descriptor.primitive_node;
     StringNode& geometry_node = node["geometry"].as<StringNode>();
     StringNode& material_node = node["material"].as<StringNode>();
     StringNode& shadow_material_node = node["shadow_material"].as<StringNode>();
 
-    MemoryResource& memory_resource = *primitive_reflection_descriptor.persistent_memory_resource;
-    SharedPtr<Geometry> geometry = geometry_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.geometry_manager->load(geometry_node.get_value().c_str());
-    SharedPtr<Material> material = material_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.material_manager->load(material_node.get_value().c_str());
-    SharedPtr<Material> shadow_material = shadow_material_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.material_manager->load(shadow_material_node.get_value().c_str());
+    SharedPtr<Geometry> geometry = render_reflection.geometry_manager.load(geometry_node.get_value().c_str());
+    SharedPtr<Material> material = render_reflection.material_manager.load(material_node.get_value().c_str());
+    SharedPtr<Material> shadow_material = render_reflection.material_manager.load(shadow_material_node.get_value().c_str());
     transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
 
     return static_pointer_cast<Primitive>(allocate_unique<GeometryPrimitive>(
-        memory_resource, geometry, material, shadow_material, local_transform
+        render_reflection.memory_resource, geometry, material, shadow_material, local_transform
     ));
 }
 
@@ -188,9 +183,9 @@ Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResourc
             for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
                 uint32_t parent_joint_index = skeleton->get_parent_joint(i);
                 if (parent_joint_index != UINT32_MAX) {
-                    result[i] = skeleton->get_bind_matrix(i) * result[parent_joint_index];
+                    result[i] = float4x4(skeleton->get_bind_transform(i)) * result[parent_joint_index];
                 } else {
-                    result[i] = skeleton->get_bind_matrix(i);
+                    result[i] = float4x4(skeleton->get_bind_transform(i));
                 }
             }
 

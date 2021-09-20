@@ -7,13 +7,13 @@
 namespace kw {
 
 class CameraManager;
-class Scene;
+class RenderScene;
 class TextureManager;
 
 struct ReflectionProbeRenderPassDescriptor {
     Render* render;
     TextureManager* texture_manager;
-    Scene* scene;
+    RenderScene* scene;
     CameraManager* camera_manager;
     MemoryResource* transient_memory_resource;
 };
@@ -36,7 +36,7 @@ private:
     class Task;
 
     Render& m_render;
-    Scene& m_scene;
+    RenderScene& m_scene;
     CameraManager& m_camera_manager;
     MemoryResource& m_transient_memory_resource;
 

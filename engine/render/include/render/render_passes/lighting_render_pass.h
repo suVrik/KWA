@@ -5,12 +5,12 @@
 namespace kw {
 
 class CameraManager;
-class Scene;
+class RenderScene;
 class ShadowManager;
 
 struct LightingRenderPassDescriptor {
     Render* render;
-    Scene* scene;
+    RenderScene* scene;
     CameraManager* camera_manager;
     ShadowManager* shadow_manager;
     MemoryResource* transient_memory_resource;
@@ -34,7 +34,7 @@ private:
     class Task;
 
     Render& m_render;
-    Scene& m_scene;
+    RenderScene& m_scene;
     CameraManager& m_camera_manager;
     ShadowManager& m_shadow_manager;
     MemoryResource& m_transient_memory_resource;

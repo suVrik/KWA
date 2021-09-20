@@ -356,7 +356,7 @@ public:
         texture_names.reserve(textures.get_size());
         for (const auto& [name, _] : textures) {
             // We won't use `textures` names anymore anywawy.
-            texture_names.push_back(std::move(name));
+            texture_names.push_back(std::move(name->as<StringNode>().get_value()));
         }
 
         SharedPtr<GraphicsPipeline*> graphics_pipeline_context = m_manager.load(
@@ -503,6 +503,11 @@ void MaterialManager::set_frame_graph(FrameGraph& frame_graph) {
 }
 
 SharedPtr<Material> MaterialManager::load(const char* relative_path) {
+    if (relative_path[0] == '\0') {
+        // Empty string is allowed.
+        return nullptr;
+    }
+
     {
         std::shared_lock shared_lock(m_materials_mutex);
 

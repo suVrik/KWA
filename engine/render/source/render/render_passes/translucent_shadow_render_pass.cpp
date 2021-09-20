@@ -4,7 +4,7 @@
 #include "render/material/material.h"
 #include "render/particles/particle_system.h"
 #include "render/particles/particle_system_primitive.h"
-#include "render/scene/scene.h"
+#include "render/scene/render_scene.h"
 #include "render/shadow/shadow_manager.h"
 
 #include <core/concurrency/task.h>

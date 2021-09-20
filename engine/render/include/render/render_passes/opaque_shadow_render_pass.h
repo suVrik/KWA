@@ -6,12 +6,12 @@
 
 namespace kw {
 
-class Scene;
+class RenderScene;
 class ShadowManager;
 class TaskScheduler;
 
 struct OpaqueShadowRenderPassDescriptor {
-    Scene* scene;
+    RenderScene* scene;
     ShadowManager* shadow_manager;
     TaskScheduler* task_scheduler;
     MemoryResource* transient_memory_resource;
@@ -34,7 +34,7 @@ private:
     class BeginTask;
     class WorkerTask;
 
-    Scene& m_scene;
+    RenderScene& m_scene;
     ShadowManager& m_shadow_manager;
     TaskScheduler& m_task_scheduler;
     MemoryResource& m_transient_memory_resource;

@@ -1,10 +1,10 @@
 {
-  vertex_shader: "resource/shaders/particles/unlit_vertex.hlsl",
-  fragment_shader: "resource/shaders/particles/unlit_fragment.hlsl",
-  textures: {
-    albedo_alpha_uniform_texture: "resource/textures/bonefire_aa.kwt"
+  "vertex_shader": "resource/shaders/particles/unlit_vertex.hlsl",
+  "fragment_shader": "resource/shaders/particles/unlit_fragment.hlsl",
+  "textures": {
+    "albedo_alpha_uniform_texture": "resource/textures/bonefire_aa.kwt"
   },
-  is_shadow: false,
-  is_skinned: false,
-  is_particle: true
+  "is_shadow": false,
+  "is_skinned": false,
+  "is_particle": true
 }

@@ -60,8 +60,8 @@ static const VkCullModeFlags CULL_MODE_MAPPING[] = {
 static_assert(std::size(CULL_MODE_MAPPING) == CULL_MODE_COUNT);
 
 static const VkFrontFace FRONT_FACE_MAPPING[] = {
-    VK_FRONT_FACE_CLOCKWISE,         // CLOCKWISE
     VK_FRONT_FACE_COUNTER_CLOCKWISE, // COUNTER_CLOCKWISE
+    VK_FRONT_FACE_CLOCKWISE,         // CLOCKWISE
 };
 
 static_assert(std::size(FRONT_FACE_MAPPING) == FRONT_FACE_COUNT);
@@ -970,7 +970,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             }
         } else {
             Log::print(
-                "[WARNING] Uniform attachment \"%s\" is not found (graphics pipeline \"%s\").",
+                "[RENDER] Uniform attachment \"%s\" is not found (graphics pipeline \"%s\").",
                 uniform_attachment_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1215,7 +1215,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             graphics_pipeline_vulkan->uniform_texture_mapping.push_back(static_cast<uint32_t>(i));
         } else {
             Log::print(
-                "[WARNING] Texture \"%s\" is not found (graphics pipeline \"%s\").",
+                "[RENDER] Texture \"%s\" is not found (graphics pipeline \"%s\").",
                 uniform_texture_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1403,7 +1403,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             descriptor_set_layout_bindings.push_back(descriptor_set_layout_binding);
         } else {
             Log::print(
-                "[WARNING] Sampler \"%s\" is not found (graphics pipeline \"%s\").",
+                "[RENDER] Sampler \"%s\" is not found (graphics pipeline \"%s\").",
                 uniform_sampler_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -1577,7 +1577,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
             graphics_pipeline_vulkan->uniform_buffer_mapping.push_back(static_cast<uint32_t>(i));
         } else {
             Log::print(
-                "[WARNING] Uniform buffer \"%s\" is not found (graphics pipeline \"%s\").",
+                "[RENDER] Uniform buffer \"%s\" is not found (graphics pipeline \"%s\").",
                 uniform_buffer_descriptor.variable_name, graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -2065,7 +2065,7 @@ GraphicsPipeline* FrameGraphVulkan::create_graphics_pipeline(const GraphicsPipel
 
         if (push_constants_shader_stage_flags == 0) {
             Log::print(
-                "[WARNING] Push constants are not found (graphics pipeline \"%s\").",
+                "[RENDER] Push constants are not found (graphics pipeline \"%s\").",
                 graphics_pipeline_descriptor.graphics_pipeline_name
             );
         }
@@ -2474,7 +2474,7 @@ void FrameGraphVulkan::compute_present_mode(CreateContext& create_context) {
         }
 
         if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR) {
-            Log::print("[WARNING] Failed to turn VSync off.");
+            Log::print("[RENDER] Failed to turn VSync off.");
         }
     }
 }

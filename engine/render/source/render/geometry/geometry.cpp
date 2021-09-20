@@ -89,17 +89,11 @@ Geometry& Geometry::operator=(Geometry&& other) {
 }
 
 void Geometry::subscribe(GeometryListener& geometry_listener) {
-    if (is_loaded()) {
-        geometry_listener.geometry_loaded();
-    } else {
-        m_geometry_notifier.subscribe(*this, geometry_listener);
-    }
+    m_geometry_notifier.subscribe(*this, geometry_listener);
 }
 
 void Geometry::unsubscribe(GeometryListener& geometry_listener) {
-    if (!is_loaded()) {
-        m_geometry_notifier.unsubscribe(*this, geometry_listener);
-    }
+    m_geometry_notifier.unsubscribe(*this, geometry_listener);
 }
 
 VertexBuffer* Geometry::get_vertex_buffer() const {

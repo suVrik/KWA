@@ -34,7 +34,7 @@ static void vk_free(void* userdata, void* memory) {
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* userdata) {
-    Log::print("%s: %s", callback_data->pMessageIdName, callback_data->pMessage);
+    Log::print("[RENDER] %s: %s", callback_data->pMessageIdName, callback_data->pMessage);
     return VK_FALSE;
 }
 

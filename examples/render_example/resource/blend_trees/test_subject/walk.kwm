@@ -1,0 +1,52 @@
+{
+  "type": "BlendTreeLerpNode",
+  "attribute": "is_idle",
+  "children": {
+    0: {
+      "type": "BlendTreeLerpNode",
+      "attribute": "angle",
+      "children": {
+        0: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_right.kwg"
+        },
+        45: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_forward_right.kwg"
+        },
+        90: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_forward.kwg"
+        },
+        135: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_forward_left.kwg"
+        },
+        180: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_left.kwg"
+        },
+        225: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_backward_left.kwg"
+        },
+        270: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_backward.kwg"
+        },
+        315: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_backward_right.kwg"
+        },
+        360: {
+          "type": "BlendTreeAnimationNode",
+          "animation": "resource/animations/test_subject/walk_right.kwg"
+        }
+      }
+    },
+    1: {
+      "type": "BlendTreeAnimationNode",
+      "animation": "resource/animations/test_subject/walk_idle.kwg"
+    }
+  }
+}

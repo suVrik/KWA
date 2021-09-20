@@ -1,0 +1,489 @@
+{
+  "type": "AnimatedGeometryPrimitive",
+  "animation": "resource/animations/knight/idle.kwg",
+  "geometry": "resource/geometry/sponza/knight.kwg",
+  "material": "resource/materials/sponza/knight.kwm",
+  "shadow_material": "resource/materials/skinned_shadow.kwm",
+  "local_transform": {
+    "translation": [ 9, 0, 1 ],
+    "rotation": [ 0, -0.713, 0,  0.701 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "AnimatedGeometryPrimitive",
+  "animation": "resource/animations/knight/idle_2.kwg",
+  "geometry": "resource/geometry/sponza/knight.kwg",
+  "material": "resource/materials/sponza/knight.kwm",
+  "shadow_material": "resource/materials/skinned_shadow.kwm",
+  "local_transform": {
+    "translation": [ 9, 0, -1.65 ],
+    "rotation": [ 0, -0.713, 0,  0.701 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "AnimatedGeometryPrimitive",
+  "animation": "resource/animations/knight/idle_2.kwg",
+  "geometry": "resource/geometry/sponza/knight.kwg",
+  "material": "resource/materials/sponza/knight.kwm",
+  "shadow_material": "resource/materials/skinned_shadow.kwm",
+  "local_transform": {
+    "translation": [ -10, 0, 1 ],
+    "rotation": [ 0,  0.707, 0, 0.707 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "AnimatedGeometryPrimitive",
+  "animation": "resource/animations/knight/idle.kwg",
+  "geometry": "resource/geometry/sponza/knight.kwg",
+  "material": "resource/materials/sponza/knight.kwm",
+  "shadow_material": "resource/materials/skinned_shadow.kwm",
+  "local_transform": {
+    "translation": [ -10, 0, -1.65 ],
+    "rotation": [ 0, 0.707, 0, 0.707 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PointLightPrimitive",
+  "is_shadow_enabled": true,
+  "color": [ 1, 0.1, 0 ],
+  "power": 10,
+  "local_transform": {
+    "translation": [ 3.9, 1.3, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PointLightPrimitive",
+  "is_shadow_enabled": true,
+  "color": [ 1, 0.1, 0 ],
+  "power": 10,
+  "local_transform": {
+    "translation": [ -4.9, 1.3, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/+3.9+0.325.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/+3.9+0.325.kwt",
+  "falloff_radius": 7,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ 3.9, 2, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/-4.9+0.325.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/-4.9+0.325.kwt",
+  "falloff_radius": 7,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ -4.9, 2, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/+3.9-3.175.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/+3.9-3.175.kwt",
+  "falloff_radius": 6,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ 3.9, 2, -3.175 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/-4.9-3.175.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/-4.9-3.175.kwt",
+  "falloff_radius": 6,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ -4.9, 2, -3.175 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/+3.9+3.825.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/+3.9+3.825.kwt",
+  "falloff_radius": 6,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ 3.9, 2, 3.825 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ReflectionProbePrimitive",
+  "irradiance_map": "resource/textures/sponza/irradiance_maps/-4.9+3.825.kwt",
+  "prefiltered_environment_map": "resource/textures/sponza/prefiltered_environment_maps/-4.9+3.825.kwt",
+  "falloff_radius": 6,
+  "parallax_box": {
+    "center": [ 0, 6, 0.325 ],
+    "extent": [ 10.4, 6, 4.8 ]
+  },
+  "local_transform": {
+    "translation": [ -4.9, 2, 3.825 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/containers/fire_small.kwm",
+  "local_transform": {
+    "translation": [ 3.9, 0.95, 1.15 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/containers/fire_small.kwm",
+  "local_transform": {
+    "translation": [ 3.9, 0.95, -1.8 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/containers/fire_small.kwm",
+  "local_transform": {
+    "translation": [ -4.9, 0.95, 1.15 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "PrefabPrimitive",
+  "prefab_prototype": "resource/containers/fire_small.kwm",
+  "local_transform": {
+    "translation": [ -4.9, 0.95, -1.8 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ParticleSystemPrimitive",
+  "particle_system": "resource/particles/fog.kwm",
+  "local_transform": {
+    "translation": [ 3.9, -0.5, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "ParticleSystemPrimitive",
+  "particle_system": "resource/particles/fog.kwm",
+  "local_transform": {
+    "translation": [ -4.9, -0.5, 0.325 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/skybox.kwg",
+  "material": "resource/materials/sponza/skybox.kwm",
+  "shadow_material": "",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/000.kwg",
+  "material": "resource/materials/sponza/000.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/001.kwg",
+  "material": "resource/materials/sponza/001.kwm",
+  "shadow_material": "resource/materials/sponza/001_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/002.kwg",
+  "material": "resource/materials/sponza/002.kwm",
+  "shadow_material": "resource/materials/sponza/002_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/003.kwg",
+  "material": "resource/materials/sponza/003.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/004.kwg",
+  "material": "resource/materials/sponza/004.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/005.kwg",
+  "material": "resource/materials/sponza/005.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/006.kwg",
+  "material": "resource/materials/sponza/006.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/007.kwg",
+  "material": "resource/materials/sponza/007.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/008.kwg",
+  "material": "resource/materials/sponza/008.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/009.kwg",
+  "material": "resource/materials/sponza/009.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/010.kwg",
+  "material": "resource/materials/sponza/010.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/011.kwg",
+  "material": "resource/materials/sponza/011.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/012.kwg",
+  "material": "resource/materials/sponza/012.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/013.kwg",
+  "material": "resource/materials/sponza/013.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/014.kwg",
+  "material": "resource/materials/sponza/014.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/015.kwg",
+  "material": "resource/materials/sponza/015.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/016.kwg",
+  "material": "resource/materials/sponza/016.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/017.kwg",
+  "material": "resource/materials/sponza/017.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/018.kwg",
+  "material": "resource/materials/sponza/018.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/019.kwg",
+  "material": "resource/materials/sponza/019.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/020.kwg",
+  "material": "resource/materials/sponza/020.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/021.kwg",
+  "material": "resource/materials/sponza/021.kwm",
+  "shadow_material": "resource/materials/sponza/021_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/022.kwg",
+  "material": "resource/materials/sponza/022.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+},
+{
+  "type": "GeometryPrimitive",
+  "geometry": "resource/geometry/sponza/023.kwg",
+  "material": "resource/materials/sponza/023.kwm",
+  "shadow_material": "resource/materials/solid_shadow.kwm",
+  "local_transform": {
+    "translation": [ 0, 0, 0 ],
+    "rotation": [ 0, 0, 0, 1 ],
+    "scale": [ 1, 1, 1 ]
+  }
+}

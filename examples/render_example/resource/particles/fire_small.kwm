@@ -1,67 +1,67 @@
 {
-  duration: 1,
-  loop_count: 0,
-  max_particle_count: 16,
-  max_bounds: {
-    center: [ 0, 1, 0 ],
-    extent: [ 1, 1, 1 ]
+  "duration": 1,
+  "loop_count": 0,
+  "max_particle_count": 16,
+  "max_bounds": {
+    "center": [ 0, 1, 0 ],
+    "extent": [ 1, 1, 1 ]
   },
-  geometry: "resource/geometry/particle_quad_01.kwg",
-  material: "resource/materials/bonefire.kwm",
-  shadow_material: "",
-  spritesheet_x: 8,
-  spritesheet_y: 8,
-  axes: "Y",
-  emitters: {
-    OverLifetimeParticleSystemEmitter: {
-      from: 8,
-      to: 8
+  "geometry": "resource/geometry/particle_quad_01.kwg",
+  "material": "resource/materials/bonefire.kwm",
+  "shadow_material": "",
+  "spritesheet_x": 8,
+  "spritesheet_y": 8,
+  "axes": "Y",
+  "emitters": {
+    "OverLifetimeParticleSystemEmitter": {
+      "from": 8,
+      "to": 8
     }
   },
-  generators: {
-    LifetimeParticleSystemGenerator: {
-      min: 1.5,
-      max: 2.0
+  "generators": {
+    "LifetimeParticleSystemGenerator": {
+      "min": 1.5,
+      "max": 2.0
     },
-    ScaleParticleSystemGenerator: {
-      is_uniform: false,
-      min: [ 0.034, 0.034, 0.034 ],
-      max: [ 0.05, 0.06, 0.05 ]
+    "ScaleParticleSystemGenerator": {
+      "is_uniform": false,
+      "min": [ 0.034, 0.034, 0.034 ],
+      "max": [ 0.05, 0.06, 0.05 ]
     },
-    VelocityParticleSystemGenerator: {
-      min: [ -0.01, 0.05, -0.01 ],
-      max: [ 0.01, 0.1, 0.01 ]
+    "VelocityParticleSystemGenerator": {
+      "min": [ -0.01, 0.05, -0.01 ],
+      "max": [ 0.01, 0.1, 0.01 ]
     },
-    CylinderPositionParticleSystemGenerator: {
-      origin: [ 0, 0, 0 ]
-      radius: 0.1,
-      height: 0
+    "CylinderPositionParticleSystemGenerator": {
+      "origin": [ 0, 0, 0 ]
+      "radius": 0.1,
+      "height": 0
     },
-    FrameParticleSystemGenerator: {
-      min: 0,
-      max: 0
+    "FrameParticleSystemGenerator": {
+      "min": 0,
+      "max": 0
     }
   },
-  updaters: {
-    PositionParticleSystemUpdater: {},
-    FrameParticleSystemUpdater: {
-      framerate: 45
+  "updaters": {
+    "PositionParticleSystemUpdater": {},
+    "FrameParticleSystemUpdater": {
+      "framerate": 45
     },
-    ColorOverLifetimeParticleSystemUpdater: {
-      inputs: [ 0, 0.2, 1 ],
-      outputs: [ [ 1, 1, 1 ], [ 60, 40, 20 ], [ 20, 0, 0 ] ]
+    "ColorOverLifetimeParticleSystemUpdater": {
+      "inputs": [ 0, 0.2, 1 ],
+      "outputs": [ [ 1, 1, 1 ], [ 60, 40, 20 ], [ 20, 0, 0 ] ]
     },
-    AlphaOverLifetimeParticleSystemUpdater: {
-      inputs: [ 0, 0.5, 0.8, 1 ],
-      outputs: [ 0, 1, 0.3, 0 ]
+    "AlphaOverLifetimeParticleSystemUpdater": {
+      "inputs": [ 0, 0.5, 0.8, 1 ],
+      "outputs": [ 0, 1, 0.3, 0 ]
     },
-    ScaleOverLifetimeParticleSystemUpdater: {
-      inputs: [ 0, 1 ],
-      outputs: [ [ 15, 15, 15 ], [ 20, 20, 20 ] ]
+    "ScaleOverLifetimeParticleSystemUpdater": {
+      "inputs": [ 0, 1 ],
+      "outputs": [ [ 15, 15, 15 ], [ 20, 20, 20 ] ]
     },
-    ScaleBySpeedParticleSystemUpdater: {
-      speed_scale: [ 3, 3, 3 ]
+    "ScaleBySpeedParticleSystemUpdater": {
+      "speed_scale": [ 3, 3, 3 ]
     },
-    LifetimeParticleSystemUpdater: {}
+    "LifetimeParticleSystemUpdater": {}
   }
 }

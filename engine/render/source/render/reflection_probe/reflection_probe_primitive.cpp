@@ -1,5 +1,5 @@
 #include "render/reflection_probe/reflection_probe_primitive.h"
-#include "render/scene/primitive_reflection.h"
+#include "render/scene/render_primitive_reflection.h"
 #include "render/texture/texture_manager.h"
 
 #include <core/debug/assert.h>
@@ -8,24 +8,20 @@
 
 namespace kw {
 
-UniquePtr<Primitive> ReflectionProbePrimitive::create_from_markdown(const PrimitiveReflectionDescriptor& primitive_reflection_descriptor) {
-    KW_ASSERT(primitive_reflection_descriptor.primitive_node != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.texture_manager != nullptr);
-    KW_ASSERT(primitive_reflection_descriptor.persistent_memory_resource != nullptr);
+UniquePtr<Primitive> ReflectionProbePrimitive::create_from_markdown(PrimitiveReflection& reflection, const ObjectNode& node) {
+    RenderPrimitiveReflection& render_reflection = dynamic_cast<RenderPrimitiveReflection&>(reflection);
 
-    ObjectNode& node = *primitive_reflection_descriptor.primitive_node;
     StringNode& irradiance_map_node = node["irradiance_map"].as<StringNode>();
     StringNode& prefiltered_environment_map_node = node["prefiltered_environment_map"].as<StringNode>();
     
-    MemoryResource& memory_resource = *primitive_reflection_descriptor.persistent_memory_resource;
-    SharedPtr<Texture*> irradiance_map = irradiance_map_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.texture_manager->load(irradiance_map_node.get_value().c_str());
-    SharedPtr<Texture*> prefiltered_environment_map = prefiltered_environment_map_node.get_value().empty() ? nullptr : primitive_reflection_descriptor.texture_manager->load(prefiltered_environment_map_node.get_value().c_str());
+    SharedPtr<Texture*> irradiance_map = render_reflection.texture_manager.load(irradiance_map_node.get_value().c_str());
+    SharedPtr<Texture*> prefiltered_environment_map = render_reflection.texture_manager.load(prefiltered_environment_map_node.get_value().c_str());
     float falloff_radius = node["falloff_radius"].as<NumberNode>().get_value();
     aabbox parallax_box = MarkdownUtils::aabbox_from_markdown(node["parallax_box"]);
     transform local_transform = MarkdownUtils::transform_from_markdown(node["local_transform"]);
 
     return static_pointer_cast<Primitive>(allocate_unique<ReflectionProbePrimitive>(
-        memory_resource, irradiance_map, prefiltered_environment_map, falloff_radius, parallax_box, local_transform
+        reflection.memory_resource, irradiance_map, prefiltered_environment_map, falloff_radius, parallax_box, local_transform
     ));
 }
 

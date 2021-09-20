@@ -1,0 +1,27 @@
+{
+  "default": "walk",
+  "motions": {
+    "walk": {
+      "blend_tree": "resource/blend_trees/test_subject/walk.kwm",
+      "duration": 0
+    },
+    "crouch": {
+      "blend_tree": "resource/blend_trees/test_subject/crouch.kwm",
+      "duration": 0
+    }
+  },
+  "transitions": [
+    {
+      "sources": [ "crouch" ],
+      "destination": "walk",
+      "duration": 0.3,
+      "trigger_event": "walk"
+    },
+    {
+      "sources": [ "walk" ],
+      "destination": "crouch",
+      "duration": 0.3,
+      "trigger_event": "crouch"
+    }
+  ]
+}
