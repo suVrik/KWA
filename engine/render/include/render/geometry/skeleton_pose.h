@@ -20,6 +20,10 @@ public:
 
     // Uses joint space matrices and skeleton hierarchy to build model space matrices.
     void build_model_space_matrices(const Skeleton& skeleton);
+    void apply_inverse_bind_matrices(const Skeleton& skeleton);
+
+    // Interpolate to other pose with given factor. Only joint space transforms are updated.
+    void lerp(const SkeletonPose& other, float factor);
 
     // The number of joint space matrices.
     size_t get_joint_count() const;
