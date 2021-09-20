@@ -2,6 +2,7 @@
 
 #include <core/containers/vector.h>
 #include <core/math/float4x4.h>
+#include <core/math/transform.h>
 
 namespace kw {
 
@@ -11,9 +12,9 @@ class SkeletonPose {
 public:
     explicit SkeletonPose(MemoryResource& memory_resource);
     
-    const Vector<float4x4>& get_joint_space_matrices() const;
+    const Vector<transform>& get_joint_space_transforms() const;
 
-    void set_joint_space_matrix(uint32_t joint_index, const float4x4& matrix);
+    void set_joint_space_transform(uint32_t joint_index, const transform& transform);
 
     const Vector<float4x4>& get_model_space_matrices() const;
 
@@ -24,7 +25,7 @@ public:
     size_t get_joint_count() const;
 
 private:
-    Vector<float4x4> m_joint_space_matrices;
+    Vector<transform> m_joint_space_transforms;
     Vector<float4x4> m_model_space_matrices;
 };
 

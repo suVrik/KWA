@@ -35,7 +35,7 @@ Animation::Animation(Vector<JointAnimation>&& joint_animations)
     m_duration = duration;
 }
 
-float4x4 Animation::get_joint_transform(uint32_t joint_index, float timestamp) const {
+transform Animation::get_joint_transform(uint32_t joint_index, float timestamp) const {
     KW_ASSERT(is_loaded(), "Animation is not loaded yet.");
 
     KW_ASSERT(joint_index < m_joint_animations.size(), "Invalid joint index.");
@@ -51,17 +51,17 @@ float4x4 Animation::get_joint_transform(uint32_t joint_index, float timestamp) c
 
             float factor = (normalized_timestamp - prev_it->timestamp) / (it->timestamp - prev_it->timestamp);
 
-            return float4x4(lerp(prev_it->transform, it->transform, factor));
+            return lerp(prev_it->transform, it->transform, factor);
         } else {
             auto prev_it = joint_animation.keyframes.rbegin();
 
             float factor = it->timestamp > EPSILON ? normalized_timestamp / it->timestamp : 1.f;
 
-            return float4x4(lerp(prev_it->transform, it->transform, factor));
+            return lerp(prev_it->transform, it->transform, factor);
         }
     } else {
         const JointKeyframe& joint_keyframe = joint_animation.keyframes.back();
-        return float4x4(transform(joint_keyframe.transform.translation, joint_keyframe.transform.rotation, joint_keyframe.transform.scale));
+        return transform(joint_keyframe.transform.translation, joint_keyframe.transform.rotation, joint_keyframe.transform.scale);
     }
 }
 

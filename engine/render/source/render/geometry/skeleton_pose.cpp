@@ -4,18 +4,18 @@
 namespace kw {
 
 SkeletonPose::SkeletonPose(MemoryResource& memory_resource)
-    : m_joint_space_matrices(memory_resource)
+    : m_joint_space_transforms(memory_resource)
     , m_model_space_matrices(memory_resource)
 {
 }
 
-const Vector<float4x4>& SkeletonPose::get_joint_space_matrices() const {
-    return m_joint_space_matrices;
+const Vector<transform>& SkeletonPose::get_joint_space_transforms() const {
+    return m_joint_space_transforms;
 }
 
-void SkeletonPose::set_joint_space_matrix(uint32_t joint_index, const float4x4& matrix) {
-    m_joint_space_matrices.resize(std::max(m_joint_space_matrices.size(), joint_index + 1ull));
-    m_joint_space_matrices[joint_index] = matrix;
+void SkeletonPose::set_joint_space_transform(uint32_t joint_index, const transform& transform) {
+    m_joint_space_transforms.resize(std::max(m_joint_space_transforms.size(), joint_index + 1ull));
+    m_joint_space_transforms[joint_index] = transform;
 }
 
 const Vector<float4x4>& SkeletonPose::get_model_space_matrices() const {
@@ -39,7 +39,7 @@ void SkeletonPose::build_model_space_matrices(const Skeleton& skeleton) {
 }
 
 size_t SkeletonPose::get_joint_count() const {
-    return m_joint_space_matrices.size();
+    return m_joint_space_transforms.size();
 }
 
 } // namespace kw

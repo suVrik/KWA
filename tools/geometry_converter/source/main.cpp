@@ -31,7 +31,7 @@ struct SkinnedVertex {
 struct Skeleton {
     std::vector<uint32_t> parent_joint_indices;
     std::vector<float4x4> inverse_bind_matrices;
-    std::vector<float4x4> bind_matrices;
+    std::vector<transform> bind_transforms;
     std::vector<std::string> joint_names;
 };
 
@@ -178,7 +178,7 @@ static bool save_result_geometry(const char* path) {
 
     writer.write_le<uint32_t>(result_geometry.skeleton.parent_joint_indices.data(), result_geometry.skeleton.parent_joint_indices.size());
     writer.write_le<float4x4>(result_geometry.skeleton.inverse_bind_matrices.data(), result_geometry.skeleton.inverse_bind_matrices.size());
-    writer.write_le<float4x4>(result_geometry.skeleton.bind_matrices.data(), result_geometry.skeleton.bind_matrices.size());
+    writer.write_le<transform>(result_geometry.skeleton.bind_transforms.data(), result_geometry.skeleton.bind_transforms.size());
 
     for (const std::string& name : result_geometry.skeleton.joint_names) {
         writer.write_le<uint32_t>(name.size());
@@ -365,15 +365,15 @@ static bool assign_joint_parents(int node_index, uint32_t parent_index, const fl
     const tinygltf::Node& node = model.nodes[node_index];
     
     float4x4 local_transform = get_node_transform(node);
-    float4x4 transform = local_transform * parent_transform;
+    float4x4 transform_ = local_transform * parent_transform;
 
     auto it1 = node_index_to_joint_index.find(node_index);
     if (it1 != node_index_to_joint_index.end()) {
         parent_index = static_cast<uint32_t>(it1->second);
 
-        result_geometry.skeleton.bind_matrices[it1->second] = transform;
+        result_geometry.skeleton.bind_transforms[it1->second] = transform(transform_);
 
-        transform = float4x4();
+        transform_ = float4x4();
     }
 
     for (int child_index : node.children) {
@@ -387,7 +387,7 @@ static bool assign_joint_parents(int node_index, uint32_t parent_index, const fl
             result_geometry.skeleton.parent_joint_indices[it2->second] = parent_index;
         }
 
-        if (!assign_joint_parents(child_index, parent_index, transform)) {
+        if (!assign_joint_parents(child_index, parent_index, transform_)) {
             return false;
         }
     }
@@ -717,7 +717,7 @@ static bool load_node(int node_index, const float4x4& parent_transform) {
 
         result_geometry.skeleton.parent_joint_indices.resize(joint_offset + skin.joints.size());
         result_geometry.skeleton.inverse_bind_matrices.resize(joint_offset + skin.joints.size());
-        result_geometry.skeleton.bind_matrices.resize(joint_offset + skin.joints.size());
+        result_geometry.skeleton.bind_transforms.resize(joint_offset + skin.joints.size());
         result_geometry.skeleton.joint_names.resize(joint_offset + skin.joints.size());
 
         for (size_t i = 0; i < skin.joints.size(); i++) {

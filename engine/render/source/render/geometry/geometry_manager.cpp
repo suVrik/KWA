@@ -9,6 +9,7 @@
 #include <core/error.h>
 #include <core/io/binary_reader.h>
 #include <core/math/float4x4.h>
+#include <core/math/transform.h>
 #include <core/memory/malloc_memory_resource.h>
 
 namespace kw {
@@ -42,6 +43,21 @@ static float4x4 swap_le(float4x4 vector) {
     vector._r2 = swap_le(vector._r2);
     vector._r3 = swap_le(vector._r3);
     return vector;
+}
+
+static quaternion swap_le(quaternion value) {
+    value.x = swap_le(value.x);
+    value.y = swap_le(value.y);
+    value.z = swap_le(value.z);
+    value.w = swap_le(value.w);
+    return value;
+}
+
+static transform swap_le(transform value) {
+    value.translation = swap_le(value.translation);
+    value.rotation = swap_le(value.rotation);
+    value.scale = swap_le(value.scale);
+    return value;
 }
 
 static Geometry::Vertex swap_le(Geometry::Vertex vertex) {
@@ -129,8 +145,8 @@ public:
             Vector<float4x4> inverse_bind_matrices(joint_count, m_manager.m_persistent_memory_resource);
             KW_ERROR(reader.read_le<float4x4>(inverse_bind_matrices.data(), inverse_bind_matrices.size()), "Failed to read inverse bind matrices.");
 
-            Vector<float4x4> bind_matrices(joint_count, m_manager.m_persistent_memory_resource);
-            KW_ERROR(reader.read_le<float4x4>(bind_matrices.data(), bind_matrices.size()), "Failed to read bind matrices.");
+            Vector<transform> bind_transforms(joint_count, m_manager.m_persistent_memory_resource);
+            KW_ERROR(reader.read_le<transform>(bind_transforms.data(), bind_transforms.size()), "Failed to read bind transforms.");
 
             UnorderedMap<String, uint32_t> joint_mapping(m_manager.m_persistent_memory_resource);
             joint_mapping.reserve(joint_count);
@@ -147,7 +163,8 @@ public:
 
             skeleton = allocate_unique<Skeleton>(
                 m_manager.m_persistent_memory_resource,
-                std::move(parent_joints), std::move(inverse_bind_matrices), std::move(bind_matrices), std::move(joint_mapping)
+                std::move(parent_joints), std::move(inverse_bind_matrices),
+                std::move(bind_transforms), std::move(joint_mapping)
             );
         }
 

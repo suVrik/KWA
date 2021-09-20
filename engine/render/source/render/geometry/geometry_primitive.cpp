@@ -183,9 +183,9 @@ Vector<float4x4> GeometryPrimitive::get_model_space_joint_matrices(MemoryResourc
             for (uint32_t i = 0; i < skeleton->get_joint_count(); i++) {
                 uint32_t parent_joint_index = skeleton->get_parent_joint(i);
                 if (parent_joint_index != UINT32_MAX) {
-                    result[i] = skeleton->get_bind_matrix(i) * result[parent_joint_index];
+                    result[i] = float4x4(skeleton->get_bind_transform(i)) * result[parent_joint_index];
                 } else {
-                    result[i] = skeleton->get_bind_matrix(i);
+                    result[i] = float4x4(skeleton->get_bind_transform(i));
                 }
             }
 

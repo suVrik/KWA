@@ -5,8 +5,6 @@
 
 namespace kw {
 
-class float4x4;
-
 class Animation {
 public:
     struct JointKeyframe {
@@ -22,7 +20,7 @@ public:
     explicit Animation(Vector<JointAnimation>&& joint_animations);
 
     // Return joint transform at given timestamp.
-    float4x4 get_joint_transform(uint32_t joint_index, float timestamp) const;
+    transform get_joint_transform(uint32_t joint_index, float timestamp) const;
 
     // Return the number of joints of target skeleton.
     size_t get_joint_count() const;
