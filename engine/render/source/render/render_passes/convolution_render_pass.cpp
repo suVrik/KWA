@@ -55,32 +55,32 @@ ConvolutionRenderPass::ConvolutionRenderPass(const ConvolutionRenderPassDescript
     KW_ASSERT(descriptor.transient_memory_resource != nullptr);
     
     static const float3 VERTEX_DATA[] = {
-        float3( 1.0f,  1.0f, -1.0f),
-        float3( 1.0f, -1.0f, -1.0f),
-        float3( 1.0f,  1.0f,  1.0f),
-        float3( 1.0f, -1.0f,  1.0f),
-        float3(-1.0f,  1.0f, -1.0f),
-        float3(-1.0f, -1.0f, -1.0f),
-        float3(-1.0f,  1.0f,  1.0f),
-        float3(-1.0f, -1.0f,  1.0f)
+        float3( 1.f,  1.f, -1.f),
+        float3( 1.f, -1.f, -1.f),
+        float3( 1.f,  1.f,  1.f),
+        float3( 1.f, -1.f,  1.f),
+        float3(-1.f,  1.f, -1.f),
+        float3(-1.f, -1.f, -1.f),
+        float3(-1.f,  1.f,  1.f),
+        float3(-1.f, -1.f,  1.f)
     };
 
     m_vertex_buffer = m_render.create_vertex_buffer("convolution_cube", sizeof(VERTEX_DATA));
     m_render.upload_vertex_buffer(m_vertex_buffer, VERTEX_DATA, sizeof(VERTEX_DATA));
     
     static const uint16_t INDEX_DATA[] = {
-        0, 2, 4,
-        3, 7, 2,
-        7, 5, 6,
-        5, 7, 1,
-        1, 3, 0,
-        5, 1, 4,
-        2, 6, 4,
-        7, 6, 2,
-        5, 4, 6,
-        7, 3, 1,
-        3, 2, 0,
-        1, 0, 4,
+        4, 2, 0,
+        2, 7, 3,
+        6, 5, 7,
+        1, 7, 5,
+        0, 3, 1,
+        4, 1, 5,
+        4, 6, 2,
+        2, 6, 7,
+        6, 4, 5,
+        1, 3, 7,
+        0, 2, 3,
+        4, 0, 1,
     };
 
     m_index_buffer = m_render.create_index_buffer("convolution_cube", sizeof(INDEX_DATA), IndexSize::UINT16);
