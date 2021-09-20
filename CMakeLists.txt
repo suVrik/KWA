@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(KWA)
 
 set(CMAKE_CXX_STANDARD 17)
-set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT "unittest")
+set_property(GLOBAL PROPERTY VS_STARTUP_PROJECT "render_example")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "cmake")
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release")
@@ -133,6 +133,27 @@ function(target_add_materials target materials)
     )
 endfunction()
 
+function(target_add_height_fields target height_fields)
+    foreach(absolute_path ${height_fields})
+        cmake_path(RELATIVE_PATH absolute_path BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE relative_path)
+
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}"
+            COMMAND ${CMAKE_COMMAND} -E copy "\"${absolute_path}\"" "\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${relative_path}\""
+            MAIN_DEPENDENCY ${absolute_path}
+            COMMAND_EXPAND_LISTS
+        )
+    endforeach()
+
+    target_sources(${target} PRIVATE ${height_fields})
+
+    source_group(
+        TREE "${CMAKE_CURRENT_SOURCE_DIR}/resource"
+        PREFIX "Resource Files"
+        FILES ${height_fields}
+    )
+endfunction()
+
 function(target_add_resources target)
     file(GLOB_RECURSE shaders "resource/*.hlsl")
     target_add_shaders(${target} "${shaders}")
@@ -145,6 +166,9 @@ function(target_add_resources target)
 
     file(GLOB_RECURSE materials "resource/*.kwm")
     target_add_materials(${target} "${materials}")
+
+    file(GLOB_RECURSE height_fields "resource/*.tsv")
+    target_add_height_fields(${target} "${height_fields}")
 endfunction()
 
 add_subdirectory("thirdparty")
