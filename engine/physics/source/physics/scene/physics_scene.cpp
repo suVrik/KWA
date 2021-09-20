@@ -93,7 +93,13 @@ PhysicsScene::PhysicsScene(const PhysicsSceneDescriptor& descriptor)
     KW_ERROR(m_controller_manager != nullptr, "Failed to create controller manager.");
 }
 
-PhysicsScene::~PhysicsScene() = default;
+PhysicsScene::~PhysicsScene() {
+    // TODO: When `PrefabPrimitive` removes children, controller release crashes because controller manager is already
+    //   destroyed at that point. Perhaps `PhysicsScene` shoudn't own a controller manager?
+    while (!get_children().empty()) {
+        remove_child(*get_children().front());
+    }
+}
 
 void PhysicsScene::child_added(Primitive& primitive) {
     if (RigidActorPrimitive* rigid_actor_primitive = dynamic_cast<RigidActorPrimitive*>(&primitive)) {

@@ -108,7 +108,29 @@ PrefabManager::PrefabManager(const PrefabManagerDescriptor& descriptor)
     m_pending_prefab_prototypes.reserve(16);
 }
 
-PrefabManager::~PrefabManager() = default;
+PrefabManager::~PrefabManager() {
+#ifdef KW_DEBUG
+    m_pending_prefab_prototypes.clear();
+
+    while (!m_prefab_prototypes.empty()) {
+        bool any_erased = false;
+
+        for (auto it = m_prefab_prototypes.begin(); it != m_prefab_prototypes.end(); ) {
+            if (it->second.use_count() == 1) {
+                it = m_prefab_prototypes.erase(it);
+                any_erased = true;
+            } else {
+                ++it;
+            }
+        }
+
+        if (!any_erased) {
+            KW_ASSERT(false, "Not all prefab prototypes are released.");
+            break;
+        }
+    }
+#endif // KW_DEBUG
+}
 
 void PrefabManager::set_primitive_reflection(PrimitiveReflection& primitive_reflection) {
     KW_ASSERT(m_primitive_reflection == nullptr, "Primitive reflection is already set.");
