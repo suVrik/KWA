@@ -52,6 +52,7 @@ public:
 
 protected:
     void update_animation(MemoryResource& transient_memory_resource, float elapsed_time);
+    void geometry_loaded() override;
 
 private:
     struct IkTarget {
@@ -63,7 +64,7 @@ private:
 
     SharedPtr<MotionGraph> m_motion_graph;
     UnorderedMap<String, float> m_attributes;
-    Vector<float4x4> m_joints_model_pre_ik;
+    SkeletonPose m_pre_ik_skeleton_pose;
     Vector<IkTarget> m_ik_targets;
     SkeletonPose m_previous_skeleton_pose;
     uint32_t m_motion_index;

@@ -41,7 +41,7 @@ MotionGeometryPrimitive::MotionGeometryPrimitive(MemoryResource& memory_resource
     : AnimatedGeometryPrimitive(memory_resource, geometry, material, shadow_material, local_transform)
     , m_motion_graph(std::move(motion_graph))
     , m_attributes(memory_resource)
-    , m_joints_model_pre_ik(memory_resource)
+    , m_pre_ik_skeleton_pose(memory_resource)
     , m_ik_targets(memory_resource)
     , m_previous_skeleton_pose(memory_resource)
     , m_motion_index(UINT32_MAX)
@@ -90,7 +90,7 @@ void MotionGeometryPrimitive::emit_event(const String& name) {
                     m_motion_index = transitions[transition_index].destination;
                     m_motion_time = 0.f;
 
-                    std::swap(m_previous_skeleton_pose, get_skeleton_pose());
+                    m_previous_skeleton_pose = m_pre_ik_skeleton_pose;
 
                     m_transition_time = 0.f;
                     m_transition_duration = transitions[transition_index].duration;
@@ -111,7 +111,7 @@ float MotionGeometryPrimitive::get_motion_time() const {
 }
 
 void MotionGeometryPrimitive::frozen_fade(float duration) {
-    std::swap(m_previous_skeleton_pose, get_skeleton_pose());
+    m_previous_skeleton_pose = m_pre_ik_skeleton_pose;
 
     m_transition_time = 0.f;
     m_transition_duration = duration;
@@ -135,7 +135,7 @@ void MotionGeometryPrimitive::set_attribute(const String& name, float value) {
 }
 
 const Vector<float4x4>& MotionGeometryPrimitive::get_model_space_joint_pre_ik_matrices() const {
-    return m_joints_model_pre_ik;
+    return m_pre_ik_skeleton_pose.get_model_space_matrices();
 }
 
 const float4& MotionGeometryPrimitive::get_ik_target(uint32_t joint_a, uint32_t joint_b, uint32_t joint_c) const {
@@ -222,7 +222,7 @@ void MotionGeometryPrimitive::update_animation(MemoryResource& transient_memory_
         const Vector<transform>& joint_space_transforms = skeleton_pose.get_joint_space_transforms();
         const Vector<float4x4>& model_space_matrices = skeleton_pose.get_model_space_matrices();
 
-        m_joints_model_pre_ik.assign(model_space_matrices.begin(), model_space_matrices.end());
+        m_pre_ik_skeleton_pose = skeleton_pose;
 
         // Simple Two Joint IK
         // https://theorangeduck.com/page/simple-two-joint
@@ -243,6 +243,11 @@ void MotionGeometryPrimitive::update_animation(MemoryResource& transient_memory_
             const float3& c = joint_c_model.translation;
 
             float3 t = ik_target.target.xyz * inverse(get_global_transform());
+
+            if (equal(c, t)) {
+                // Already there.
+                continue;
+            }
 
             const quaternion& a_gr = joint_a_model.rotation;
             const quaternion& b_gr = joint_b_model.rotation;
@@ -281,6 +286,12 @@ void MotionGeometryPrimitive::update_animation(MemoryResource& transient_memory_
         skeleton_pose.build_model_space_matrices(*skeleton);
         skeleton_pose.apply_inverse_bind_matrices(*skeleton);
     }
+}
+
+void MotionGeometryPrimitive::geometry_loaded() {
+    AnimatedGeometryPrimitive::geometry_loaded();
+
+    m_pre_ik_skeleton_pose = get_skeleton_pose();
 }
 
 } // namespace kw
