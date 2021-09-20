@@ -10,12 +10,22 @@
 #undef OUT
 #undef RELATIVE
 
+#include "game_primitive_reflection.h"
+#include "game_scene.h"
+#include "player.h"
+
+#include <physics/height_field/height_field_manager.h>
+#include <physics/physics_manager.h>
+#include <physics/scene/capsule_controller_primitive.h>
+#include <physics/scene/physics_primitive_reflection.h>
+#include <physics/scene/physics_scene.h>
+
 #include <render/acceleration_structure/linear_acceleration_structure.h>
 #include <render/acceleration_structure/octree_acceleration_structure.h>
 #include <render/animation/animated_geometry_primitive.h>
 #include <render/animation/animation_manager.h>
 #include <render/animation/animation_player.h>
-#include <render/camera/camera_controller.h>
+#include <render/blend_tree/blend_tree_manager.h>
 #include <render/camera/camera_manager.h>
 #include <render/debug/cpu_profiler_overlay.h>
 #include <render/debug/debug_draw_manager.h>
@@ -27,6 +37,9 @@
 #include <render/geometry/skeleton.h>
 #include <render/light/point_light_primitive.h>
 #include <render/material/material_manager.h>
+#include <render/motion/motion_geometry_primitive.h>
+#include <render/motion/motion_graph.h>
+#include <render/motion/motion_graph_manager.h>
 #include <render/particles/particle_system_manager.h>
 #include <render/particles/particle_system_player.h>
 #include <render/particles/particle_system_primitive.h>
@@ -146,6 +159,22 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     animation_manager_descriptor.transient_memory_resource = &transient_memory_resource;
 
     AnimationManager animation_manager(animation_manager_descriptor);
+    
+    BlendTreeManagerDescriptor blend_tree_manager_descriptor{};
+    blend_tree_manager_descriptor.animation_manager = &animation_manager;
+    blend_tree_manager_descriptor.task_scheduler = &task_scheduler;
+    blend_tree_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    blend_tree_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    BlendTreeManager blend_tree_manager(blend_tree_manager_descriptor);
+    
+    MotionGraphManagerDescriptor motion_graph_manager_descriptor{};
+    motion_graph_manager_descriptor.blend_tree_manager = &blend_tree_manager;
+    motion_graph_manager_descriptor.task_scheduler = &task_scheduler;
+    motion_graph_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    motion_graph_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    MotionGraphManager motion_graph_manager(motion_graph_manager_descriptor);
 
     ParticleSystemManagerDescriptor particle_system_manager_descriptor{};
     particle_system_manager_descriptor.task_scheduler = &task_scheduler;
@@ -156,6 +185,19 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     ParticleSystemManager particle_system_manager(particle_system_manager_descriptor);
 
+    PhysicsManagerDescriptor physics_manager_descriptor{};
+    physics_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+
+    PhysicsManager physics_manager(physics_manager_descriptor);
+
+    HeightFieldManagerDescriptor height_field_manager_descriptor{};
+    height_field_manager_descriptor.physics_manager = &physics_manager;
+    height_field_manager_descriptor.task_scheduler = &task_scheduler;
+    height_field_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    height_field_manager_descriptor.transient_memory_resource = &transient_memory_resource;
+
+    HeightFieldManager height_field_manager(height_field_manager_descriptor);
+
     PrefabManagerDescriptor prefab_manager_descriptor{};
     prefab_manager_descriptor.task_scheduler = &task_scheduler;
     prefab_manager_descriptor.persistent_memory_resource = &persistent_memory_resource;
@@ -163,16 +205,19 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     PrefabManager prefab_manager(prefab_manager_descriptor);
 
-    RenderPrimitiveReflectionDescriptor render_primitive_reflection_descriptor{};
-    render_primitive_reflection_descriptor.texture_manager = &texture_manager;
-    render_primitive_reflection_descriptor.geometry_manager = &geometry_manager;
-    render_primitive_reflection_descriptor.material_manager = &material_manager;
-    render_primitive_reflection_descriptor.animation_manager = &animation_manager;
-    render_primitive_reflection_descriptor.particle_system_manager = &particle_system_manager;
-    render_primitive_reflection_descriptor.prefab_manager = &prefab_manager;
-    render_primitive_reflection_descriptor.memory_resource = &persistent_memory_resource;
+    GamePrimitiveReflectionDescriptor primitive_reflection_descriptor{};
+    primitive_reflection_descriptor.physics_manager = &physics_manager;
+    primitive_reflection_descriptor.height_field_manager = &height_field_manager;
+    primitive_reflection_descriptor.texture_manager = &texture_manager;
+    primitive_reflection_descriptor.geometry_manager = &geometry_manager;
+    primitive_reflection_descriptor.material_manager = &material_manager;
+    primitive_reflection_descriptor.animation_manager = &animation_manager;
+    primitive_reflection_descriptor.motion_graph_manager = &motion_graph_manager;
+    primitive_reflection_descriptor.particle_system_manager = &particle_system_manager;
+    primitive_reflection_descriptor.prefab_manager = &prefab_manager;
+    primitive_reflection_descriptor.memory_resource = &persistent_memory_resource;
 
-    RenderPrimitiveReflection primitive_reflection(render_primitive_reflection_descriptor);
+    GamePrimitiveReflection primitive_reflection(primitive_reflection_descriptor);
 
     AnimationPlayerDescriptor animation_player_descriptor{};
     animation_player_descriptor.timer = &timer;
@@ -209,28 +254,21 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
 
     LinearAccelerationStructure reflection_probe_acceleration_structure(persistent_memory_resource);
 
-    RenderSceneDescriptor render_scene_descriptor{};
-    render_scene_descriptor.animation_player = &animation_player;
-    render_scene_descriptor.particle_system_player = &particle_system_player;
-    render_scene_descriptor.reflection_probe_manager = &reflection_probe_manager;
-    render_scene_descriptor.geometry_acceleration_structure = &geometry_acceleration_structure;
-    render_scene_descriptor.light_acceleration_structure = &light_acceleration_structure;
-    render_scene_descriptor.particle_system_acceleration_structure = &particle_system_acceleration_structure;
-    render_scene_descriptor.reflection_probe_acceleration_structure = &reflection_probe_acceleration_structure;
-    render_scene_descriptor.persistent_memory_resource = &persistent_memory_resource;
-    render_scene_descriptor.transient_memory_resource = &transient_memory_resource;
+    GameSceneDescriptor scene_descriptor{};
+    scene_descriptor.physics_manager = &physics_manager;
+    scene_descriptor.animation_player = &animation_player;
+    scene_descriptor.particle_system_player = &particle_system_player;
+    scene_descriptor.reflection_probe_manager = &reflection_probe_manager;
+    scene_descriptor.geometry_acceleration_structure = &geometry_acceleration_structure;
+    scene_descriptor.light_acceleration_structure = &light_acceleration_structure;
+    scene_descriptor.particle_system_acceleration_structure = &particle_system_acceleration_structure;
+    scene_descriptor.reflection_probe_acceleration_structure = &reflection_probe_acceleration_structure;
+    scene_descriptor.persistent_memory_resource = &persistent_memory_resource;
+    scene_descriptor.transient_memory_resource = &transient_memory_resource;
 
-    RenderScene scene(render_scene_descriptor);
+    GameScene scene(scene_descriptor);
 
     CameraManager camera_manager;
-
-    CameraControllerDescriptor camera_controller_descriptor{};
-    camera_controller_descriptor.window = &window;
-    camera_controller_descriptor.input = &input;
-    camera_controller_descriptor.timer = &timer;
-    camera_controller_descriptor.camera_manager = &camera_manager;
-
-    CameraController camera_controller(camera_controller_descriptor);
 
     DebugDrawManager debug_draw_manager(transient_memory_resource);
 
@@ -432,8 +470,24 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
     prefab_manager.set_primitive_reflection(primitive_reflection);
 
     scene.add_child(allocate_unique<PrefabPrimitive>(
-        persistent_memory_resource, persistent_memory_resource, prefab_manager.load("resource/prefabs/ik.kwm")
+        persistent_memory_resource, persistent_memory_resource, prefab_manager.load("resource/prefabs/ik/ik.kwm")
     ));
+
+    PlayerDescriptor player_descriptor{};
+    player_descriptor.debug_draw_manager = &debug_draw_manager;
+    player_descriptor.motion_graph_manager = &motion_graph_manager;
+    player_descriptor.geometry_manager = &geometry_manager;
+    player_descriptor.material_manager = &material_manager;
+    player_descriptor.scene = &scene;
+    player_descriptor.window = &window;
+    player_descriptor.input = &input;
+    player_descriptor.timer = &timer;
+    player_descriptor.camera_manager = &camera_manager;
+    player_descriptor.memory_resource = &persistent_memory_resource;
+
+    UniquePtr<Player> player = allocate_unique<Player>(persistent_memory_resource, player_descriptor);
+    Player* player_ptr = player.get();
+    scene.add_child(std::move(player));
 
     bool is_running = true;
     while (is_running) {
@@ -452,12 +506,18 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         timer.update();
         debug_draw_manager.update();
         imgui_manager.update();
-        camera_controller.update();
         cpu_profiler_overlay.update();
+
+        if (input.is_key_pressed(Scancode::ESCAPE)) {
+            is_running = false;
+        }
 
         if (input.is_key_pressed(Scancode::RETURN)) {
             reflection_probe_manager.bake(*render, scene);
         }
+
+        // TODO: Player must create tasks rather than using this synchronous call.
+        player_ptr->update();
 
         auto [animation_player_begin, animation_player_end] = animation_player.create_tasks();
         auto [particle_system_player_begin, particle_system_player_end] = particle_system_player.create_tasks();
@@ -465,6 +525,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         auto [geometry_manager_begin, geometry_manager_end] = geometry_manager.create_tasks();
         MaterialManagerTasks material_manager_tasks = material_manager.create_tasks();
         auto [animation_manager_begin, animation_manager_end] = animation_manager.create_tasks();
+        auto [blend_tree_manager_begin, blend_tree_manager_end] = blend_tree_manager.create_tasks();
+        auto [motion_graph_manager_begin, motion_graph_manager_end] = motion_graph_manager.create_tasks();
         auto [particle_system_manager_begin, particle_system_manager_end] = particle_system_manager.create_tasks();
         auto [prefab_manager_begin, prefab_manager_end] = prefab_manager.create_tasks();
         auto [acquire_frame_task, present_frame_task] = frame_graph->create_tasks();
@@ -483,6 +545,8 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         Task* debug_draw_render_pass_task = debug_draw_render_pass.create_task();
         Task* imgui_render_pass_task = imgui_render_pass.create_task();
         Task* flush_task = render->create_task();
+        auto [scene_simulate, scene_fetch] = scene.create_tasks();
+        auto [height_field_begin, height_field_end] = height_field_manager.create_tasks();
 
         animation_player_begin->add_input_dependencies(transient_memory_resource, { animation_manager_end });
         particle_system_player_begin->add_input_dependencies(transient_memory_resource, { particle_system_manager_end });
@@ -497,8 +561,12 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         texture_manager_end->add_input_dependencies(transient_memory_resource, { texture_manager_begin });
         geometry_manager_begin->add_input_dependencies(transient_memory_resource, { prefab_manager_end });
         geometry_manager_end->add_input_dependencies(transient_memory_resource, { geometry_manager_begin });
-        animation_manager_begin->add_input_dependencies(transient_memory_resource, { prefab_manager_end });
+        animation_manager_begin->add_input_dependencies(transient_memory_resource, { blend_tree_manager_end });
         animation_manager_end->add_input_dependencies(transient_memory_resource, { animation_manager_begin });
+        blend_tree_manager_begin->add_input_dependencies(transient_memory_resource, { motion_graph_manager_end });
+        blend_tree_manager_end->add_input_dependencies(transient_memory_resource, { blend_tree_manager_begin });
+        motion_graph_manager_begin->add_input_dependencies(transient_memory_resource, { prefab_manager_end });
+        motion_graph_manager_end->add_input_dependencies(transient_memory_resource, { motion_graph_manager_begin });
         particle_system_manager_begin->add_input_dependencies(transient_memory_resource, { prefab_manager_end });
         particle_system_manager_end->add_input_dependencies(transient_memory_resource, { particle_system_manager_begin });
         prefab_manager_end->add_input_dependencies(transient_memory_resource, { prefab_manager_begin });
@@ -522,6 +590,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
             tonemapping_render_pass_task, antialiasing_render_pass_task, debug_draw_render_pass_task, imgui_render_pass_task
         });
         present_frame_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task, flush_task });
+        scene_simulate->add_input_dependencies(transient_memory_resource, { height_field_begin, prefab_manager_end });
+        scene_fetch->add_input_dependencies(transient_memory_resource, { scene_simulate });
+        height_field_begin->add_input_dependencies(transient_memory_resource, { prefab_manager_end });
+        height_field_end->add_input_dependencies(transient_memory_resource, { height_field_begin });
 
         for (Task* bloom_render_pass_task : bloom_render_pass_tasks) {
             bloom_render_pass_task->add_input_dependencies(transient_memory_resource, { acquire_frame_task });
@@ -537,6 +609,10 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_player_end);
         task_scheduler.enqueue_task(transient_memory_resource, animation_manager_begin);
         task_scheduler.enqueue_task(transient_memory_resource, animation_manager_end);
+        task_scheduler.enqueue_task(transient_memory_resource, blend_tree_manager_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, blend_tree_manager_end);
+        task_scheduler.enqueue_task(transient_memory_resource, motion_graph_manager_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, motion_graph_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_manager_begin);
         task_scheduler.enqueue_task(transient_memory_resource, particle_system_manager_end);
         task_scheduler.enqueue_task(transient_memory_resource, prefab_manager_begin);
@@ -565,12 +641,17 @@ int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /
         task_scheduler.enqueue_task(transient_memory_resource, imgui_render_pass_task);
         task_scheduler.enqueue_task(transient_memory_resource, flush_task);
         task_scheduler.enqueue_task(transient_memory_resource, present_frame_task);
+        task_scheduler.enqueue_task(transient_memory_resource, scene_simulate);
+        task_scheduler.enqueue_task(transient_memory_resource, scene_fetch);
+        task_scheduler.enqueue_task(transient_memory_resource, height_field_begin);
+        task_scheduler.enqueue_task(transient_memory_resource, height_field_end);
 
         task_scheduler.join();
 
         CpuProfiler::instance().update();
     }
 
+    // TODO: Once Render can create graphics pipelines, these ugly calls will be gone.
     imgui_render_pass.destroy_graphics_pipelines(*frame_graph);
     debug_draw_render_pass.destroy_graphics_pipelines(*frame_graph);
     antialiasing_render_pass.destroy_graphics_pipelines(*frame_graph);
