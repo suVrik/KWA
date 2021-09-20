@@ -7,6 +7,7 @@ namespace kw {
 class AnimationManager;
 class GeometryManager;
 class MaterialManager;
+class MotionGraphManager;
 class ObjectNode;
 class ParticleSystemManager;
 class Primitive;
@@ -17,6 +18,7 @@ struct RenderPrimitiveReflectionDescriptor {
     GeometryManager* geometry_manager;
     MaterialManager* material_manager;
     AnimationManager* animation_manager;
+    MotionGraphManager* motion_graph_manager;
     ParticleSystemManager* particle_system_manager;
     PrefabManager* prefab_manager;
     MemoryResource* memory_resource;
@@ -30,6 +32,7 @@ public:
     GeometryManager& geometry_manager;
     MaterialManager& material_manager;
     AnimationManager& animation_manager;
+    MotionGraphManager& motion_graph_manager;
     ParticleSystemManager& particle_system_manager;
 };
 
